@@ -1,6 +1,8 @@
 //! Milestone 4: income, research, training, site actions, population, levels and rewards
 //! (docs/MILESTONE_4 "Rules"; the spec's tile-action notes overrule the brief's D4 table, see
-//! docs/QUESTIONS.md). Every expected number is worked by hand from the brief (Appendix tables,
+//! docs/QUESTIONS.md). Milestone 5 replaced the reward menus (level 2: Workshop, Explorer; level
+//! 5 and up: Park, SuperUnit) and excluded Super Units from capacity; the tests here follow.
+//! Every expected number is worked by hand from the brief (Appendix tables,
 //! `L(L+1)/2 - 1`, `4 + cities x tier`) in the comment next to it, never from the code under test.
 
 mod common;
@@ -167,6 +169,12 @@ fn supported_units_count_living_units_with_that_origin() {
         .unit_with(0, Archer, p(2, 1), |u| u.origin = Some(CityId(0)))
         .unit_with(0, Warrior, p(2, 2), |u| u.origin = Some(CityId(1)))
         .unit(0, Rider, p(2, 3)) // orphan: origin None (D8)
+        .unit_with(0, UnitType::SuperUnit, p(3, 0), |u| {
+            u.origin = Some(CityId(0))
+        }) // never counts (M5)
+        .unit_with(0, UnitType::SuperUnit, p(3, 1), |u| {
+            u.origin = Some(CityId(1))
+        })
         .build();
     assert_eq!(supported_units(&s, CityId(0)), 2);
     assert_eq!(supported_units(&s, CityId(1)), 1);
@@ -183,13 +191,13 @@ fn reward_menu_follows_the_level_and_drops_used_border_growth() {
             .build();
         reward_menu(&s, CityId(0))
     };
-    assert_eq!(menu(2, false), [Workshop]);
+    assert_eq!(menu(2, false), [Workshop, Explorer]);
     assert_eq!(menu(3, false), [CityWall, Resources]);
     assert_eq!(menu(4, false), [PopulationGrowth, BorderGrowth]);
     assert_eq!(menu(4, true), [PopulationGrowth]);
-    assert_eq!(menu(5, false), [Park]);
-    assert_eq!(menu(6, true), [Park]);
-    assert_eq!(menu(9, false), [Park]);
+    assert_eq!(menu(5, false), [Park, Reward::SuperUnit]);
+    assert_eq!(menu(6, true), [Park, Reward::SuperUnit]);
+    assert_eq!(menu(9, false), [Park, Reward::SuperUnit]);
 }
 
 // ---------- income timing ----------
@@ -464,7 +472,7 @@ fn super_unit_is_never_trainable() {
     let mut s = barracks(100, &EVERY_TECH).build();
     s.cities[0].level = 9;
     s.cities[0].population = 44; // cum(9) = 44, below cum(10) = 54
-    illegal(&mut s, train(0, SuperUnit));
+    illegal(&mut s, train(0, UnitType::SuperUnit));
 }
 
 #[test]
@@ -941,7 +949,10 @@ fn population_two_reaches_level_two_with_a_pending_workshop() {
     ok(&mut s, site(p(3, 1), HarvestFruit));
     let c = city(&s, 0);
     assert_eq!((c.population, c.level, c.pending_reward), (2, 2, true));
-    assert_eq!(legal_actions(&s), [choose(0, Workshop)]);
+    assert_eq!(
+        legal_actions(&s),
+        [choose(0, Workshop), choose(0, Explorer)]
+    );
     ok(&mut s, choose(0, Workshop));
     let c = city(&s, 0);
     assert_eq!(
@@ -1056,9 +1067,15 @@ fn choose_reward_needs_a_menu_entry_and_a_pending_city() {
     let mut s = pending(4, 9);
     illegal(&mut s, choose(0, Park));
     illegal(&mut s, choose(0, Resources));
+    illegal(&mut s, choose(0, Explorer));
+    illegal(&mut s, choose(0, Reward::SuperUnit));
     let mut s = pending(5, 14);
     illegal(&mut s, choose(0, Workshop));
-    assert_eq!(legal_actions(&s), [choose(0, Park)]);
+    illegal(&mut s, choose(0, Explorer));
+    assert_eq!(
+        legal_actions(&s),
+        [choose(0, Park), choose(0, Reward::SuperUnit)]
+    );
     // Not pending: nothing to choose.
     let mut s = StateBuilder::new(7)
         .city_with(0, p(3, 3), |c| {
@@ -1178,7 +1195,10 @@ fn cascade_golden() {
     ok(&mut s, choose(0, PopulationGrowth));
     let c = city(&s, 0);
     assert_eq!((c.level, c.population, c.pending_reward), (5, 15, true));
-    assert_eq!(legal_actions(&s), [choose(0, Park)]);
+    assert_eq!(
+        legal_actions(&s),
+        [choose(0, Park), choose(0, Reward::SuperUnit)]
+    );
     ok(&mut s, choose(0, Park));
     let c = city(&s, 0);
     assert_eq!(
@@ -1232,7 +1252,10 @@ fn a_pending_reward_blocks_every_other_action() {
         .stars(0, 20)
         .explore_all()
         .build();
-    assert_eq!(legal_actions(&s), [choose(0, Workshop)]);
+    assert_eq!(
+        legal_actions(&s),
+        [choose(0, Workshop), choose(0, Explorer)]
+    );
     for a in [
         Action::Move {
             unit: UnitId(0),
@@ -1285,15 +1308,21 @@ fn several_pending_cities_resolve_by_ascending_id() {
     illegal(&mut s, choose(2, Workshop));
     ok(&mut s, choose(1, Resources));
     assert_eq!(stars(&s, 0), 5);
-    assert_eq!(legal_actions(&s), [choose(2, Workshop)]);
+    assert_eq!(
+        legal_actions(&s),
+        [choose(2, Workshop), choose(2, Explorer)]
+    );
     ok(&mut s, choose(2, Workshop));
     assert!(legal_actions(&s).contains(&Action::EndTurn));
 }
 
 #[test]
 fn choose_reward_changes_nothing_else() {
-    let cases: [(u32, u32, Reward); 6] = [
+    // Explorer and SuperUnit are replayed by `common::exp_after` (independent walk and push).
+    let cases: [(u32, u32, Reward); 8] = [
         (2, 3, Workshop),
+        (2, 4, Explorer),
+        (5, 15, Reward::SuperUnit),
         (3, 6, CityWall),
         (3, 8, Resources),
         (4, 11, PopulationGrowth),

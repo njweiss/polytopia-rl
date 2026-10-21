@@ -1,5 +1,5 @@
 //! Data-table tests (spec "Data tables"). Values are from the owner's wiki extract; the site
-//! action and reward tables (milestone 4) are the brief's Appendix.
+//! action table (milestone 4) and the reward table (milestone 5) are the briefs' Appendices.
 
 use sim_core::data::{
     Reward, SiteAction, Skill, Tables, Tech, UnitType, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
@@ -223,14 +223,18 @@ fn all_site_actions_order() {
 #[test]
 fn reward_menus_cover_levels_2_to_4_and_an_open_ended_5_plus() {
     let t = tables();
-    assert_eq!(t.reward_menu(2), [Reward::Workshop]);
+    assert_eq!(t.reward_menu(2), [Reward::Workshop, Reward::Explorer]);
     assert_eq!(t.reward_menu(3), [Reward::CityWall, Reward::Resources]);
     assert_eq!(
         t.reward_menu(4),
         [Reward::PopulationGrowth, Reward::BorderGrowth]
     );
     for level in [5, 6, 7, 10, 50, 1000] {
-        assert_eq!(t.reward_menu(level), [Reward::Park], "level {level}");
+        assert_eq!(
+            t.reward_menu(level),
+            [Reward::Park, Reward::SuperUnit],
+            "level {level}"
+        );
     }
     assert_eq!(t.resources_reward_stars(), 5);
     assert_eq!(t.population_growth_amount(), 3);
@@ -246,6 +250,19 @@ fn malformed_site_or_reward_json_is_an_error() {
     assert!(Tables::from_json(UNITS, TECHS, &bad, REWARDS).is_err());
     let bad = REWARDS.replacen("\"park\"", "\"monument\"", 1);
     assert!(Tables::from_json(UNITS, TECHS, SITES, &bad).is_err());
+    // Milestone 5 names: "explorer" and "super_unit" (snake_case, like the others).
+    for (name, wrong) in [
+        ("explorer", "\"Explorer\""),
+        ("super_unit", "\"superunit\""),
+    ] {
+        let quoted = format!("\"{name}\"");
+        assert!(REWARDS.contains(&quoted), "rewards.json lacks {quoted}");
+        let bad = REWARDS.replacen(&quoted, wrong, 1);
+        assert!(
+            Tables::from_json(UNITS, TECHS, SITES, &bad).is_err(),
+            "{wrong}"
+        );
+    }
     // A missing scalar.
     let cut = REWARDS
         .find(",\n  \"population_growth_amount\"")
