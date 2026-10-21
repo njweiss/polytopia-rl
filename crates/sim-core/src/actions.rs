@@ -233,7 +233,10 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
         let tables = state.tables.clone();
         let u = unit_mut(state, k);
         u.kills += 1;
-        if u.kills >= 3 && !u.veteran && !tables.unit(u.kind).skills.contains(&Skill::Static) {
+        if u.kills >= tables.rules().promotion_kills
+            && !u.veteran
+            && !tables.unit(u.kind).skills.contains(&Skill::Static)
+        {
             u.promotion_available = true;
         }
     }
@@ -263,15 +266,21 @@ fn apply_recover(state: &mut State, id: UnitId) {
         .tile(u.pos)
         .owner_city
         .is_some_and(|c| state.city(c).owner == u.owner);
-    let heal = if own_territory { 4 } else { 2 };
+    let rules = state.tables.rules();
+    let heal = if own_territory {
+        rules.recover_own_territory
+    } else {
+        rules.recover_elsewhere
+    };
     let u = unit_mut(state, id);
     u.health = (u.health + heal).min(u.max_health);
     u.phase = Phase::Done;
 }
 
 fn apply_promote(state: &mut State, id: UnitId) {
+    let bonus = state.tables.rules().veteran_health_bonus;
     let u = unit_mut(state, id);
-    u.max_health += 5;
+    u.max_health += bonus;
     u.health = u.max_health;
     u.veteran = true;
     u.promotion_available = false;

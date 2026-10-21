@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::data::{Tables, Tech, UnitType};
+use crate::data::{Tables, UnitType};
 use crate::grid::{chebyshev, Pos};
 use crate::map::{generate_map, GeneratedMap, MapParams, Site};
 use crate::rng::Rng;
@@ -81,8 +81,8 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
         t.city = Some(city_id);
         t.unit = Some(unit_id);
         players.push(PlayerState {
-            stars: 5,
-            techs: TechSet::from_slice(&[Tech::Organization]),
+            stars: tables.rules().start_stars,
+            techs: TechSet::from_slice(&tables.rules().start_techs),
             explored,
         });
     }
