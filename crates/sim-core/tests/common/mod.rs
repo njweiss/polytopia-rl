@@ -1,8 +1,8 @@
-//! Shared helpers for the milestone 3, 4 and 5 tests. Every checker here is written from the rules
-//! in docs/MILESTONE_3, docs/MILESTONE_4 (with the spec's tile-action notes that overrule D4) and
-//! docs/MILESTONE_5 independently of the code under test: it never calls `reachable_tiles`,
-//! `defense_bonus`, `legal_actions`, `apply`, anything in `sim_core::economy`,
-//! `sim_core::explorer` or `sim_core::spawn` to compute an expectation.
+//! Shared helpers for the milestone 3 to 6 tests. Every checker here is written from the rules
+//! in docs/MILESTONE_3, docs/MILESTONE_4 (with the spec's tile-action notes that overrule D4),
+//! docs/MILESTONE_5 and docs/MILESTONE_6 independently of the code under test: it never calls
+//! `reachable_tiles`, `defense_bonus`, `legal_actions`, `apply`, anything in `sim_core::economy`,
+//! `sim_core::explorer`, `sim_core::spawn` or `sim_core::score` to compute an expectation.
 #![allow(dead_code)]
 
 use sim_core::actions::Action;
@@ -13,7 +13,8 @@ use sim_core::map::Resource;
 use sim_core::map::Terrain;
 use sim_core::rng::Rng;
 use sim_core::state::{
-    City, CityId, Config, Dir, Improvement, Phase, PlayerId, State, TileState, Unit, UnitId,
+    City, CityId, Config, Dir, Improvement, Outcome, Phase, PlayerId, State, TileState, Unit,
+    UnitId,
 };
 use sim_core::testing::StateBuilder;
 
@@ -185,8 +186,9 @@ pub fn expected_bonus(s: &State, id: UnitId) -> f32 {
 
 /// Legal actions enumerated straight from the briefs, in canonical order. Uses `bf_reach`.
 /// Milestone 4: a pending reward of the current player allows only the lowest-id pending city's
-/// ChooseReward (menu order); otherwise units, then Train per city, then site actions per tile,
-/// then Research, then EndTurn.
+/// ChooseReward (menu order); otherwise units (per unit Move, Attack, Capture (milestone 6),
+/// Recover, Promote), then Train per city, then site actions per tile, then Research, then
+/// EndTurn. Nothing once the game has an outcome.
 pub fn bf_legal(s: &State) -> Vec<Action> {
     let mut out = Vec::new();
     if s.outcome.is_some() {
@@ -231,6 +233,9 @@ pub fn bf_legal(s: &State) -> Vec<Action> {
                     });
                 }
             }
+        }
+        if exp_capture_legal(s, u) {
+            out.push(Action::Capture { unit: id });
         }
         if u.phase == Phase::Fresh {
             out.push(Action::Recover { unit: id });
@@ -383,8 +388,9 @@ fn exp_city_mut(s: &mut State, id: CityId) -> &mut City {
     s.cities.iter_mut().find(|c| c.id == id).unwrap()
 }
 
-/// The state after a legal milestone 4 action (Train, Site, Research, ChooseReward or EndTurn),
-/// replayed from the brief. Panics on unit actions.
+/// The state after a legal milestone 4 action (Train, Site, Research, ChooseReward or EndTurn,
+/// with milestone 6's turn cap) or a milestone 6 Capture, replayed from the briefs. Panics on the
+/// other unit actions.
 pub fn exp_after(prev: &State, a: &Action) -> State {
     let mut s = prev.clone();
     let cur = s.current as usize;
@@ -472,6 +478,13 @@ pub fn exp_after(prev: &State, a: &Action) -> State {
                 }
             }
         }
+        Action::Capture { unit } => exp_capture(&mut s, unit),
+        Action::EndTurn if prev.current == 1 && prev.turn + 1 == prev.config.turn_cap => {
+            // Milestone 6 turn cap: no income, no unit reset; the higher score wins.
+            s.turn += 1;
+            s.current = 0;
+            s.outcome = Some(exp_outcome_by_score(prev));
+        }
         Action::EndTurn => {
             s.current = 1 - s.current;
             if s.current == 0 {
@@ -485,7 +498,7 @@ pub fn exp_after(prev: &State, a: &Action) -> State {
                 u.phase = Phase::Fresh;
             }
         }
-        _ => panic!("exp_after handles only economy actions and EndTurn, got {a:?}"),
+        _ => panic!("exp_after handles only economy actions, Capture and EndTurn, got {a:?}"),
     }
     s
 }
@@ -803,6 +816,189 @@ pub fn expected_combat(s: &State, attacker: UnitId, defender: UnitId) -> (u32, u
     (out.attacker_health, out.defender_health)
 }
 
+// ---------- milestone 6 rules, replayed from the brief ----------
+
+/// Unit cost in stars from the spec's unit table (Super Unit: none).
+pub fn exp_unit_cost(kind: UnitType) -> Option<u32> {
+    match kind {
+        UnitType::Warrior => Some(2),
+        UnitType::Rider | UnitType::Archer | UnitType::Defender => Some(3),
+        UnitType::SuperUnit => None,
+    }
+}
+
+/// Tech tier from the spec's tech table.
+pub fn exp_tier(tech: Tech) -> u32 {
+    match tech {
+        Tech::Climbing | Tech::Hunting | Tech::Organization | Tech::Riding => 1,
+        Tech::Archery | Tech::Forestry | Tech::Farming | Tech::Strategy | Tech::Mining => 2,
+    }
+}
+
+/// The brief's score terms `[units, territory, exploration, cities, parks, techs]`, with the
+/// weights from `s.config.score_weights`.
+pub fn exp_score_terms(s: &State, player: PlayerId) -> [u32; 6] {
+    let w = s.config.score_weights;
+    let units = s
+        .units
+        .iter()
+        .filter(|u| u.owner == player)
+        .map(|u| match exp_unit_cost(u.kind) {
+            Some(cost) => w.unit_per_star * cost,
+            None => w.super_unit,
+        })
+        .sum();
+    let owner_of = |id: CityId| s.cities.iter().find(|c| c.id == id).unwrap().owner;
+    let tiles = s
+        .tiles
+        .iter()
+        .filter(|t| t.owner_city.is_some_and(|c| owner_of(c) == player))
+        .count() as u32;
+    let seen = s.players[player as usize]
+        .explored
+        .iter()
+        .filter(|&&e| e)
+        .count() as u32;
+    let mine: Vec<&City> = s.cities.iter().filter(|c| c.owner == player).collect();
+    let cities = mine
+        .iter()
+        .map(|c| {
+            let surplus = c.population.saturating_sub(exp_cum(c.level));
+            w.city_base + w.city_per_level * (c.level - 1) + w.population_surplus * surplus
+        })
+        .sum();
+    let parks: u32 = mine.iter().map(|c| c.parks).sum();
+    let techs = ALL_TECHS
+        .iter()
+        .filter(|&&t| s.players[player as usize].techs.contains(t))
+        .map(|&t| w.tech_per_tier * exp_tier(t))
+        .sum();
+    [
+        units,
+        w.territory_per_tile * tiles,
+        w.exploration_per_tile * seen,
+        cities,
+        w.park * parks,
+        techs,
+    ]
+}
+
+pub fn exp_score(s: &State, player: PlayerId) -> u32 {
+    exp_score_terms(s, player).iter().sum()
+}
+
+/// `Win(p)` for the strictly higher score, `Draw` on equal scores.
+pub fn exp_outcome_by_score(s: &State) -> Outcome {
+    let (a, b) = (exp_score(s, 0), exp_score(s, 1));
+    if a > b {
+        Outcome::Win(0)
+    } else if b > a {
+        Outcome::Win(1)
+    } else {
+        Outcome::Draw
+    }
+}
+
+/// Capture legality apart from the outcome, pending-reward and current-player checks: phase
+/// Fresh, and the unit's tile is a village or holds a city of the other player.
+pub fn exp_capture_legal(s: &State, u: &Unit) -> bool {
+    let t = s.tile(u.pos);
+    let enemy_city = t
+        .city
+        .is_some_and(|id| s.cities.iter().any(|c| c.id == id && c.owner != u.owner));
+    u.phase == Phase::Fresh && (t.village || enemy_city)
+}
+
+/// The brief's Capture effect, applied to `s` in place.
+pub fn exp_capture(s: &mut State, unit: UnitId) {
+    let u = s.units.iter().find(|u| u.id == unit).unwrap().clone();
+    let at = u.pos;
+    let city = if s.tile(at).village {
+        let id = CityId(s.cities.len() as u32);
+        s.cities.push(City {
+            id,
+            owner: u.owner,
+            pos: at,
+            level: 1,
+            population: 0,
+            is_capital: false,
+            workshop: false,
+            parks: 0,
+            wall: false,
+            border_growth_used: false,
+            pending_reward: false,
+        });
+        let t = tile_mut(s, at);
+        t.village = false;
+        t.city = Some(id);
+        for q in all_pos(s.size) {
+            let t = tile_mut(s, q);
+            if cheb(q, at) <= 1 && t.owner_city.is_none() {
+                t.owner_city = Some(id);
+            }
+        }
+        id
+    } else {
+        let id = s.tile(at).city.unwrap();
+        s.cities.iter_mut().find(|c| c.id == id).unwrap().owner = u.owner;
+        for o in s.units.iter_mut().filter(|o| o.origin == Some(id)) {
+            o.origin = None;
+        }
+        id
+    };
+    let me = s.units.iter_mut().find(|o| o.id == unit).unwrap();
+    me.origin = Some(city);
+    me.phase = Phase::Done;
+    for q in all_pos(s.size) {
+        if s.tile(q).owner_city == Some(city) {
+            let i = idx(s, q);
+            s.players[u.owner as usize].explored[i] = true;
+        }
+    }
+    if s.cities.iter().any(|c| c.id == city && c.is_capital) {
+        s.outcome = Some(Outcome::Win(u.owner));
+    }
+}
+
+/// Tiles whose `owner_city` is `city`, row-major.
+pub fn territory_of(s: &State, city: CityId) -> Vec<Pos> {
+    all_pos(s.size)
+        .into_iter()
+        .filter(|&q| s.tile(q).owner_city == Some(city))
+        .collect()
+}
+
+/// One of every action kind, for "nothing is legal after the end" checks (ids taken from `s`
+/// where it has them).
+pub fn every_action_kind(s: &State) -> Vec<Action> {
+    let unit = s.units.first().map_or(UnitId(0), |u| u.id);
+    let city = s.cities.first().map_or(CityId(0), |c| c.id);
+    let at = s.units.first().map_or(Pos::new(0, 0), |u| u.pos);
+    vec![
+        Action::Move { unit, to: at },
+        Action::Attack { unit, target: at },
+        Action::Capture { unit },
+        Action::Recover { unit },
+        Action::Promote { unit },
+        Action::Train {
+            city,
+            kind: UnitType::Warrior,
+        },
+        Action::Site {
+            at,
+            action: SiteAction::HarvestFruit,
+        },
+        Action::Research {
+            tech: Tech::Hunting,
+        },
+        Action::ChooseReward {
+            city,
+            reward: Reward::Workshop,
+        },
+        Action::EndTurn,
+    ]
+}
+
 // ---------- random boards ----------
 
 const KINDS: [UnitType; 5] = [
@@ -889,7 +1085,7 @@ pub fn random_board(seed: u64) -> State {
     if rng.gen_range(5) == 0 {
         b = b.config(Config {
             full_observability: true,
-            turn_cap: 50,
+            ..Config::default()
         });
     }
     b.build()
@@ -1071,6 +1267,7 @@ pub fn pick_weighted(rng: &mut Rng, legal: &[Action]) -> Action {
         match a {
             Action::Move { .. }
             | Action::Attack { .. }
+            | Action::Capture { .. }
             | Action::Recover { .. }
             | Action::Promote { .. } => groups[0].push(a),
             Action::Train { .. } => groups[1].push(a),

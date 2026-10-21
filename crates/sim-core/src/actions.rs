@@ -19,6 +19,7 @@ use crate::state::{City, CityId, Dir, Improvement, Phase, PlayerId, State, Unit,
 pub enum Action {
     Move { unit: UnitId, to: Pos },
     Attack { unit: UnitId, target: Pos },
+    Capture { unit: UnitId },
     Recover { unit: UnitId },
     Promote { unit: UnitId },
     Train { city: CityId, kind: UnitType },
@@ -88,6 +89,7 @@ pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
     match *action {
         Action::Move { unit, to } => apply_move(state, unit, to),
         Action::Attack { unit, target } => apply_attack(state, unit, target),
+        Action::Capture { unit } => apply_capture(state, unit),
         Action::Recover { unit } => apply_recover(state, unit),
         Action::Promote { unit } => apply_promote(state, unit),
         Action::Train { city, kind } => apply_train(state, city, kind),
@@ -112,6 +114,7 @@ fn is_legal(state: &State, action: &Action) -> bool {
     let id = match *action {
         Action::Move { unit, .. }
         | Action::Attack { unit, .. }
+        | Action::Capture { unit }
         | Action::Recover { unit }
         | Action::Promote { unit } => unit,
         Action::Train { city, kind } => return train_legal(state, city, kind),
@@ -373,6 +376,10 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
     if attacker_ranged {
         u.last_dir = Some(direction(a.pos, d.pos));
     }
+}
+
+fn apply_capture(_state: &mut State, _id: UnitId) {
+    unimplemented!("milestone 6: Capture")
 }
 
 fn apply_recover(state: &mut State, id: UnitId) {

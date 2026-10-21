@@ -155,7 +155,7 @@ fn players_start_with_five_stars_organization_and_25_explored_tiles() {
 fn full_observability_explores_everything_for_both() {
     let cfg = Config {
         full_observability: true,
-        turn_cap: 50,
+        ..Config::default()
     };
     for seed in 0..50 {
         let (s, _, _, _) = start(seed, &cfg);
