@@ -82,18 +82,23 @@ pub fn reachable_tiles(state: &State, unit: UnitId) -> Vec<Pos> {
 pub fn defense_bonus(state: &State, defender: UnitId) -> f32 {
     let u = state.unit(defender).expect("defender is alive");
     let techs = &state.players[u.owner as usize].techs;
+    let rules = state.tables.rules();
     let tile = state.tile(u.pos);
     let mut bonus = 1.0f32;
     if (tile.terrain == Terrain::Forest && techs.contains(Tech::Archery))
         || (tile.terrain == Terrain::Mountain && techs.contains(Tech::Climbing))
     {
-        bonus = bonus.max(1.5);
+        bonus = bonus.max(rules.terrain_defense_bonus);
     }
     if let Some(cid) = tile.city {
         let city = state.city(cid);
         let fortify = state.tables.unit(u.kind).skills.contains(&Skill::Fortify);
         if city.owner == u.owner && fortify {
-            bonus = bonus.max(if city.wall { 4.0 } else { 1.5 });
+            bonus = bonus.max(if city.wall {
+                rules.wall_defense_bonus
+            } else {
+                rules.city_defense_bonus
+            });
         }
     }
     bonus

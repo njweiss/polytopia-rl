@@ -1,0 +1,11 @@
+{
+  "start_stars": 5,
+  "start_techs": ["organization"],
+  "terrain_defense_bonus": 1.5,
+  "city_defense_bonus": 1.5,
+  "wall_defense_bonus": 4.0,
+  "recover_own_territory": 4,
+  "recover_elsewhere": 2,
+  "promotion_kills": 3,
+  "veteran_health_bonus": 5
+}
