@@ -1,10 +1,12 @@
 //! Property tests and random playouts (docs/MILESTONE_3 "Tests" items 5-7, docs/MILESTONE_4
-//! "Tests" item 6, docs/MILESTONE_5 "Tests" item 6; spec "Invariants and test plan"). Games start from `new_game_from_seed`, from
+//! "Tests" item 6, docs/MILESTONE_5 "Tests" item 6, docs/MILESTONE_6 "Tests" items 7-8; spec
+//! "Invariants and test plan"). Games start from `new_game_from_seed`, from
 //! boosted new games (extra stars, techs and pre-grown capitals so levels 3 to 5 are visited), from
 //! random scripted boards (`common::random_board`: every unit type, cities, walls, partial fog)
 //! and from random economy boards (`common::random_economy_board`: resources, improvements,
-//! levels, pending rewards, unit origins). Actions are chosen by the test's own RNG. Every check
-//! is an independent replay of the briefs' rules.
+//! levels, pending rewards, unit origins), and for milestone 6 from capture scenarios (new games
+//! with a small turn cap and extra units on villages and next to the enemy capital). Actions are
+//! chosen by the test's own RNG. Every check is an independent replay of the briefs' rules.
 
 mod common;
 
@@ -14,13 +16,14 @@ use sim_core::data::{Reward, Skill, Tech, ALL_TECHS, ALL_UNITS};
 use sim_core::grid::Pos;
 use sim_core::map::{MapParams, Terrain};
 use sim_core::rng::Rng;
+use sim_core::score::{score, score_breakdown};
 use sim_core::setup::new_game_from_seed;
-use sim_core::state::{CityId, Config, Dir, Phase, State, UnitId};
+use sim_core::state::{CityId, Config, Dir, Outcome, Phase, State, Unit, UnitId};
 
 fn seeded_game(seed: u64) -> State {
     let cfg = Config {
         full_observability: seed % 5 == 4,
-        turn_cap: 50,
+        ..Config::default()
     };
     new_game_from_seed(seed, &MapParams::default(), &cfg)
 }
@@ -44,10 +47,75 @@ fn boosted_game(seed: u64) -> State {
     s
 }
 
+/// Milestone 6 scenario: a new game with `turn_cap` 10 to 30 (by seed) where every free village
+/// holds a Fresh Warrior (players alternate in row-major village order, starting with
+/// `seed % 2`) and each player has a Fresh Rider on the first free non-mountain neighbor
+/// (row-major) of the enemy capital. When `seed` is a multiple of 3 the Rider stands on the enemy capital
+/// itself instead, and the capital's own Warrior is moved to that neighbor. Added units have no
+/// origin; their owner explores what they see (radius 1, or 2 on a mountain).
+fn capture_scenario(seed: u64) -> State {
+    let cfg = Config {
+        full_observability: seed % 5 == 4,
+        turn_cap: 10 + (seed % 21) as u32,
+        ..Config::default()
+    };
+    let mut s = new_game_from_seed(seed, &MapParams::default(), &cfg);
+    let place = |s: &mut State, owner: u8, kind, at: Pos| {
+        let health = s.tables.unit(kind).health;
+        let id = UnitId(s.next_unit_id);
+        s.next_unit_id += 1;
+        s.units.push(Unit {
+            id,
+            kind,
+            owner,
+            pos: at,
+            health,
+            max_health: health,
+            origin: None,
+            kills: 0,
+            veteran: false,
+            promotion_available: false,
+            phase: Phase::Fresh,
+            last_dir: None,
+        });
+        tile_mut(s, at).unit = Some(id);
+        for q in vision(s, at) {
+            let i = idx(s, q);
+            s.players[owner as usize].explored[i] = true;
+        }
+    };
+    let villages: Vec<Pos> = all_pos(s.size)
+        .into_iter()
+        .filter(|&q| s.tile(q).village && s.tile(q).unit.is_none())
+        .collect();
+    for (k, &v) in villages.iter().enumerate() {
+        let owner = ((seed as usize + k) % 2) as u8;
+        place(&mut s, owner, sim_core::data::UnitType::Warrior, v);
+    }
+    for pl in 0..2u8 {
+        let capital = s.cities[1 - pl as usize].pos;
+        let spot = nbrs(s.size, capital)
+            .into_iter()
+            .find(|&q| s.tile(q).unit.is_none() && s.tile(q).terrain != Terrain::Mountain);
+        let Some(q) = spot else { continue };
+        if seed.is_multiple_of(3) {
+            let home = s.tile(capital).unit.unwrap();
+            s.units.iter_mut().find(|u| u.id == home).unwrap().pos = q;
+            tile_mut(&mut s, q).unit = Some(home);
+            tile_mut(&mut s, capital).unit = None;
+            place(&mut s, pl, sim_core::data::UnitType::Rider, capital);
+        } else {
+            place(&mut s, pl, sim_core::data::UnitType::Rider, q);
+        }
+    }
+    s
+}
+
 fn actor(a: &Action) -> Option<UnitId> {
     match *a {
         Action::Move { unit, .. }
         | Action::Attack { unit, .. }
+        | Action::Capture { unit }
         | Action::Recover { unit }
         | Action::Promote { unit } => Some(unit),
         _ => None,
@@ -73,7 +141,7 @@ fn junk(rng: &mut Rng, s: &State) -> Action {
     let city = CityId(rng.gen_range(s.cities.len() as u32 + 2));
     let n = s.size as u32 + 2;
     let pos = Pos::new(rng.gen_range(n) as u8, rng.gen_range(n) as u8);
-    match rng.gen_range(9) {
+    match rng.gen_range(10) {
         0 => Action::Move { unit, to: pos },
         1 => Action::Attack { unit, target: pos },
         2 => Action::Recover { unit },
@@ -93,11 +161,90 @@ fn junk(rng: &mut Rng, s: &State) -> Action {
             city,
             reward: REWARDS[rng.gen_range(8) as usize],
         },
+        8 => Action::Capture { unit },
         _ => Action::EndTurn,
     }
 }
 
 // ---------- the step checker ----------
+
+/// Milestone 6 invariants on `next` (brief "Tests" item 7), and what may change from `prev`.
+fn check_m6_invariants(prev: &State, a: &Action, next: &State, ctx: &str) {
+    // Cities are dense by id, and `tile.city` agrees with `cities[].pos`.
+    for (i, c) in next.cities.iter().enumerate() {
+        assert_eq!(c.id, CityId(i as u32), "{ctx}: city ids not dense");
+        assert_eq!(
+            next.tile(c.pos).city,
+            Some(c.id),
+            "{ctx}: tile.city of {c:?}"
+        );
+    }
+    let city_tiles = next.tiles.iter().filter(|t| t.city.is_some()).count();
+    assert_eq!(city_tiles, next.cities.len(), "{ctx}: stray tile.city");
+    for t in &next.tiles {
+        assert!(
+            !(t.village && t.city.is_some()),
+            "{ctx}: village with a city"
+        );
+    }
+    // Cities are never removed; a city's owner changes only by capturing it, `is_capital` never
+    // changes, and new cities (village captures) are not capitals.
+    assert!(
+        next.cities.len() >= prev.cities.len(),
+        "{ctx}: city removed"
+    );
+    let captured = match *a {
+        Action::Capture { unit } => prev.tile(prev.unit(unit).unwrap().pos).city,
+        _ => None,
+    };
+    for (c0, c1) in prev.cities.iter().zip(&next.cities) {
+        assert_eq!(c1.is_capital, c0.is_capital, "{ctx}: is_capital changed");
+        if Some(c0.id) != captured {
+            assert_eq!(c1.owner, c0.owner, "{ctx}: owner changed without capture");
+        }
+    }
+    for c in &next.cities[prev.cities.len()..] {
+        assert!(!c.is_capital, "{ctx}: new capital {c:?}");
+    }
+    let capitals = |s: &State| s.cities.iter().filter(|c| c.is_capital).count();
+    assert_eq!(capitals(next), capitals(prev), "{ctx}: capitals");
+    // Every origin names an existing city owned by the unit's owner (orphans have `None`).
+    for u in &next.units {
+        if let Some(o) = u.origin {
+            let c = next.cities.iter().find(|c| c.id == o);
+            assert!(c.is_some(), "{ctx}: {u:?} names a missing city");
+            assert_eq!(c.unwrap().owner, u.owner, "{ctx}: {u:?} not orphaned");
+        }
+    }
+    // Score is the breakdown total and the brief's formula.
+    for pl in 0..2u8 {
+        let b = score_breakdown(next, pl);
+        let terms = [
+            b.units,
+            b.territory,
+            b.exploration,
+            b.cities,
+            b.parks,
+            b.techs,
+        ];
+        assert_eq!(terms, exp_score_terms(next, pl), "{ctx}: breakdown of {pl}");
+        assert_eq!(score(next, pl), b.total(), "{ctx}: score of {pl}");
+    }
+    // The outcome, once set, never changes; the turn never passes the cap.
+    if prev.outcome.is_some() {
+        assert_eq!(next.outcome, prev.outcome, "{ctx}: outcome changed");
+    }
+    assert!(
+        next.turn <= next.config.turn_cap,
+        "{ctx}: turn past the cap"
+    );
+    if next.outcome.is_none() {
+        assert!(
+            next.turn < next.config.turn_cap,
+            "{ctx}: cap reached without an outcome"
+        );
+    }
+}
 
 /// Checks `next = apply(prev, a)` against the briefs' rules and the spec invariants.
 fn check_step(prev: &State, a: &Action, next: &State, ctx: &str) {
@@ -120,11 +267,12 @@ fn check_step(prev: &State, a: &Action, next: &State, ctx: &str) {
         }
     }
     check_economy_invariants(next, ctx);
+    check_m6_invariants(prev, a, next, ctx);
 
-    // Economy actions and EndTurn: the whole next state is the brief's replay.
-    if actor(a).is_none() {
+    // Economy actions, Capture and EndTurn: the whole next state is the briefs' replay.
+    if actor(a).is_none() || matches!(a, Action::Capture { .. }) {
         assert_eq!(*next, exp_after(prev, a), "{ctx}: state after {a:?}");
-        if *a == Action::EndTurn {
+        if *a == Action::EndTurn && next.outcome.is_none() {
             assert_eq!(next.current, 1 - prev.current, "{ctx}");
             assert!(
                 next.units
@@ -350,22 +498,58 @@ struct Seen {
     /// Super Unit spawns onto an occupied city tile, and those where the occupant was removed.
     pushes: usize,
     removals: usize,
+    /// Milestone 6: village and city captures, and how games ended.
+    village_captures: usize,
+    city_captures: usize,
+    capital_wins: usize,
+    cap_endings: usize,
 }
 
 /// Plays `steps` actions with the test's RNG; at each step compares `legal_actions` with the
 /// brute force, optionally probes `apply` on every legal action and on junk, and checks the step.
 fn play(
-    mut s: State,
+    s: State,
     rng: &mut Rng,
     steps: usize,
     probe: bool,
     ctx: &str,
     seen: &mut Seen,
 ) -> (State, Vec<Action>) {
+    play_with(s, rng, steps, probe, ctx, seen, pick_weighted)
+}
+
+/// Milestone 6 picker: a legal Capture (uniformly among them) with probability 1/2, otherwise
+/// `pick_weighted`. Makes captures common enough for the vacuity guards.
+fn pick_capture(rng: &mut Rng, legal: &[Action]) -> Action {
+    let captures: Vec<Action> = legal
+        .iter()
+        .copied()
+        .filter(|a| matches!(a, Action::Capture { .. }))
+        .collect();
+    if !captures.is_empty() && rng.gen_range(2) == 0 {
+        return captures[rng.gen_range(captures.len() as u32) as usize];
+    }
+    pick_weighted(rng, legal)
+}
+
+/// `play` with a given action picker.
+fn play_with(
+    mut s: State,
+    rng: &mut Rng,
+    steps: usize,
+    probe: bool,
+    ctx: &str,
+    seen: &mut Seen,
+    pick: fn(&mut Rng, &[Action]) -> Action,
+) -> (State, Vec<Action>) {
     let mut log = Vec::new();
     check_economy_invariants(&s, &format!("{ctx} start"));
     for step in 0..steps {
         let ctx = format!("{ctx} step {step}");
+        if s.is_terminal() {
+            check_terminal(&s, rng, &ctx);
+            break;
+        }
         let legal = legal_actions(&s);
         assert_eq!(legal, bf_legal(&s), "{ctx}: legal_actions vs brute force");
         for a in &legal {
@@ -392,7 +576,7 @@ fn play(
                 assert_eq!(t, s, "{ctx}: rejected {a:?} changed the state");
             }
         }
-        let a = pick_weighted(rng, &legal);
+        let a = pick(rng, &legal);
         let prev = s.clone();
         assert_eq!(apply(&mut s, &a), Ok(()), "{ctx}: {a:?}");
         check_step(&prev, &a, &s, &format!("{ctx} {a:?}"));
@@ -402,6 +586,17 @@ fn play(
                 seen.kills += prev.units.len() - s.units.len();
             }
             Action::Train { .. } => seen.trains += 1,
+            Action::Capture { unit } => {
+                if prev.tile(prev.unit(unit).unwrap().pos).village {
+                    seen.village_captures += 1;
+                } else {
+                    seen.city_captures += 1;
+                }
+                if s.is_terminal() {
+                    seen.capital_wins += 1;
+                }
+            }
+            Action::EndTurn if s.is_terminal() => seen.cap_endings += 1,
             Action::Research { .. } => seen.research += 1,
             Action::Site { action, .. } => seen.sites[action as usize] += 1,
             Action::ChooseReward { city, reward } => {
@@ -425,6 +620,22 @@ fn play(
         log.push(a);
     }
     (s, log)
+}
+
+/// A terminal state: `legal_actions` is empty, and `apply` rejects every action kind and junk
+/// without changing anything.
+fn check_terminal(s: &State, rng: &mut Rng, ctx: &str) {
+    assert!(
+        legal_actions(s).is_empty(),
+        "{ctx}: legal actions after the end"
+    );
+    let mut probes = every_action_kind(s);
+    probes.extend((0..8).map(|_| junk(rng, s)));
+    for a in probes {
+        let mut t = s.clone();
+        assert_eq!(apply(&mut t, &a), Err(ActionError::Illegal), "{ctx}: {a:?}");
+        assert_eq!(t, *s, "{ctx}: {a:?} after the end changed the state");
+    }
 }
 
 // ---------- tests ----------
@@ -515,6 +726,110 @@ fn random_playouts_keep_every_invariant() {
     assert!(seen.pushes > 30, "only {} Super Unit pushes", seen.pushes);
 }
 
+/// Milestone 6: from capture scenarios and plain new games with a small cap, every game ends
+/// with a valid outcome within `2 * turn_cap * 100` actions, keeping every invariant on the way.
+#[test]
+fn random_games_always_end_with_a_valid_outcome() {
+    let mut rng = Rng::new(0xE2D);
+    let seen = &mut Seen::default();
+    let mut outcomes = [0usize; 3]; // Win(0), Win(1), Draw
+    for seed in 0..90 {
+        let s = if seed % 3 == 2 {
+            let mut s = seeded_game(seed);
+            s.config.turn_cap = 10 + (seed % 11) as u32;
+            s
+        } else {
+            capture_scenario(seed)
+        };
+        let cap = s.config.turn_cap;
+        let bound = 2 * cap as usize * 100;
+        let ctx = format!("ending {seed}");
+        let probe = seed % 10 == 0;
+        let (end, log) = play_with(s, &mut rng, bound + 1, probe, &ctx, seen, pick_capture);
+        assert!(
+            end.is_terminal(),
+            "{ctx}: no outcome after {} actions",
+            log.len()
+        );
+        assert!(log.len() <= bound, "{ctx}: {} actions", log.len());
+        match end.outcome.unwrap() {
+            Outcome::Win(0) => outcomes[0] += 1,
+            Outcome::Win(_) => outcomes[1] += 1,
+            Outcome::Draw => outcomes[2] += 1,
+        }
+        // A game ends either by a capital capture or at the cap (turn == cap, player 0 to move).
+        if *log.last().unwrap() == Action::EndTurn {
+            assert_eq!((end.turn, end.current), (cap, 0), "{ctx}");
+        } else {
+            assert!(matches!(log.last(), Some(Action::Capture { .. })), "{ctx}");
+            assert!(end.turn < cap, "{ctx}");
+        }
+    }
+    // Sanity: both endings and both winners occur (not rules; guards against a vacuous run).
+    assert!(
+        seen.capital_wins >= 10,
+        "only {} capital wins",
+        seen.capital_wins
+    );
+    assert!(
+        seen.cap_endings >= 10,
+        "only {} cap endings",
+        seen.cap_endings
+    );
+    assert!(
+        seen.village_captures >= 100,
+        "{} village captures",
+        seen.village_captures
+    );
+    assert!(
+        seen.city_captures >= 15,
+        "{} city captures",
+        seen.city_captures
+    );
+    assert!(
+        outcomes[0] >= 10 && outcomes[1] >= 10,
+        "outcomes {outcomes:?}"
+    );
+}
+
+/// Milestone 6: same seed + actions give identical states through captures and the cap, and a
+/// clone taken mid-game evolves like the original to the end.
+#[test]
+fn games_replay_identically_through_captures_and_the_cap() {
+    let mut rng = Rng::new(0xF1A);
+    let mut endings = [0usize; 2]; // by capture, at the cap
+    for seed in 0..30 {
+        let mut s = capture_scenario(seed);
+        let mut states = vec![s.clone()];
+        let mut log = Vec::new();
+        let bound = 2 * s.config.turn_cap as usize * 100;
+        while !s.is_terminal() {
+            assert!(
+                log.len() < bound,
+                "seed {seed}: no outcome after {bound} actions"
+            );
+            let a = pick_capture(&mut rng, &legal_actions(&s));
+            apply(&mut s, &a).unwrap();
+            states.push(s.clone());
+            log.push(a);
+        }
+        endings[usize::from(*log.last().unwrap() == Action::EndTurn)] += 1;
+        let mut r = capture_scenario(seed);
+        assert_eq!(r, states[0]);
+        for (i, a) in log.iter().enumerate() {
+            apply(&mut r, a).unwrap();
+            assert_eq!(r, states[i + 1], "seed {seed} step {i}");
+        }
+        let mid = log.len() / 2;
+        let mut c = states[mid].clone();
+        for (i, a) in log[mid..].iter().enumerate() {
+            assert_eq!(apply(&mut c, a), Ok(()), "seed {seed} clone step {i}");
+        }
+        assert_eq!(c, s, "seed {seed}: clone ended elsewhere");
+    }
+    assert!(endings[0] >= 3 && endings[1] >= 3, "endings {endings:?}");
+}
+
 /// Seeded, boosted, scripted or economy start, by `seed % 4`.
 fn any_start(seed: u64) -> State {
     match seed % 4 {
@@ -534,6 +849,9 @@ fn same_seed_and_actions_replay_identically() {
             let mut s = any_start(seed);
             let mut log = Vec::new();
             for _ in 0..200 {
+                if s.is_terminal() {
+                    break;
+                }
                 let a = pick_weighted(&mut rng, &legal_actions(&s));
                 apply(&mut s, &a).unwrap();
                 states.push(s.clone());
@@ -556,11 +874,17 @@ fn a_clone_evolves_like_the_original() {
     for seed in 0..40 {
         let mut s = any_start(seed);
         for _ in 0..60 {
+            if s.is_terminal() {
+                break;
+            }
             let a = pick_weighted(&mut rng, &legal_actions(&s));
             apply(&mut s, &a).unwrap();
         }
         let mut c = s.clone();
         for step in 0..120 {
+            if s.is_terminal() {
+                break;
+            }
             let legal = legal_actions(&s);
             assert_eq!(legal, legal_actions(&c), "seed {seed} step {step}");
             let a = pick_weighted(&mut rng, &legal);

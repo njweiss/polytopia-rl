@@ -265,7 +265,7 @@ fn full_observability_wanders_and_changes_no_mask() {
     let open = [p(0, 0), p(0, 1), p(0, 2)];
     let cfg = Config {
         full_observability: true,
-        turn_cap: 50,
+        ..Config::default()
     };
     let before = walled(5, &open)
         .city(0, p(0, 0))
@@ -451,7 +451,7 @@ fn walk_board(seed: u64) -> State {
     if r.gen_range(8) == 0 {
         b = b.config(Config {
             full_observability: true,
-            turn_cap: 50,
+            ..Config::default()
         });
     }
     b.rng(Rng::new(r.next_u32() as u64)).build()

@@ -59,10 +59,46 @@ impl TechSet {
     }
 }
 
+/// Score weights (spec: "Score"; docs/MILESTONE_6 "Score").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScoreWeights {
+    /// Times the unit's cost in stars.
+    pub unit_per_star: u32,
+    /// Flat; Super Units have no cost.
+    pub super_unit: u32,
+    pub territory_per_tile: u32,
+    pub exploration_per_tile: u32,
+    pub city_base: u32,
+    /// Times `level - 1`.
+    pub city_per_level: u32,
+    /// Times the population above the current level's threshold.
+    pub population_surplus: u32,
+    pub park: u32,
+    /// Times the tier, per researched tech.
+    pub tech_per_tier: u32,
+}
+
+impl Default for ScoreWeights {
+    fn default() -> ScoreWeights {
+        ScoreWeights {
+            unit_per_star: 5,
+            super_unit: 50,
+            territory_per_tile: 20,
+            exploration_per_tile: 5,
+            city_base: 100,
+            city_per_level: 50,
+            population_surplus: 5,
+            park: 250,
+            tech_per_tier: 100,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub full_observability: bool,
     pub turn_cap: u32,
+    pub score_weights: ScoreWeights,
 }
 
 impl Default for Config {
@@ -70,6 +106,7 @@ impl Default for Config {
         Config {
             full_observability: false,
             turn_cap: 50,
+            score_weights: ScoreWeights::default(),
         }
     }
 }
@@ -137,7 +174,6 @@ pub struct PlayerState {
     pub explored: Vec<bool>,
 }
 
-/// Unused until milestone 6.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Outcome {
     Win(PlayerId),
@@ -185,5 +221,9 @@ impl State {
 
     pub fn is_explored(&self, player: PlayerId, p: Pos) -> bool {
         self.players[player as usize].explored[self.index(p)]
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.outcome.is_some()
     }
 }
