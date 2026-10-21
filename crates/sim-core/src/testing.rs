@@ -8,7 +8,8 @@ use crate::grid::{chebyshev, Pos};
 use crate::map::{Resource, Terrain};
 use crate::rng::Rng;
 use crate::state::{
-    City, CityId, Config, Phase, PlayerId, PlayerState, State, TechSet, TileState, Unit, UnitId,
+    City, CityId, Config, Improvement, Phase, PlayerId, PlayerState, State, TechSet, TileState,
+    Unit, UnitId,
 };
 
 /// Defaults: every tile Field with nothing on it, nothing explored, no techs, 0 stars, turn 0,
@@ -64,6 +65,11 @@ impl StateBuilder {
 
     pub fn resource(mut self, p: Pos, resource: Resource) -> StateBuilder {
         self.tile_mut(p).resource = Some(resource);
+        self
+    }
+
+    pub fn improvement(mut self, p: Pos, improvement: Improvement) -> StateBuilder {
+        self.tile_mut(p).improvement = Some(improvement);
         self
     }
 

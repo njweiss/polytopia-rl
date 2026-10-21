@@ -1,0 +1,10 @@
+{
+  "menus": [
+    { "min_level": 2, "max_level": 2,    "options": ["workshop"] },
+    { "min_level": 3, "max_level": 3,    "options": ["city_wall", "resources"] },
+    { "min_level": 4, "max_level": 4,    "options": ["population_growth", "border_growth"] },
+    { "min_level": 5, "max_level": null, "options": ["park"] }
+  ],
+  "resources_stars": 5,
+  "population_growth_amount": 3
+}
