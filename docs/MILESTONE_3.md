@@ -109,7 +109,7 @@ randomness is `state.rng` (nothing in this milestone draws from it after `new_ga
    player order; `next_unit_id = 2`.
 5. Explored mask: every tile within Chebyshev 2 of the player's capital (25 tiles). With
    `config.full_observability`, all tiles for both players, always.
-6. `turn = 1`, `current = 0`, `outcome = None`. `state.rng` is the rng after the flip.
+6. `turn = 0`, `current = 0`, `outcome = None`. `state.rng` is the rng after the flip.
 
 ### Vision and the explored mask
 - A unit sees every tile within Chebyshev radius 1 of its tile; radius 2 if it stands on a
