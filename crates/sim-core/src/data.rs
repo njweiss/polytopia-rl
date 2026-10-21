@@ -90,7 +90,7 @@ struct TechRow {
 }
 
 /// All rules tables, loaded once at startup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tables {
     /// Indexed by `UnitType as usize` (same order as `ALL_UNITS`).
     units: Vec<UnitStats>,
