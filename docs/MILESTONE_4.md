@@ -93,10 +93,10 @@ tech (`site_action(a).tech`); `stars >= cost`; and the per-action condition:
 | --- | --- | --- |
 | HarvestAnimal | `resource == Animal` | `resource = None`; population + `info.population` |
 | HarvestFruit | `resource == Fruit` | `resource = None`; population + `info.population` |
-| LumberHut | `terrain == Forest`, `resource == None`, `improvement == None` | `improvement = LumberHut` (terrain stays Forest, D3); population + `info.population` |
-| ClearForest | `terrain == Forest`, `resource == None`, `improvement == None` | `terrain = Field`; `stars += info.stars` |
-| Farm | `resource == Crop`, `improvement == None` | `resource = None`; `improvement = Farm`; population + `info.population` |
-| Mine | `resource == Metal`, `improvement == None` | `resource = None`; `improvement = Mine`; population + `info.population` |
+| LumberHut | `terrain == Forest`, `improvement == None` (an animal may be present) | `improvement = LumberHut` (terrain stays Forest, D3; an animal stays); population + `info.population` |
+| ClearForest | `terrain == Forest`, `improvement == None` (an animal may be present) | `terrain = Field`; `resource = None` (an animal is forfeited); `stars += info.stars` |
+| Farm | `resource == Crop`, `improvement == None` | `improvement = Farm` (the crop stays); population + `info.population` |
+| Mine | `resource == Metal`, `improvement == None` | `improvement = Mine` (the metal stays); population + `info.population` |
 
 Population goes to the city that owns the tile (`owner_city`), then the level-up check runs.
 
@@ -176,8 +176,8 @@ Golden values come from the rules above and hand arithmetic, never from running 
    (level 1 city supports 2 units: Warrior from new_game + 1 trained, third illegal), stars exact;
    new unit fields (phase Done, origin, id sequence).
 4. **Site actions:** one golden per action (cost, pop, resource/terrain/improvement result, stars for
-   ClearForest); blocked by enemy unit, allowed with friendly unit, not owned tile, wrong tech, animal
-   on forest blocks LumberHut/ClearForest until hunted, improvement blocks a second action.
+   ClearForest); blocked by enemy unit, allowed with friendly unit, not owned tile, wrong tech, LumberHut
+   on an animal keeps it, ClearForest on an animal forfeits it, improvement blocks a second action.
 5. **Levels and rewards:** population 1 -> 2 triggers level 2 with a pending Workshop; each menu
    entry's effect; Resources +5 stars; PopulationGrowth +3 pop; BorderGrowth claims exactly the
    expected set on a drawn board (skips owned, village and city tiles, off-map) and extends the
@@ -199,7 +199,7 @@ Golden values come from the rules above and hand arithmetic, never from running 
 Mutants to aim for: income granted on turn 0 or to the wrong player; workshop/park/capital bonus
 dropped; tech cost ignoring tier or city count; Train ignoring capacity, tech, or the occupied tile;
 new unit phase Fresh; site action allowed on enemy-occupied or unowned tile; wrong tile condition
-(animal on forest allowed hut); harvest not consuming the resource; population to the wrong city;
+(animal on forest blocks the hut, Farm or Mine consumes its resource); harvest not consuming the resource; population to the wrong city;
 level threshold off by one; pending reward not blocking other actions; reward effect wrong (e.g.
 Resources +3); cascade skipped; BorderGrowth claiming villages or already-owned tiles; BorderGrowth
 reusable.
