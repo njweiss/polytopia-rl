@@ -87,7 +87,7 @@ Cost is `4 + (city count × tier)`, where city count is the player's current num
 Harvest animal and harvest fruit consume the animal and fruit on tile, respectively
 Lumber hut, farm, and mine are improvements and do not consume forest, crop, or mountain, respectively. Only one improvement can be placed on a tile at any given time
 Lumber hut can be placed on a tile with an animal
-Clear forest can be performed on a tile with a wild animal, but it forfeits the  animal resource
+Clear forest can be performed on a tile with a wild animal, but it forfeits the animal resource
 
 **Level-up rewards**
 
@@ -206,8 +206,6 @@ A unit that is forcefully moved does not change its phase.
 - "Previously moved" means ever. A unit's last direction is never reset between turns, and a unit that has never moved has no direction.
 - Direction toward the center is the sign of the offset on each axis, so a unit on a diagonal is pushed diagonally.
 - Probe order: try the intended direction, then alternate counterclockwise and clockwise one neighbor at a time (45 degrees, 45, 90, 90, 135, 135, then 180).
-
-TODO: define "previously moved" (this turn, or ever), the direction toward the center for diagonal positions, and the exact probe order. Each needs one written rule.
 
 ## Actions and legality
 
