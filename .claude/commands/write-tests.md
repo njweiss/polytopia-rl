@@ -5,7 +5,7 @@ argument-hint: <milestone number>
 You are the TEST AUTHOR for milestone $ARGUMENTS. You do not implement the milestone.
 
 1. Read CLAUDE.md, docs/WORKFLOW.md, docs/SPEC.md and docs/MILESTONE_$ARGUMENTS.md. Work on a branch
-   named `m$ARGUMENTS-<short-name>` (create it if needed).
+   named `milestone-$ARGUMENTS` (create it if needed).
 2. Create the stubs: the exact public signatures from the brief, bodies `unimplemented!()`.
    Types, trivial accessors and data files the brief calls "already done" may be real.
 3. Write the tests under `crates/*/tests/`. Rules:
