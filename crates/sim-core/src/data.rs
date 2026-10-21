@@ -148,6 +148,31 @@ struct TechRow {
     info: TechInfo,
 }
 
+#[derive(Deserialize)]
+struct SiteActionRow {
+    action: SiteAction,
+    #[serde(flatten)]
+    info: SiteActionInfo,
+}
+
+/// One reward menu, offered at levels `min_level..=max_level` (`None` = no upper bound).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RewardMenu {
+    min_level: u32,
+    max_level: Option<u32>,
+    options: Vec<Reward>,
+}
+
+/// `data/rewards.json`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RewardsFile {
+    menus: Vec<RewardMenu>,
+    resources_stars: u32,
+    population_growth_amount: u32,
+}
+
 /// All rules tables, loaded once at startup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tables {
@@ -155,6 +180,12 @@ pub struct Tables {
     units: Vec<UnitStats>,
     /// Indexed by `Tech as usize` (same order as `ALL_TECHS`).
     techs: Vec<TechInfo>,
+    /// Indexed by `SiteAction as usize` (same order as `ALL_SITE_ACTIONS`).
+    site_actions: Vec<SiteActionInfo>,
+    /// Ascending `min_level`, covering every level from 2 up exactly once; the last is open-ended.
+    reward_menus: Vec<RewardMenu>,
+    resources_reward_stars: u32,
+    population_growth_amount: u32,
     rules: Rules,
 }
 
@@ -180,14 +211,16 @@ impl Tables {
         site_actions_json: &str,
         rewards_json: &str,
     ) -> Result<Tables, String> {
-        // Milestone 4 stub: the two new tables are not parsed yet.
-        let _ = (site_actions_json, rewards_json);
         let rules: Rules = serde_json::from_str(include_str!("../../../data/rules.json"))
             .map_err(|e| format!("rules.json: {e}"))?;
         let unit_rows: Vec<UnitRow> =
             serde_json::from_str(units_json).map_err(|e| format!("units.json: {e}"))?;
         let tech_rows: Vec<TechRow> =
             serde_json::from_str(techs_json).map_err(|e| format!("techs.json: {e}"))?;
+        let site_rows: Vec<SiteActionRow> = serde_json::from_str(site_actions_json)
+            .map_err(|e| format!("site_actions.json: {e}"))?;
+        let rewards: RewardsFile =
+            serde_json::from_str(rewards_json).map_err(|e| format!("rewards.json: {e}"))?;
 
         let mut units: Vec<Option<UnitStats>> = vec![None; ALL_UNITS.len()];
         for row in unit_rows {
@@ -205,6 +238,14 @@ impl Tables {
             }
             *slot = Some(row.info);
         }
+        let mut site_actions: Vec<Option<SiteActionInfo>> = vec![None; ALL_SITE_ACTIONS.len()];
+        for row in site_rows {
+            let slot = &mut site_actions[row.action as usize];
+            if slot.is_some() {
+                return Err(format!("site_actions.json: duplicate {:?}", row.action));
+            }
+            *slot = Some(row.info);
+        }
 
         let units = ALL_UNITS
             .iter()
@@ -216,9 +257,43 @@ impl Tables {
             .zip(techs)
             .map(|(t, s)| s.ok_or_else(|| format!("techs.json: missing {t:?}")))
             .collect::<Result<Vec<_>, _>>()?;
+        let site_actions = ALL_SITE_ACTIONS
+            .iter()
+            .zip(site_actions)
+            .map(|(a, s)| s.ok_or_else(|| format!("site_actions.json: missing {a:?}")))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Menus must tile levels 2, 3, ... with no gap or overlap, ending open-ended.
+        let mut reward_menus = rewards.menus;
+        reward_menus.sort_by_key(|m| m.min_level);
+        let mut next = Some(2);
+        for m in &reward_menus {
+            if next != Some(m.min_level) {
+                return Err(format!(
+                    "rewards.json: menus must cover every level from 2 up exactly once \
+                     (expected a menu starting at {next:?}, found {})",
+                    m.min_level
+                ));
+            }
+            if m.max_level.is_some_and(|max| max < m.min_level) {
+                return Err(format!(
+                    "rewards.json: empty level range at {}",
+                    m.min_level
+                ));
+            }
+            next = m.max_level.map(|max| max + 1);
+        }
+        if next.is_some() {
+            return Err("rewards.json: the last menu must be open-ended (max_level null)".into());
+        }
+
         Ok(Tables {
             units,
             techs,
+            site_actions,
+            reward_menus,
+            resources_reward_stars: rewards.resources_stars,
+            population_growth_amount: rewards.population_growth_amount,
             rules,
         })
     }
@@ -236,22 +311,23 @@ impl Tables {
     }
 
     pub fn site_action(&self, a: SiteAction) -> &SiteActionInfo {
-        let _ = a;
-        unimplemented!()
+        &self.site_actions[a as usize]
     }
 
-    /// The menu offered when a city reaches `level` (2 and up).
+    /// The menu offered when a city reaches `level` (2 and up). Empty below level 2.
     pub fn reward_menu(&self, level: u32) -> &[Reward] {
-        let _ = level;
-        unimplemented!()
+        self.reward_menus
+            .iter()
+            .find(|m| m.min_level <= level && m.max_level.is_none_or(|max| level <= max))
+            .map_or(&[], |m| &m.options)
     }
 
     pub fn resources_reward_stars(&self) -> u32 {
-        unimplemented!()
+        self.resources_reward_stars
     }
 
     pub fn population_growth_amount(&self) -> u32 {
-        unimplemented!()
+        self.population_growth_amount
     }
 
     /// Spec: cost = 4 + (city_count x tier).
