@@ -3,6 +3,7 @@
 pub mod actions;
 pub mod combat;
 pub mod data;
+pub mod economy;
 pub mod grid;
 pub mod map;
 pub mod movement;

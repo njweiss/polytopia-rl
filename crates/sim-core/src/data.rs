@@ -55,6 +55,39 @@ pub const ALL_TECHS: [Tech; 9] = [
     Tech::Mining,
 ];
 
+/// Tile (site) actions (docs/MILESTONE_4 "Site actions").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SiteAction {
+    HarvestAnimal,
+    HarvestFruit,
+    LumberHut,
+    ClearForest,
+    Farm,
+    Mine,
+}
+
+/// Level-up rewards (docs/MILESTONE_4 "Reward menus").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reward {
+    Workshop,
+    CityWall,
+    Resources,
+    PopulationGrowth,
+    BorderGrowth,
+    Park,
+}
+
+pub const ALL_SITE_ACTIONS: [SiteAction; 6] = [
+    SiteAction::HarvestAnimal,
+    SiteAction::HarvestFruit,
+    SiteAction::LumberHut,
+    SiteAction::ClearForest,
+    SiteAction::Farm,
+    SiteAction::Mine,
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct UnitStats {
     /// `None` for reward-only units (Super Unit).
@@ -73,6 +106,14 @@ pub struct UnitStats {
 pub struct TechInfo {
     pub tier: u32,
     pub requires: Option<Tech>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct SiteActionInfo {
+    pub cost: u32,
+    pub tech: Tech,
+    pub population: u32,
+    pub stars: u32,
 }
 
 /// Scalar rules constants (`data/rules.json`).
@@ -118,19 +159,29 @@ pub struct Tables {
 }
 
 impl Tables {
-    /// Load from the embedded `data/units.json`, `data/techs.json` and `data/rules.json`
-    /// (use `include_str!`). Must error (not panic) on malformed or incomplete data:
-    /// every `UnitType` and every `Tech` must be present exactly once.
+    /// Load from the embedded `data/units.json`, `data/techs.json`, `data/site_actions.json`,
+    /// `data/rewards.json` and `data/rules.json` (use `include_str!`). Must error (not panic) on
+    /// malformed or incomplete data: every `UnitType`, `Tech` and `SiteAction` must be present
+    /// exactly once, and the reward menus must cover every level from 2 up exactly once.
     pub fn load() -> Result<Tables, String> {
         Tables::from_json(
             include_str!("../../../data/units.json"),
             include_str!("../../../data/techs.json"),
+            include_str!("../../../data/site_actions.json"),
+            include_str!("../../../data/rewards.json"),
         )
     }
 
-    /// Same as `load` but from caller-provided unit and tech JSON (used to test error handling).
+    /// Same as `load` but from caller-provided JSON (used to test error handling).
     /// Rules always come from the embedded `data/rules.json`.
-    pub fn from_json(units_json: &str, techs_json: &str) -> Result<Tables, String> {
+    pub fn from_json(
+        units_json: &str,
+        techs_json: &str,
+        site_actions_json: &str,
+        rewards_json: &str,
+    ) -> Result<Tables, String> {
+        // Milestone 4 stub: the two new tables are not parsed yet.
+        let _ = (site_actions_json, rewards_json);
         let rules: Rules = serde_json::from_str(include_str!("../../../data/rules.json"))
             .map_err(|e| format!("rules.json: {e}"))?;
         let unit_rows: Vec<UnitRow> =
@@ -182,6 +233,25 @@ impl Tables {
 
     pub fn rules(&self) -> &Rules {
         &self.rules
+    }
+
+    pub fn site_action(&self, a: SiteAction) -> &SiteActionInfo {
+        let _ = a;
+        unimplemented!()
+    }
+
+    /// The menu offered when a city reaches `level` (2 and up).
+    pub fn reward_menu(&self, level: u32) -> &[Reward] {
+        let _ = level;
+        unimplemented!()
+    }
+
+    pub fn resources_reward_stars(&self) -> u32 {
+        unimplemented!()
+    }
+
+    pub fn population_growth_amount(&self) -> u32 {
+        unimplemented!()
     }
 
     /// Spec: cost = 4 + (city_count x tier).

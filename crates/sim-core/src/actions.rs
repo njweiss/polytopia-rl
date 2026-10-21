@@ -1,11 +1,11 @@
 //! Unit actions, legality and `apply` (docs/MILESTONE_3 "Move" .. "legal_actions and apply").
 
 use crate::combat::{resolve_attack, Combatant};
-use crate::data::{Skill, Tech};
+use crate::data::{Reward, SiteAction, Skill, Tech, UnitType};
 use crate::grid::{chebyshev, Pos};
 use crate::map::Terrain;
 use crate::movement::{defense_bonus, reachable_tiles};
-use crate::state::{Dir, Phase, PlayerId, State, Unit, UnitId};
+use crate::state::{CityId, Dir, Phase, PlayerId, State, Unit, UnitId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -13,6 +13,10 @@ pub enum Action {
     Attack { unit: UnitId, target: Pos },
     Recover { unit: UnitId },
     Promote { unit: UnitId },
+    Train { city: CityId, kind: UnitType },
+    Site { at: Pos, action: SiteAction },
+    Research { tech: Tech },
+    ChooseReward { city: CityId, reward: Reward },
     EndTurn,
 }
 
@@ -50,6 +54,10 @@ pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
         Action::Recover { unit } => apply_recover(state, unit),
         Action::Promote { unit } => apply_promote(state, unit),
         Action::EndTurn => apply_end_turn(state),
+        Action::Train { .. }
+        | Action::Site { .. }
+        | Action::Research { .. }
+        | Action::ChooseReward { .. } => unimplemented!(),
     }
     Ok(())
 }
@@ -65,6 +73,10 @@ fn is_legal(state: &State, action: &Action) -> bool {
         | Action::Recover { unit }
         | Action::Promote { unit } => unit,
         Action::EndTurn => return end_turn_legal(state),
+        Action::Train { .. }
+        | Action::Site { .. }
+        | Action::Research { .. }
+        | Action::ChooseReward { .. } => unimplemented!(),
     };
     let Some(u) = state.unit(id) else {
         return false;

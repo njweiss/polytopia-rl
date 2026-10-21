@@ -1,6 +1,9 @@
-//! Data-table tests (spec "Data tables"). Values are from the owner's wiki extract.
+//! Data-table tests (spec "Data tables"). Values are from the owner's wiki extract; the site
+//! action and reward tables (milestone 4) are the brief's Appendix.
 
-use sim_core::data::{Skill, Tables, Tech, UnitType, ALL_TECHS, ALL_UNITS};
+use sim_core::data::{
+    Reward, SiteAction, Skill, Tables, Tech, UnitType, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
+};
 use Skill::*;
 use Tech::*;
 use UnitType::*;
@@ -154,24 +157,141 @@ fn prerequisites_are_lower_tier_and_acyclic() {
     }
 }
 
+const UNITS: &str = include_str!("../../../data/units.json");
+const TECHS: &str = include_str!("../../../data/techs.json");
+const SITES: &str = include_str!("../../../data/site_actions.json");
+const REWARDS: &str = include_str!("../../../data/rewards.json");
+
 #[test]
 fn malformed_json_is_an_error_not_a_panic() {
-    assert!(Tables::from_json("not json", "[]").is_err());
-    assert!(Tables::from_json("[]", "[]").is_err()); // missing every unit and tech
+    assert!(Tables::from_json("not json", "[]", SITES, REWARDS).is_err());
+    assert!(Tables::from_json("[]", "[]", SITES, REWARDS).is_err()); // missing every unit and tech
 }
 
 #[test]
 fn duplicate_or_missing_entries_are_rejected() {
-    let units = include_str!("../../../data/units.json");
-    let techs = include_str!("../../../data/techs.json");
-    assert!(Tables::from_json(units, techs).is_ok());
+    assert!(Tables::from_json(UNITS, TECHS, SITES, REWARDS).is_ok());
     // Drop the last tech (mining): incomplete.
-    let cut = techs
+    let cut = TECHS
         .rfind(",\n  { \"tech\": \"mining\"")
         .expect("fixture shape");
-    let incomplete = format!("{}\n]", &techs[..cut]);
-    assert!(Tables::from_json(units, &incomplete).is_err());
+    let incomplete = format!("{}\n]", &TECHS[..cut]);
+    assert!(Tables::from_json(UNITS, &incomplete, SITES, REWARDS).is_err());
     // Duplicate a tech.
-    let dup = techs.replacen("\"mining\"", "\"hunting\"", 1);
-    assert!(Tables::from_json(units, &dup).is_err());
+    let dup = TECHS.replacen("\"mining\"", "\"hunting\"", 1);
+    assert!(Tables::from_json(UNITS, &dup, SITES, REWARDS).is_err());
+}
+
+// ---------- milestone 4: site actions and rewards ----------
+
+#[test]
+fn site_action_table_matches_the_appendix() {
+    let t = tables();
+    // (action, cost, tech, population, stars) from docs/MILESTONE_4 Appendix.
+    let rows = [
+        (SiteAction::HarvestAnimal, 2, Hunting, 1, 0),
+        (SiteAction::HarvestFruit, 2, Organization, 1, 0),
+        (SiteAction::LumberHut, 3, Forestry, 1, 0),
+        (SiteAction::ClearForest, 0, Forestry, 0, 1),
+        (SiteAction::Farm, 5, Farming, 2, 0),
+        (SiteAction::Mine, 5, Mining, 2, 0),
+    ];
+    for (a, cost, tech, population, stars) in rows {
+        let info = t.site_action(a);
+        assert_eq!(info.cost, cost, "{a:?} cost");
+        assert_eq!(info.tech, tech, "{a:?} tech");
+        assert_eq!(info.population, population, "{a:?} population");
+        assert_eq!(info.stars, stars, "{a:?} stars");
+    }
+}
+
+#[test]
+fn all_site_actions_order() {
+    assert_eq!(
+        ALL_SITE_ACTIONS,
+        [
+            SiteAction::HarvestAnimal,
+            SiteAction::HarvestFruit,
+            SiteAction::LumberHut,
+            SiteAction::ClearForest,
+            SiteAction::Farm,
+            SiteAction::Mine,
+        ]
+    );
+}
+
+#[test]
+fn reward_menus_cover_levels_2_to_4_and_an_open_ended_5_plus() {
+    let t = tables();
+    assert_eq!(t.reward_menu(2), [Reward::Workshop]);
+    assert_eq!(t.reward_menu(3), [Reward::CityWall, Reward::Resources]);
+    assert_eq!(
+        t.reward_menu(4),
+        [Reward::PopulationGrowth, Reward::BorderGrowth]
+    );
+    for level in [5, 6, 7, 10, 50, 1000] {
+        assert_eq!(t.reward_menu(level), [Reward::Park], "level {level}");
+    }
+    assert_eq!(t.resources_reward_stars(), 5);
+    assert_eq!(t.population_growth_amount(), 3);
+}
+
+#[test]
+fn malformed_site_or_reward_json_is_an_error() {
+    assert!(Tables::from_json(UNITS, TECHS, "not json", REWARDS).is_err());
+    assert!(Tables::from_json(UNITS, TECHS, SITES, "not json").is_err());
+    assert!(Tables::from_json(UNITS, TECHS, "[]", REWARDS).is_err()); // every action missing
+                                                                      // Unknown names.
+    let bad = SITES.replacen("\"harvest_fruit\"", "\"harvest_fish\"", 1);
+    assert!(Tables::from_json(UNITS, TECHS, &bad, REWARDS).is_err());
+    let bad = REWARDS.replacen("\"park\"", "\"monument\"", 1);
+    assert!(Tables::from_json(UNITS, TECHS, SITES, &bad).is_err());
+    // A missing scalar.
+    let cut = REWARDS
+        .find(",\n  \"population_growth_amount\"")
+        .expect("fixture shape");
+    let bad = format!("{}\n}}", &REWARDS[..cut]);
+    assert!(Tables::from_json(UNITS, TECHS, SITES, &bad).is_err());
+}
+
+#[test]
+fn duplicate_or_missing_site_actions_are_rejected() {
+    // Drop the last action (mine): incomplete.
+    let cut = SITES
+        .rfind(",\n  { \"action\": \"mine\"")
+        .expect("fixture shape");
+    let incomplete = format!("{}\n]", &SITES[..cut]);
+    assert!(Tables::from_json(UNITS, TECHS, &incomplete, REWARDS).is_err());
+    // Duplicate an action while all six stay present (a second farm row).
+    let dup = SITES.replacen(
+        "\n]",
+        ",\n  { \"action\": \"farm\", \"cost\": 1, \"tech\": \"farming\", \"population\": 1, \"stars\": 0 }\n]",
+        1,
+    );
+    assert_ne!(dup, SITES, "fixture shape");
+    assert!(Tables::from_json(UNITS, TECHS, &dup, REWARDS).is_err());
+}
+
+#[test]
+fn reward_menus_must_cover_every_level_from_2_up_exactly_once() {
+    // A gap: no menu for level 3.
+    let gap = REWARDS.replacen(
+        "{ \"min_level\": 3, \"max_level\": 3,    \"options\": [\"city_wall\", \"resources\"] },\n    ",
+        "",
+        1,
+    );
+    assert_ne!(gap, REWARDS, "fixture shape");
+    assert!(Tables::from_json(UNITS, TECHS, SITES, &gap).is_err());
+    // An overlap: level 3 covered twice.
+    let overlap = REWARDS.replacen(
+        "\"min_level\": 2, \"max_level\": 2",
+        "\"min_level\": 2, \"max_level\": 3",
+        1,
+    );
+    assert_ne!(overlap, REWARDS, "fixture shape");
+    assert!(Tables::from_json(UNITS, TECHS, SITES, &overlap).is_err());
+    // No open-ended last menu: levels 6 and up would have none.
+    let closed = REWARDS.replacen("\"max_level\": null", "\"max_level\": 5", 1);
+    assert_ne!(closed, REWARDS, "fixture shape");
+    assert!(Tables::from_json(UNITS, TECHS, SITES, &closed).is_err());
 }
