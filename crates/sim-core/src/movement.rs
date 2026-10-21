@@ -7,7 +7,7 @@ use crate::map::Terrain;
 use crate::state::{State, UnitId};
 
 /// The in-bounds 8-neighbors of `p`, row-major.
-fn neighbors(size: u8, p: Pos) -> impl Iterator<Item = Pos> {
+pub(crate) fn neighbors(size: u8, p: Pos) -> impl Iterator<Item = Pos> {
     (-1i32..=1)
         .flat_map(|dr| (-1i32..=1).map(move |dc| (dr, dc)))
         .filter(|&d| d != (0, 0))

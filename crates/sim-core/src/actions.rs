@@ -275,7 +275,7 @@ fn relocate(state: &mut State, id: UnitId, to: Pos) {
 }
 
 /// Unit vision: Chebyshev 1, or 2 when standing on a mountain. The mask never shrinks.
-fn reveal(state: &mut State, player: PlayerId, at: Pos) {
+pub(crate) fn reveal(state: &mut State, player: PlayerId, at: Pos) {
     let radius = if state.tile(at).terrain == Terrain::Mountain {
         2
     } else {

@@ -1,7 +1,7 @@
 //! Economy helpers (docs/MILESTONE_4 "Start of turn: income", "Research", "Train",
 //! "Population and levels", "Reward menus").
 
-use crate::data::{Reward, Tech};
+use crate::data::{Reward, Tech, UnitType};
 use crate::state::{CityId, PlayerId, State};
 
 /// Sum over the player's cities of `level + (capital ? 1 : 0) + (workshop ? 1 : 0) + parks`.
@@ -19,12 +19,12 @@ pub fn cumulative_population_for_level(level: u32) -> u32 {
     level * (level + 1) / 2 - 1
 }
 
-/// Living units whose `origin == city`.
+/// Living units whose `origin == city`, never counting Super Units (docs/MILESTONE_5 E6).
 pub fn supported_units(state: &State, city: CityId) -> u32 {
     state
         .units
         .iter()
-        .filter(|u| u.origin == Some(city))
+        .filter(|u| u.origin == Some(city) && u.kind != UnitType::SuperUnit)
         .count() as u32
 }
 
