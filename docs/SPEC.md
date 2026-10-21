@@ -178,11 +178,11 @@ Formulas are taken from the wiki. Arithmetic is `f32`, evaluated in exactly the 
 
 Source: the wiki's Movement page. Roads are out of scope.
 
-- A unit reaches tiles within Chebyshev distance of its movement stat, subject to the rules below. Each step costs 1, cost rounds up, and fog tiles cannot be entered.
+- A unit reaches tiles within Chebyshev distance of its movement stat, subject to the rules below. Each step costs 1, cost rounds up, and fog tiles cannot be entered, so only tiles explored before movement can be entered.
 - **Rough terrain:** a unit may move onto a forest or mountain tile but no further that turn. Mountains also need Climbing.
 - **Zone of Control:** a unit that arrives on a tile adjacent to an enemy unit cannot move further that turn. It can still attack with Dash. The effect ends when the enemy unit dies.
 - A unit that starts inside Zone of Control may leave it, and may even re-enter it.
-- One unit per tile. Units cannot enter occupied tiles, including cities and villages.
+- One unit per tile. Units cannot enter occupied tiles.
 - Escape grants one move after an attack, with a full movement budget.
 - Units cannot pass through friendly units.
 
@@ -386,7 +386,7 @@ These figures come from a simulation of this pipeline with the parameters above,
 - **Per-tile channels:** terrain, resource, improvement, explored flag, owning city's owner (mine, enemy, unowned), city and level, unit type and owner, health fraction, unit phase, veteran and promotion-available flags, and whether the tile can currently be harvested or built on.
 - **Tech-gated visibility:** crops need Organization and metal needs Climbing, so the observation depends on the explored mask **and** the player's techs.
 - **Unexplored tiles** are all zeros apart from the explored flag.
-- **Global features:** stars, researched techs, income, turn number divided by the turn cap, and whether a reward is pending. The turn counter is required because the game ends by score at the cap.
+- **Global features:** stars, researched techs, income, turn number divided by the turn cap, and whether a reward is pending. The turn counter is required because the game ends by score at the cap. The turn counter starts at 0.
 - Unbounded values (level, population, stars) are normalized and clipped when encoded.
 - Full observability is a config flag that sets the explored mask to all ones. The explored mask grows when a unit moves (radius 1, or radius 2 on a mountain) and whenever a city is founded, captured, or gains tiles, since cities see every tile they own.
 - Both players' total scores are public, so the observation includes the opponent's score and the score difference. The opponent's stars and techs are not visible, only the score.
