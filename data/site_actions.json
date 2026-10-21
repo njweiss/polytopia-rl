@@ -1,0 +1,8 @@
+[
+  { "action": "harvest_animal", "cost": 2, "tech": "hunting",      "population": 1, "stars": 0 },
+  { "action": "harvest_fruit",  "cost": 2, "tech": "organization", "population": 1, "stars": 0 },
+  { "action": "lumber_hut",     "cost": 3, "tech": "forestry",     "population": 1, "stars": 0 },
+  { "action": "clear_forest",   "cost": 0, "tech": "forestry",     "population": 0, "stars": 1 },
+  { "action": "farm",           "cost": 5, "tech": "farming",      "population": 2, "stars": 0 },
+  { "action": "mine",           "cost": 5, "tech": "mining",       "population": 2, "stars": 0 }
+]

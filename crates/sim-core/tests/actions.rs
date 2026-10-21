@@ -895,7 +895,7 @@ fn only_the_current_player_acts() {
         | Action::Attack { unit, .. }
         | Action::Recover { unit }
         | Action::Promote { unit } => *unit == UnitId(1),
-        Action::EndTurn => true,
+        _ => true, // no cities: EndTurn only
     }));
 }
 
