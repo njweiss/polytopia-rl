@@ -75,6 +75,24 @@ pub struct TechInfo {
     pub requires: Option<Tech>,
 }
 
+/// Scalar rules constants (`data/rules.json`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rules {
+    pub start_stars: u32,
+    pub start_techs: Vec<Tech>,
+    pub terrain_defense_bonus: f32,
+    pub city_defense_bonus: f32,
+    pub wall_defense_bonus: f32,
+    pub recover_own_territory: u32,
+    pub recover_elsewhere: u32,
+    pub promotion_kills: u32,
+    pub veteran_health_bonus: u32,
+}
+
+// Sound because the floats come from JSON, which cannot encode NaN.
+impl Eq for Rules {}
+
 #[derive(Deserialize)]
 struct UnitRow {
     unit: UnitType,
@@ -90,16 +108,17 @@ struct TechRow {
 }
 
 /// All rules tables, loaded once at startup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tables {
     /// Indexed by `UnitType as usize` (same order as `ALL_UNITS`).
     units: Vec<UnitStats>,
     /// Indexed by `Tech as usize` (same order as `ALL_TECHS`).
     techs: Vec<TechInfo>,
+    rules: Rules,
 }
 
 impl Tables {
-    /// Load from the embedded `data/units.json` and `data/techs.json`
+    /// Load from the embedded `data/units.json`, `data/techs.json` and `data/rules.json`
     /// (use `include_str!`). Must error (not panic) on malformed or incomplete data:
     /// every `UnitType` and every `Tech` must be present exactly once.
     pub fn load() -> Result<Tables, String> {
@@ -109,8 +128,11 @@ impl Tables {
         )
     }
 
-    /// Same as `load` but from caller-provided JSON (used to test error handling).
+    /// Same as `load` but from caller-provided unit and tech JSON (used to test error handling).
+    /// Rules always come from the embedded `data/rules.json`.
     pub fn from_json(units_json: &str, techs_json: &str) -> Result<Tables, String> {
+        let rules: Rules = serde_json::from_str(include_str!("../../../data/rules.json"))
+            .map_err(|e| format!("rules.json: {e}"))?;
         let unit_rows: Vec<UnitRow> =
             serde_json::from_str(units_json).map_err(|e| format!("units.json: {e}"))?;
         let tech_rows: Vec<TechRow> =
@@ -143,7 +165,11 @@ impl Tables {
             .zip(techs)
             .map(|(t, s)| s.ok_or_else(|| format!("techs.json: missing {t:?}")))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Tables { units, techs })
+        Ok(Tables {
+            units,
+            techs,
+            rules,
+        })
     }
 
     pub fn unit(&self, unit: UnitType) -> &UnitStats {
@@ -152,6 +178,10 @@ impl Tables {
 
     pub fn tech(&self, tech: Tech) -> &TechInfo {
         &self.techs[tech as usize]
+    }
+
+    pub fn rules(&self) -> &Rules {
+        &self.rules
     }
 
     /// Spec: cost = 4 + (city_count x tier).
