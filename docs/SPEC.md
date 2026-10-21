@@ -84,6 +84,11 @@ Cost is `4 + (city count × tier)`, where city count is the player's current num
 | Farm | 5 | +2 population | Farming, on crop |
 | Mine | 5 | +2 population | Mining, on metal |
 
+Harvest animal and harvest fruit consume the animal and fruit on tile, respectively
+Lumber hut, farm, and mine are improvements and do not consume forest, crop, or mountain, respectively. Only one improvement can be placed on a tile at any given time
+Lumber hut can be placed on a tile with an animal
+Clear forest can be performed on a tile with a wild animal, but it forfeits the  animal resource
+
 **Level-up rewards**
 
 The choice is forced and happens the moment population crosses the threshold. It can occur more than once in a turn.
@@ -239,6 +244,8 @@ Every action has one actor kind. The sim exposes `legal_actions(state)` as struc
 3. The player acts until they choose End turn.
 
 Income is added before units reset.
+
+Note: On turn 0, neither players get income. Only starting stars.
 
 ### Income
 
