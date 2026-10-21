@@ -37,7 +37,8 @@ Append entries below. Format:
   `lumber_hut_on_an_animal_keeps_the_animal`, `clear_forest_forfeits_the_animal`,
   `an_improvement_blocks_a_second_one`; `common::exp_site_legal` / `exp_after`). The brief's
   table should be updated to match.
-- Owner answer:
+- Owner answer: A, given after phase A on 2026-10-21. The brief's site-action table in
+  docs/MILESTONE_4 should be updated to match.
 
 ## Q3: `Tables::from_json` signature and reward-menu validation
 - Needed for: milestone 4, "Public API additions" ("from_json/load must now also take the two new
@@ -50,4 +51,4 @@ Append entries below. Format:
 - Agent's pick and why: as listed; it mirrors the milestone 1 rule "every entry exactly once".
   Tests: `tables.rs::reward_menus_must_cover_every_level_from_2_up_exactly_once`,
   `duplicate_or_missing_site_actions_are_rejected`, `malformed_site_or_reward_json_is_an_error`.
-- Owner answer:
+- Owner answer: approved as listed, given after phase A on 2026-10-21.
