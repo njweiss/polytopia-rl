@@ -27,27 +27,49 @@ pub struct CombatOutcome {
 }
 
 /// Round to nearest integer, with exact halves going UP. Only called on non-negative values.
-pub fn round_half_up(_x: f32) -> u32 {
-    unimplemented!("milestone 1")
+pub fn round_half_up(x: f32) -> u32 {
+    // f32::round sends halves away from zero, which is half-up for x >= 0.
+    x.round() as u32
 }
 
 /// Implements the spec formulas literally. Both forces use pre-attack health.
 pub fn compute_damage(
-    _attacker: &Combatant,
-    _defender: &Combatant,
-    _defense_bonus: f32,
+    attacker: &Combatant,
+    defender: &Combatant,
+    defense_bonus: f32,
 ) -> CombatDamage {
-    unimplemented!("milestone 1")
+    let attack_force =
+        attacker.attack as f32 * (attacker.health as f32 / attacker.max_health as f32);
+    let defense_force = defender.defense as f32
+        * (defender.health as f32 / defender.max_health as f32)
+        * defense_bonus;
+    let total_damage = attack_force + defense_force;
+    let attack_result = attack_force / total_damage * attacker.attack as f32 * 4.5;
+    let defense_result = defense_force / total_damage * defender.defense as f32 * 4.5;
+    CombatDamage {
+        to_defender: round_half_up(attack_result),
+        to_attacker: round_half_up(defense_result),
+    }
 }
 
 /// Applies one attack. The defender always takes `to_defender` (health floors at 0).
 /// Retaliation applies only if the defender survives AND `attacker_in_defender_range`.
 /// This function does not move units, award kills or promote; it only computes health.
 pub fn resolve_attack(
-    _attacker: &Combatant,
-    _defender: &Combatant,
-    _defense_bonus: f32,
-    _attacker_in_defender_range: bool,
+    attacker: &Combatant,
+    defender: &Combatant,
+    defense_bonus: f32,
+    attacker_in_defender_range: bool,
 ) -> CombatOutcome {
-    unimplemented!("milestone 1")
+    let damage = compute_damage(attacker, defender, defense_bonus);
+    let defender_health = defender.health.saturating_sub(damage.to_defender);
+    let attacker_health = if defender_health > 0 && attacker_in_defender_range {
+        attacker.health.saturating_sub(damage.to_attacker)
+    } else {
+        attacker.health
+    };
+    CombatOutcome {
+        attacker_health,
+        defender_health,
+    }
 }
