@@ -1,6 +1,8 @@
 //! Actions, legality and `apply` (docs/MILESTONE_3 "Move" .. "legal_actions and apply";
 //! docs/MILESTONE_4 "Research" .. "legal_actions order").
 
+use std::cmp::Ordering;
+
 use crate::combat::{resolve_attack, Combatant};
 use crate::data::{
     Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
@@ -12,8 +14,9 @@ use crate::explorer::explorer_walk;
 use crate::grid::{chebyshev, Pos};
 use crate::map::{Resource, Terrain};
 use crate::movement::{defense_bonus, reachable_tiles};
+use crate::score::score;
 use crate::spawn::spawn_super_unit;
-use crate::state::{City, CityId, Dir, Improvement, Phase, PlayerId, State, Unit, UnitId};
+use crate::state::{City, CityId, Dir, Improvement, Outcome, Phase, PlayerId, State, Unit, UnitId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -36,7 +39,7 @@ pub enum ActionError {
 
 /// The current player's legal actions in canonical order. With a pending reward: only the
 /// lowest-id pending city's ChooseReward, in menu order. Otherwise: units by ascending id (per unit
-/// Move (row-major), Attack (row-major), Recover, Promote); Train per city by ascending id in
+/// Move (row-major), Attack (row-major), Capture, Recover, Promote); Train per city by ascending id in
 /// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; Research in `ALL_TECHS`
 /// order; then EndTurn. Empty once there is an outcome.
 pub fn legal_actions(state: &State) -> Vec<Action> {
@@ -240,6 +243,11 @@ fn push_unit_actions(state: &State, u: &Unit, out: &mut Vec<Action>) {
         }
     }
     if u.phase == Phase::Fresh {
+        let t = state.tile(u.pos);
+        let enemy_city = t.city.is_some_and(|c| state.city(c).owner != u.owner);
+        if t.village || enemy_city {
+            out.push(Action::Capture { unit: u.id });
+        }
         out.push(Action::Recover { unit: u.id });
     }
     if u.promotion_available && !u.veteran {
@@ -378,8 +386,66 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
     }
 }
 
-fn apply_capture(_state: &mut State, _id: UnitId) {
-    unimplemented!("milestone 6: Capture")
+/// Village: founds a level 1 city claiming its unclaimed 3x3. Enemy city: flips the owner and
+/// orphans the previous owner's units of that city. Then the capturer migrates its origin, is
+/// Done, its owner sees every tile of the city, and a capital capture wins the game.
+fn apply_capture(state: &mut State, id: UnitId) {
+    let u = state.unit(id).expect("living unit");
+    let (at, owner) = (u.pos, u.owner);
+    let city = match state.tile(at).city {
+        Some(city) => {
+            city_mut(state, city).owner = owner;
+            for v in state.units.iter_mut().filter(|v| v.origin == Some(city)) {
+                v.origin = None;
+            }
+            city
+        }
+        None => found_city(state, at, owner),
+    };
+    let u = unit_mut(state, id);
+    u.origin = Some(city);
+    u.phase = Phase::Done;
+    for i in 0..state.tiles.len() {
+        if state.tiles[i].owner_city == Some(city) {
+            state.players[owner as usize].explored[i] = true;
+        }
+    }
+    if state.city(city).is_capital {
+        state.outcome = Some(Outcome::Win(owner));
+    }
+}
+
+/// Turns the village at `at` into a level 1 city with the next dense id, claiming every in-bounds
+/// tile within Chebyshev 1 that has no owning city.
+fn found_city(state: &mut State, at: Pos, owner: PlayerId) -> CityId {
+    let id = CityId(state.cities.len() as u32);
+    state.cities.push(City {
+        id,
+        owner,
+        pos: at,
+        level: 1,
+        population: 0,
+        is_capital: false,
+        workshop: false,
+        parks: 0,
+        wall: false,
+        border_growth_used: false,
+        pending_reward: false,
+    });
+    let i = state.index(at);
+    state.tiles[i].village = false;
+    state.tiles[i].city = Some(id);
+    let n = state.size;
+    for r in 0..n {
+        for c in 0..n {
+            let q = Pos::new(r, c);
+            let i = state.index(q);
+            if chebyshev(at, q) <= 1 && state.tiles[i].owner_city.is_none() {
+                state.tiles[i].owner_city = Some(id);
+            }
+        }
+    }
+    id
 }
 
 fn apply_recover(state: &mut State, id: UnitId) {
@@ -522,6 +588,18 @@ fn border_growth(state: &mut State, city: CityId) {
 }
 
 fn apply_end_turn(state: &mut State) {
+    // Turn cap: player 1 ending the last turn decides the game by score, with no income or reset.
+    if state.current == 1 && state.turn + 1 == state.config.turn_cap {
+        state.turn += 1;
+        state.current = 0;
+        let (s0, s1) = (score(state, 0), score(state, 1));
+        state.outcome = Some(match s0.cmp(&s1) {
+            Ordering::Greater => Outcome::Win(0),
+            Ordering::Less => Outcome::Win(1),
+            Ordering::Equal => Outcome::Draw,
+        });
+        return;
+    }
     state.current = 1 - state.current;
     if state.current == 0 {
         state.turn += 1;

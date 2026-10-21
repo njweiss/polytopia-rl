@@ -12,6 +12,7 @@ use crate::state::{
 
 /// Builds the starting state. Draws exactly one value from `rng` (the seat coin flip).
 pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
+    assert!(config.turn_cap >= 1, "turn_cap must be at least 1");
     let flip = rng.gen_range(2) as usize;
     let seats = [map.capitals[flip], map.capitals[1 - flip]];
     let tables = Arc::new(Tables::load().expect("embedded tables load"));
