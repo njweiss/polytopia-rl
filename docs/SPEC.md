@@ -102,6 +102,7 @@ The choice is forced and happens the moment population crosses the threshold. It
 ## State definition
 
 The sim holds full ground truth. Each player's observation is a function of that state (see Observation). `apply(state, action)` is a pure function of state and action, so the RNG state is part of the game state.
+RNG is computed using pcg32
 
 | Scope | Fields |
 | --- | --- |
@@ -318,7 +319,7 @@ All randomness comes from the game's own RNG. Java's `Random` is not replicated,
 2. **Capital 1:** uniform over the 49 tiles with row and column both in 2 to 8, so at least 2 from the map edge.
 3. **Capital 2:** for each of those tiles, take the Chebyshev distance to the nearest existing capital. Pick uniformly among the tiles with the largest such distance.
 4. **Forest and mountain:** go through the non-capital tiles in row-major order. For each, draw `u` uniformly from 0 to 1. The tile becomes forest if `u` is below the forest probability, and mountain if `u` is above 1 minus the mountain probability. Otherwise it stays field.
-5. **Village map:** mountain tiles and map-edge tiles can never hold a village. Each capital tile is a city, its 8 neighbors (ring 1) are marked inner, and the 16 tiles at distance 2 (ring 2) are marked outer.
+5. **Village map:** mountain tiles and map-edge tiles can never hold a village. Each capital tile is a city, its 8 neighbors (ring 1) are marked inner, and the 16 tiles at distance 2 (ring 2) are marked outer. For a tile that is inside two villages' rings, the stronger “inner” mark wins.
 6. **Villages:** repeatedly take the first tile in row-major order that is still unmarked. It becomes a village, and its ring 1 and ring 2 are marked inner and outer. Stop when no unmarked tile is left. Every tile placed this way becomes a village, and a village on a forest replaces the forest.
 7. **Resources:** go through the tiles in row-major order. Village and city tiles get none. A resource can only appear on a tile marked inner or outer. A tile marked outer uses one third of the probability. Per terrain:
    - Field: roll fruit with probability `f × (1 - c / 2)`. If that fails, roll crop with probability `c × (1 - f / 2)`, where `f` and `c` are the fruit and crop probabilities.
@@ -340,7 +341,7 @@ Values come from `terrainProbs.json` in the Tribes repository, which the owner s
 | Animal and metal | 0.5 each |
 | Outer-ring factor | one third |
 
-Terrain shares come out near 40% forest, 15% mountain, and 45% field, against the wiki's 38, 14, and 48.
+Terrain shares come out near 36.1% forest, 14.5% mountain, and 49.4% field, against the wiki's 38, 14, and 48.
 
 **Resulting rates** (percent of tiles of that terrain)
 
@@ -372,7 +373,7 @@ These figures come from a simulation of this pipeline with the parameters above,
 
 - Reproducible from the seed, bit for bit.
 - Capitals are 2 or more from the edge, and every later capital is at maximum distance from the earlier ones.
-- Villages are at least 3 from any city or village, never on the map edge or on a mountain, and no unmarked tile remains.
+- Villages are at least 3 from any city or village, never on the map edge or on a mountain, and no valid unmarked tile remains.
 - Resources appear only within 2 tiles of a city or village, and the Imperius guarantee holds on every map.
 - Over many seeds, capital separation, village counts, and terrain shares match the figures above within tolerance.
 
