@@ -1,7 +1,8 @@
-//! Shared helpers for the milestone 3 and 4 tests. Every checker here is written from the rules in
-//! docs/MILESTONE_3 and docs/MILESTONE_4 (with the spec's tile-action notes that overrule D4)
-//! independently of the code under test: it never calls `reachable_tiles`, `defense_bonus`,
-//! `legal_actions`, `apply` or anything in `sim_core::economy` to compute an expectation.
+//! Shared helpers for the milestone 3, 4 and 5 tests. Every checker here is written from the rules
+//! in docs/MILESTONE_3, docs/MILESTONE_4 (with the spec's tile-action notes that overrule D4) and
+//! docs/MILESTONE_5 independently of the code under test: it never calls `reachable_tiles`,
+//! `defense_bonus`, `legal_actions`, `apply`, anything in `sim_core::economy`,
+//! `sim_core::explorer` or `sim_core::spawn` to compute an expectation.
 #![allow(dead_code)]
 
 use sim_core::actions::Action;
@@ -12,7 +13,7 @@ use sim_core::map::Resource;
 use sim_core::map::Terrain;
 use sim_core::rng::Rng;
 use sim_core::state::{
-    City, CityId, Config, Improvement, Phase, PlayerId, State, TileState, Unit, UnitId,
+    City, CityId, Config, Dir, Improvement, Phase, PlayerId, State, TileState, Unit, UnitId,
 };
 use sim_core::testing::StateBuilder;
 
@@ -244,7 +245,7 @@ pub fn bf_legal(s: &State) -> Vec<Action> {
             let st = s.tables.unit(kind);
             let Some(cost) = st.cost else { continue };
             let unlocked = st.unlocked_by.is_none_or(|t| me.techs.contains(t));
-            let supported = s.units.iter().filter(|u| u.origin == Some(c.id)).count() as u32;
+            let supported = exp_supported(s, c.id);
             if unlocked
                 && s.units.iter().all(|u| u.pos != c.pos)
                 && me.stars >= cost
@@ -303,14 +304,14 @@ pub fn exp_cum(level: u32) -> u32 {
     level * (level + 1) / 2 - 1
 }
 
-/// The brief's menu table (reduced menus, D6), BorderGrowth dropped once used.
+/// The milestone 5 menu table (replaces D6 of milestone 4), BorderGrowth dropped once used.
 pub fn exp_menu(c: &City) -> Vec<Reward> {
     let base = match c.level {
         0 | 1 => vec![],
-        2 => vec![Reward::Workshop],
+        2 => vec![Reward::Workshop, Reward::Explorer],
         3 => vec![Reward::CityWall, Reward::Resources],
         4 => vec![Reward::PopulationGrowth, Reward::BorderGrowth],
-        _ => vec![Reward::Park],
+        _ => vec![Reward::Park, Reward::SuperUnit],
     };
     base.into_iter()
         .filter(|r| !(*r == Reward::BorderGrowth && c.border_growth_used))
@@ -323,6 +324,14 @@ pub fn exp_income(s: &State, player: PlayerId) -> u32 {
         .filter(|c| c.owner == player)
         .map(|c| c.level + u32::from(c.is_capital) + u32::from(c.workshop) + c.parks)
         .sum()
+}
+
+/// Living units with `origin == city`, Super Units excluded (milestone 5 rule 3).
+pub fn exp_supported(s: &State, city: CityId) -> u32 {
+    s.units
+        .iter()
+        .filter(|u| u.origin == Some(city) && u.kind != UnitType::SuperUnit)
+        .count() as u32
 }
 
 pub fn exp_research_cost(s: &State, player: PlayerId, tech: Tech) -> u32 {
@@ -435,11 +444,20 @@ pub fn exp_after(prev: &State, a: &Action) -> State {
                 Reward::Resources => {}
                 Reward::PopulationGrowth => c.population += 3,
                 Reward::BorderGrowth => c.border_growth_used = true,
+                Reward::Explorer | Reward::SuperUnit => {}
             }
             c.pending_reward = false;
             exp_level_check(c);
             if reward == Reward::Resources {
                 s.players[cur].stars += 5;
+            }
+            // The walk and the spawn touch no city field, so running them after the level-up
+            // check gives the same state as the brief's order.
+            if reward == Reward::Explorer {
+                exp_explorer_walk(&mut s, city);
+            }
+            if reward == Reward::SuperUnit {
+                exp_spawn_super_unit(&mut s, city);
             }
             if reward == Reward::BorderGrowth {
                 let at = prev.cities.iter().find(|c| c.id == city).unwrap().pos;
@@ -472,10 +490,11 @@ pub fn exp_after(prev: &State, a: &Action) -> State {
     s
 }
 
-/// Milestone 4 invariants on a single state (brief "Tests" item 6).
+/// Milestone 4 invariants on a single state (brief "Tests" item 6); capacity ignores Super Units
+/// (milestone 5 rule 3).
 pub fn check_economy_invariants(s: &State, ctx: &str) {
     for c in &s.cities {
-        let supported = s.units.iter().filter(|u| u.origin == Some(c.id)).count() as u32;
+        let supported = exp_supported(s, c.id);
         assert!(
             supported <= c.level + 1,
             "{ctx}: city {:?} supports {supported} units at level {}",
@@ -504,6 +523,228 @@ pub fn check_economy_invariants(s: &State, ctx: &str) {
         // `stars` is unsigned; a wrapped subtraction would show up as a huge number.
         assert!(pl.stars < 1_000_000, "{ctx}: stars {}", pl.stars);
     }
+}
+
+// ---------- milestone 5 rules, replayed from the brief ----------
+
+/// In-bounds 8-neighbors of `q`, row-major.
+pub fn nbrs(n: u8, q: Pos) -> Vec<Pos> {
+    let mut out = Vec::new();
+    for dr in -1i32..=1 {
+        for dc in -1i32..=1 {
+            let (r, c) = (q.row as i32 + dr, q.col as i32 + dc);
+            if (dr, dc) != (0, 0) && r >= 0 && c >= 0 && r < n as i32 && c < n as i32 {
+                out.push(p(r as u8, c as u8));
+            }
+        }
+    }
+    out
+}
+
+/// Breadth-first step counts from `from` over tiles where `ok` holds (8-neighbors, each step 1),
+/// row-major indexed; `u32::MAX` where unreachable.
+pub fn bfs(n: u8, from: Pos, ok: &dyn Fn(Pos) -> bool) -> Vec<u32> {
+    let at = |q: Pos| q.row as usize * n as usize + q.col as usize;
+    let mut d = vec![u32::MAX; n as usize * n as usize];
+    d[at(from)] = 0;
+    let mut frontier = vec![from];
+    let mut k = 0;
+    while !frontier.is_empty() {
+        k += 1;
+        let mut next = Vec::new();
+        for &f in &frontier {
+            for q in nbrs(n, f) {
+                if ok(q) && d[at(q)] == u32::MAX {
+                    d[at(q)] = k;
+                    next.push(q);
+                }
+            }
+        }
+        frontier = next;
+    }
+    d
+}
+
+/// The brief's tie rule: no draw for a single option, else `rng.gen_range(len)` over the
+/// (row-major) list.
+fn exp_pick(rng: &mut Rng, options: &[Pos]) -> Pos {
+    if options.len() == 1 {
+        options[0]
+    } else {
+        options[rng.gen_range(options.len() as u32) as usize]
+    }
+}
+
+/// The Explorer walk replayed from docs/MILESTONE_5 "Explorer walk" (steps 0 to 7, E1 to E5).
+/// Mutates the city owner's explored mask and `s.rng` only. Returns the tiles stood on: the start,
+/// then one per move.
+pub fn exp_explorer_walk(s: &mut State, city: CityId) -> Vec<Pos> {
+    let c = s.cities.iter().find(|c| c.id == city).unwrap().clone();
+    let owner = c.owner as usize;
+    let n = s.size;
+    let at = |q: Pos| q.row as usize * n as usize + q.col as usize;
+    let climbing = has_tech(s, c.owner, Tech::Climbing);
+    let passable: Vec<bool> = all_pos(n)
+        .iter()
+        .map(|&q| s.tile(q).terrain != Terrain::Mountain || climbing)
+        .collect();
+    let ok = |q: Pos| passable[at(q)];
+    let see = |s: &mut State, from: Pos| {
+        for q in all_pos(n) {
+            if cheb(q, from) <= 1 {
+                s.players[owner].explored[at(q)] = true;
+            }
+        }
+    };
+    let fog = |s: &State, t: Pos| {
+        nbrs(n, t)
+            .into_iter()
+            .chain([t])
+            .filter(|&q| !s.players[owner].explored[at(q)])
+            .count() as u32
+    };
+
+    let mut cur = c.pos;
+    let mut visited = vec![false; n as usize * n as usize];
+    visited[at(cur)] = true;
+    see(s, cur);
+    let mut path = vec![cur];
+    for _ in 0..15 {
+        let d = bfs(n, cur, &ok);
+        let cands: Vec<Pos> = all_pos(n)
+            .into_iter()
+            .filter(|&t| ok(t) && d[at(t)] >= 1 && d[at(t)] <= 4 && fog(s, t) >= 1)
+            .collect();
+        let next = if let Some(dmin) = cands.iter().map(|&t| d[at(t)]).min() {
+            let score = |t: Pos| fog(s, t).min(4) as f32 - if visited[at(t)] { 0.5 } else { 0.0 };
+            let near: Vec<Pos> = cands.into_iter().filter(|&t| d[at(t)] == dmin).collect();
+            let best = near.iter().map(|&t| score(t)).fold(f32::MIN, f32::max);
+            let top: Vec<Pos> = near.into_iter().filter(|&t| score(t) == best).collect();
+            let target = exp_pick(&mut s.rng, &top);
+            let dt = bfs(n, target, &ok);
+            let steps: Vec<Pos> = nbrs(n, cur)
+                .into_iter()
+                .filter(|&q| ok(q) && dt[at(q)] == d[at(target)] - 1)
+                .collect();
+            exp_pick(&mut s.rng, &steps)
+        } else {
+            let open: Vec<Pos> = nbrs(n, cur).into_iter().filter(|&q| ok(q)).collect();
+            let fresh: Vec<Pos> = open.iter().copied().filter(|&q| !visited[at(q)]).collect();
+            let set = if fresh.is_empty() { open } else { fresh };
+            if set.is_empty() {
+                cur
+            } else {
+                exp_pick(&mut s.rng, &set)
+            }
+        };
+        cur = next;
+        visited[at(cur)] = true;
+        see(s, cur);
+        path.push(cur);
+    }
+    path
+}
+
+/// The brief's clockwise ring: N, NE, E, SE, S, SW, W, NW as (dr, dc).
+pub const RING: [(i8, i8); 8] = [
+    (-1, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+    (1, 0),
+    (1, -1),
+    (0, -1),
+    (-1, -1),
+];
+
+/// Push direction from the brief: own `last_dir`, the opposite of an enemy's, or toward the center
+/// `(size - 1) / 2` by the sign per axis (south on the exact center).
+pub fn exp_push_dir(s: &State, occupant: &Unit, city_owner: PlayerId) -> Dir {
+    match occupant.last_dir {
+        Some(d) if occupant.owner == city_owner => d,
+        Some(d) => Dir {
+            dr: -d.dr,
+            dc: -d.dc,
+        },
+        None => {
+            let center = (s.size as i32 - 1) / 2;
+            let dr = sign(center - occupant.pos.row as i32);
+            let dc = sign(center - occupant.pos.col as i32);
+            if (dr, dc) == (0, 0) {
+                Dir { dr: 1, dc: 0 }
+            } else {
+                Dir { dr, dc }
+            }
+        }
+    }
+}
+
+/// Probe order around the ring from the intended direction: 0, -1 (ccw), +1 (cw), -2, +2, -3, +3,
+/// 4 (opposite).
+pub fn exp_probe_order(d: Dir) -> Vec<Dir> {
+    let i = RING.iter().position(|&r| r == (d.dr, d.dc)).unwrap() as i32;
+    [0, -1, 1, -2, 2, -3, 3, 4]
+        .iter()
+        .map(|k| {
+            let (dr, dc) = RING[(i + k).rem_euclid(8) as usize];
+            Dir { dr, dc }
+        })
+        .collect()
+}
+
+/// `ChooseReward { SuperUnit }`'s spawn replayed from the brief: push (or remove) the occupant,
+/// then create the Super Unit. Returns its id.
+pub fn exp_spawn_super_unit(s: &mut State, city: CityId) -> UnitId {
+    let c = s.cities.iter().find(|c| c.id == city).unwrap().clone();
+    if let Some(occ) = s.units.iter().find(|u| u.pos == c.pos).cloned() {
+        let climbing = has_tech(s, occ.owner, Tech::Climbing);
+        let n = s.size as i32;
+        let dest = exp_probe_order(exp_push_dir(s, &occ, c.owner))
+            .into_iter()
+            .map(|d| {
+                (
+                    c.pos.row as i32 + d.dr as i32,
+                    c.pos.col as i32 + d.dc as i32,
+                )
+            })
+            .filter(|&(r, col)| r >= 0 && col >= 0 && r < n && col < n)
+            .map(|(r, col)| p(r as u8, col as u8))
+            .find(|&q| {
+                s.units.iter().all(|u| u.pos != q)
+                    && (s.tile(q).terrain != Terrain::Mountain || climbing)
+            });
+        tile_mut(s, c.pos).unit = None;
+        match dest {
+            Some(q) => {
+                tile_mut(s, q).unit = Some(occ.id);
+                s.units.iter_mut().find(|u| u.id == occ.id).unwrap().pos = q;
+                for t in vision(s, q) {
+                    let i = idx(s, t);
+                    s.players[occ.owner as usize].explored[i] = true;
+                }
+            }
+            None => s.units.retain(|u| u.id != occ.id),
+        }
+    }
+    let health = s.tables.unit(UnitType::SuperUnit).health;
+    let id = UnitId(s.next_unit_id);
+    s.next_unit_id += 1;
+    s.units.push(Unit {
+        id,
+        kind: UnitType::SuperUnit,
+        owner: c.owner,
+        pos: c.pos,
+        health,
+        max_health: health,
+        origin: Some(city),
+        kills: 0,
+        veteran: false,
+        promotion_available: false,
+        phase: Phase::Done,
+        last_dir: None,
+    });
+    tile_mut(s, c.pos).unit = Some(id);
+    id
 }
 
 /// Tiles a unit standing on `q` sees: Chebyshev 1, or 2 on a mountain.
@@ -778,12 +1019,13 @@ pub fn random_economy_board(seed: u64) -> State {
                 KINDS[rng.gen_range(4) as usize]
             };
             let home = rng.gen_range(cities.len() as u32) as usize;
-            let origin = (kind != UnitType::SuperUnit
-                && cities[home].0 == owner
-                && supported[home] < cities[home].2 + 1
+            // Super Units keep their origin but never use capacity (milestone 5 rule 3).
+            let super_unit = kind == UnitType::SuperUnit;
+            let origin = (cities[home].0 == owner
+                && (super_unit || supported[home] < cities[home].2 + 1)
                 && rng.gen_range(4) != 0)
                 .then(|| {
-                    supported[home] += 1;
+                    supported[home] += u32::from(!super_unit);
                     CityId(home as u32)
                 });
             let max = tables.unit(kind).health;

@@ -52,3 +52,34 @@ Append entries below. Format:
   Tests: `tables.rs::reward_menus_must_cover_every_level_from_2_up_exactly_once`,
   `duplicate_or_missing_site_actions_are_rejected`, `malformed_site_or_reward_json_is_an_error`.
 - Owner answer: approved as listed, given after phase A on 2026-10-21.
+
+## Q4: The Explorer's 0.5 visited penalty can never change a choice
+- Needed for: milestone 5, "Explorer walk" step 4, and test item 1 ("the 0.5 visited penalty
+  flips a choice"); spec "Explorer walk" step 3
+- Ambiguity: every visited tile was revealed radius 1 when the explorer stood on it (step 0 for
+  the start, E1; step 7 for each move), so `fog(t) = 0` for every visited tile and no visited tile
+  is ever a candidate (step 3 needs `fog(t) >= 1`). The penalty only ever applies to tiles that are
+  not candidates, so it never changes the target. A golden where it "flips a choice" cannot be
+  drawn, and the mutants "penalty dropped" and "penalty applied to the wrong tile" (all candidates
+  are unvisited, so a penalty on every candidate keeps their order) are equivalent: no test can
+  catch them.
+- Options: A) keep the rule as written (a harmless no-op; tests do not cover it). B) change the
+  rule so it can matter, e.g. penalize candidates adjacent to a visited tile, or count fog with a
+  larger radius than the explorer's vision.
+- Agent's pick and why: A. The walk's observable behavior is fully specified without it, and
+  "backtracks only when nothing else is open" is already carried by the wander rule (E3). No test
+  depends on the choice; `common::exp_explorer_walk` implements the penalty as written.
+- Owner answer: A on 2026-10-21
+
+## Q5: The Explorer differential test cannot compare paths
+- Needed for: milestone 5, test item 2 ("comparing path, mask and final rng state")
+- Ambiguity: the fixed API `explorer_walk(state: &mut State, city: CityId)` returns nothing, and
+  the explorer never appears in the state, so the path is not observable.
+- Options: A) compare the whole state after the walk (owner's mask and rng state included) and
+  check paths only through the mask they reveal. B) change the API to return the path
+  (`-> Vec<Pos>`).
+- Agent's pick and why: A, the API is fixed by the brief. The goldens use long corridors and
+  mostly fogged boards so the revealed mask pins the path, and the rng state pins the number and
+  bounds of the draws. Tests: `explorer.rs::explorer_walk_matches_an_independent_replay` and every
+  golden there.
+- Owner answer: A on 2026-10-21

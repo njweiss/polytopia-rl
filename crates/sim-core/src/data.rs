@@ -67,16 +67,18 @@ pub enum SiteAction {
     Mine,
 }
 
-/// Level-up rewards (docs/MILESTONE_4 "Reward menus").
+/// Level-up rewards (docs/MILESTONE_4 "Reward menus", docs/MILESTONE_5 "Menus").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reward {
     Workshop,
+    Explorer,
     CityWall,
     Resources,
     PopulationGrowth,
     BorderGrowth,
     Park,
+    SuperUnit,
 }
 
 pub const ALL_SITE_ACTIONS: [SiteAction; 6] = [

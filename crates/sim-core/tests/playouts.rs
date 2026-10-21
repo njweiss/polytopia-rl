@@ -1,5 +1,5 @@
 //! Property tests and random playouts (docs/MILESTONE_3 "Tests" items 5-7, docs/MILESTONE_4
-//! "Tests" item 6; spec "Invariants and test plan"). Games start from `new_game_from_seed`, from
+//! "Tests" item 6, docs/MILESTONE_5 "Tests" item 6; spec "Invariants and test plan"). Games start from `new_game_from_seed`, from
 //! boosted new games (extra stars, techs and pre-grown capitals so levels 3 to 5 are visited), from
 //! random scripted boards (`common::random_board`: every unit type, cities, walls, partial fog)
 //! and from random economy boards (`common::random_economy_board`: resources, improvements,
@@ -25,11 +25,12 @@ fn seeded_game(seed: u64) -> State {
     new_game_from_seed(seed, &MapParams::default(), &cfg)
 }
 
-/// A new game where both capitals start one population short of the next level (level 1 to 4)
-/// and both players have extra stars; every other game also has every tech.
+/// A new game where both capitals start one population short of the next level (level 1 to 5,
+/// so the Explorer and Super Unit menus come up often) and both players have extra stars; every
+/// other game also has every tech.
 fn boosted_game(seed: u64) -> State {
     let mut s = seeded_game(seed);
-    let level = 1 + (seed % 4) as u32;
+    let level = 1 + (seed % 5) as u32;
     for c in &mut s.cities {
         c.level = level;
         c.population = exp_cum(level + 1) - 1;
@@ -53,13 +54,16 @@ fn actor(a: &Action) -> Option<UnitId> {
     }
 }
 
-const REWARDS: [Reward; 6] = [
+/// In `Reward` declaration order (the brief's enum), so `reward as usize` indexes it.
+const REWARDS: [Reward; 8] = [
     Reward::Workshop,
+    Reward::Explorer,
     Reward::CityWall,
     Reward::Resources,
     Reward::PopulationGrowth,
     Reward::BorderGrowth,
     Reward::Park,
+    Reward::SuperUnit,
 ];
 
 /// Random actions, mostly not legal: unit and city ids up to two past the last one, positions up
@@ -87,7 +91,7 @@ fn junk(rng: &mut Rng, s: &State) -> Action {
         },
         7 => Action::ChooseReward {
             city,
-            reward: REWARDS[rng.gen_range(6) as usize],
+            reward: REWARDS[rng.gen_range(8) as usize],
         },
         _ => Action::EndTurn,
     }
@@ -340,9 +344,12 @@ struct Seen {
     trains: usize,
     research: usize,
     sites: [usize; 6],
-    rewards: [usize; 6],
+    rewards: [usize; 8],
     max_level: u32,
     cascades: usize,
+    /// Super Unit spawns onto an occupied city tile, and those where the occupant was removed.
+    pushes: usize,
+    removals: usize,
 }
 
 /// Plays `steps` actions with the test's RNG; at each step compares `legal_actions` with the
@@ -399,6 +406,13 @@ fn play(
             Action::Site { action, .. } => seen.sites[action as usize] += 1,
             Action::ChooseReward { city, reward } => {
                 seen.rewards[reward as usize] += 1;
+                if reward == Reward::SuperUnit {
+                    let at = prev.city(city).pos;
+                    if let Some(occ) = prev.tile(at).unit {
+                        seen.pushes += 1;
+                        seen.removals += usize::from(s.unit(occ).is_none());
+                    }
+                }
                 if s.cities.iter().any(|c| c.id == city && c.pending_reward) {
                     seen.cascades += 1;
                 }
@@ -498,6 +512,7 @@ fn random_playouts_keep_every_invariant() {
     }
     assert!(seen.max_level >= 6, "max level {}", seen.max_level);
     assert!(seen.cascades > 5, "only {} cascades", seen.cascades);
+    assert!(seen.pushes > 30, "only {} Super Unit pushes", seen.pushes);
 }
 
 /// Seeded, boosted, scripted or economy start, by `seed % 4`.

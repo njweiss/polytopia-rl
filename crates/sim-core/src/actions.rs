@@ -8,9 +8,11 @@ use crate::data::{
 use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
 };
+use crate::explorer::explorer_walk;
 use crate::grid::{chebyshev, Pos};
 use crate::map::{Resource, Terrain};
 use crate::movement::{defense_bonus, reachable_tiles};
+use crate::spawn::spawn_super_unit;
 use crate::state::{City, CityId, Dir, Improvement, Phase, PlayerId, State, Unit, UnitId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -483,6 +485,10 @@ fn apply_choose_reward(state: &mut State, city: CityId, reward: Reward) {
             city_mut(state, city).population += tables.population_growth_amount()
         }
         Reward::BorderGrowth => border_growth(state, city),
+        Reward::Explorer => explorer_walk(state, city),
+        Reward::SuperUnit => {
+            spawn_super_unit(state, city);
+        }
     }
     city_mut(state, city).pending_reward = false;
     level_up_check(state, city);
