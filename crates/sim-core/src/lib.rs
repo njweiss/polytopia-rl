@@ -2,3 +2,6 @@
 
 pub mod combat;
 pub mod data;
+pub mod grid;
+pub mod map;
+pub mod rng;
