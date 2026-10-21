@@ -164,7 +164,7 @@ pub struct State {
 }
 
 impl State {
-    fn index(&self, p: Pos) -> usize {
+    pub(crate) fn index(&self, p: Pos) -> usize {
         p.row as usize * self.size as usize + p.col as usize
     }
 
