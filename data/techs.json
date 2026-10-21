@@ -1,0 +1,11 @@
+[
+  { "tech": "climbing",     "tier": 1, "requires": null },
+  { "tech": "hunting",      "tier": 1, "requires": null },
+  { "tech": "organization", "tier": 1, "requires": null },
+  { "tech": "riding",       "tier": 1, "requires": null },
+  { "tech": "archery",      "tier": 2, "requires": "hunting" },
+  { "tech": "forestry",     "tier": 2, "requires": "hunting" },
+  { "tech": "farming",      "tier": 2, "requires": "organization" },
+  { "tech": "strategy",     "tier": 2, "requires": "organization" },
+  { "tech": "mining",       "tier": 2, "requires": "climbing" }
+]

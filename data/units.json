@@ -1,0 +1,7 @@
+[
+  { "unit": "warrior",    "cost": 2,    "health": 10, "attack": 2, "defense": 2, "movement": 1, "range": 1, "skills": ["dash", "fortify"],           "unlocked_by": null },
+  { "unit": "rider",      "cost": 3,    "health": 10, "attack": 2, "defense": 1, "movement": 2, "range": 1, "skills": ["dash", "fortify", "escape"], "unlocked_by": "riding" },
+  { "unit": "archer",     "cost": 3,    "health": 10, "attack": 2, "defense": 1, "movement": 1, "range": 2, "skills": ["dash", "fortify"],           "unlocked_by": "archery" },
+  { "unit": "defender",   "cost": 3,    "health": 15, "attack": 1, "defense": 3, "movement": 1, "range": 1, "skills": ["fortify"],                   "unlocked_by": "strategy" },
+  { "unit": "super_unit", "cost": null, "health": 40, "attack": 5, "defense": 4, "movement": 1, "range": 1, "skills": ["static"],                    "unlocked_by": null }
+]
