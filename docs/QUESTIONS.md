@@ -458,4 +458,10 @@ Append entries below. Format:
 - Agent's pick and why: A before 10b (20M steps). The code is device-agnostic (`device="auto"`,
   sampling uses a CPU generator so it also works with a CUDA model); nothing else changes. The
   RL_REPORT timing split shows how much the GPU can help (the forward pass share).
-- Owner answer:
+- Owner answer: A on 2026-10-22. Done: `pixi.toml` declares `cuda = "12.9"` on the linux-64 platform
+  and pins `pytorch` to the `cuda129_generic*` build (`pytorch 2.14.1 cuda129_generic_py312`,
+  `cuda-version 12.9`; the conda-forge `cuda129_mkl` builds would break the Q18 OpenBLAS pin). It
+  also adds `cuda-cudart-dev 12.9`: torch 2.14 runs one batched-matmul backward kernel through
+  Triton, which compiles a C helper at run time against `cuda.h` (without it, `train_update` on
+  CUDA fails with `cuda.h: No such file or directory`). Measured on the RTX 4060 (default config):
+  ~1,550 sps vs ~255 sps on CPU.
