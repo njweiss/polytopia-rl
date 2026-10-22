@@ -12,9 +12,8 @@ test = false
 doctest = false
 
 [features]
-# On by default so the cargo gate builds the cdylib without linking libpython (docs/QUESTIONS.md
-# Q14).
-default = ["extension-module"]
+# Enabled by maturin (python/pyproject.toml), never by the cargo workspace gate. Without it the
+# cdylib links libpython, so the gate needs the Python dev package (docs/QUESTIONS.md Q14).
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]

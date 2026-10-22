@@ -270,7 +270,7 @@ Append entries below. Format:
 - Agent's pick and why: A. The gate stays self-contained and matches what maturin builds.
   `pyo3` macros compile under the workspace `unsafe_code = "forbid"` lint, so `sim-py` needs no
   exception.
-- Owner answer:
+- Owner answer: B on 2026-10-22
 
 ## Q15: Details the milestone 9 tests assume
 
@@ -311,4 +311,4 @@ Append entries below. Format:
   commit).
 - Agent's pick and why: A, the most direct reading of each sentence. For 12, extending the
   lock to `python/tests/` would be a one-line change to `check.sh`.
-- Owner answer:
+- Owner answer: A on 2026-10-22
