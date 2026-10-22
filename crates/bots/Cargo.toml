@@ -1,0 +1,11 @@
+[package]
+name = "bots"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sim-core = { path = "../sim-core" }
+
+[lints]
+workspace = true

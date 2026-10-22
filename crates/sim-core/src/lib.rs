@@ -14,3 +14,4 @@ pub mod setup;
 pub mod spawn;
 pub mod state;
 pub mod testing;
+pub mod view;
