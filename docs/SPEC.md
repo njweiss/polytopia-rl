@@ -226,6 +226,8 @@ Every action has one actor kind. The sim exposes `legal_actions(state)` as struc
 
 **Forced rewards.** If any city has a pending reward, the only legal action is that city's Choose reward. Nothing else is legal until it resolves. When several cities are pending, resolve in ascending city id. With roads out of v1, only one city can have a pending reward at a time, so this rule matters only once roads return.
 
+TODO: Decide whether to add damage calculator action which gives preview of combat result (exists in real game)
+
 **Capture notes**
 
 - Capture must be a unit's first and only action of the turn, so a unit enters the tile one turn and captures the next. It has to survive in between.
