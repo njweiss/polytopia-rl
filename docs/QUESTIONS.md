@@ -165,3 +165,71 @@ Append entries below. Format:
   commit).
 - Agent's pick and why: A, the most natural reading of each format.
 - Owner answer: A on 2026-10-21
+
+## Q10: As written, the Economy bot misses the behavior floor (its first Warrior never moves in about a quarter of games)
+
+- Needed for: milestone 8, "Economy bot" rule 8 and "Common bot machinery" (`explore_step`), and
+  test item 5 (`bots/tests/floor.rs::economy_beats_random`, at least 30 of 40 wins)
+- Ambiguity: the start reveals radius 2 around the capital, and villages are at least 3 from any
+  city. So the Economy bot has no village target, and every tile its Warrior can reach (radius 1)
+  has vision gain 0 unless a mountain is next to it and it has Climbing. Then `explore_step` is
+  `None`, the Warrior stays on the capital, and since a unit on the city tile makes `Train`
+  illegal, the bot never trains either. It researches and harvests, then hoards stars.
+  In the throwaway reference (a literal reading of the rules) this happens in 26 of 100 games
+  against `random` (seeds 0..100, Economy as player 0, turn cap 30). Economy wins 27 of 40 on the
+  floor test's games (needs 30) and 127 of 200 on the gate's games (needs 160). Rush is not hit
+  as hard (194 of 200) because it takes Explorer at level 2, which reveals targets.
+- Options: A) when no reachable tile has vision gain, `explore_step` steps with `greedy_step`
+  toward the nearest (ties row-major) explored tile with vision gain > 0. B) add a rule before
+  Move: a unit standing on an own city tile where `Train` would otherwise be legal moves off it
+  (first reachable tile row-major). C) keep the rules and lower or drop the Economy floor.
+- Agent's pick and why: A. It fixes the cause (no way to reach the fog) for both bots and keeps
+  them stateless. The tests encode the brief as written, so `economy_beats_random` fails against
+  the literal rules. The implementer cannot get `check.sh` green until this is answered and the
+  brief, and if needed the goldens, are updated in a new phase A commit.
+- Owner answer:
+
+## Q11: Zone of Control from units on unexplored tiles reaches `reachable_tiles` and `legal_actions`
+
+- Needed for: milestone 8, `PlayerView` must not leak unexplored contents (test item 1, the
+  no-cheating property)
+- Ambiguity: milestone 3 movement stops a unit that arrives next to any enemy unit. That includes
+  an enemy on an unexplored tile next to an explored one. So a Rider's reachable set, and the
+  legal Move list, change when a hidden enemy unit is added or removed there. The view passes
+  `legal_actions` and `reachable_tiles` through, so it can leak that a hidden unit exists.
+- Options: A) keep the rule. The no-cheating test only adds or removes units on "deep" unexplored
+  tiles (all eight neighbors unexplored too), where they cannot affect movement. B) change the
+  movement rule so only enemy units on tiles the mover's owner has explored exert Zone of Control
+  (a milestone 3 rule change, with new movement tests). C) keep the rule but have the view filter
+  it out (then the view's legal list differs from `legal_actions`, which breaks the brief's API).
+- Agent's pick and why: A for milestone 8, since it leaves the existing rules alone. B is worth
+  considering before RL, because the learner's legal mask will carry the same signal. The test encodes A (`bots/tests/no_cheating.rs`, header comment).
+- Owner answer:
+
+## Q12: Details the milestone 8 tests assume
+
+- Needed for: milestone 8, "Match running and statistics", "CLI additions", "Public API"
+- Ambiguity: these points are not fully pinned by the brief. The tests encode the choices below.
+  1. Snapshots: "the first moment `state.turn == t && state.current == 0`" includes the terminal
+     state. A game ended by the turn cap 30 has its turn-30 snapshot taken from the final state
+     (`runner.rs::snapshot_turns`, and every comparison with `common::my_play_game`).
+  2. A bare bot's `name()` equals its kind's name (`"random"`, `"rush"`, `"economy"`).
+  3. `captured_capital` is `Win(w)` with `w` owning every `is_capital` city.
+  4. `play`: the message is `wrote FILE: {n} actions, outcome {..}` with the same outcome text as
+     `play-random`; the replay log uses `MapParams::default()` and `Config::default()` with the
+     given turn cap. Its default turn cap and max-actions are not tested.
+  5. `tournament`: `MapParams::default()` and `Config::default()` with turn cap K. On success the
+     table goes to `out` exactly as built from the brief's format strings (one line per pair and
+     checkpoint, no blank lines, "win"/"draw" always singular) and nothing goes to `err`. `GATE
+     FAILED` may be printed on either stream; the exit code is 1.
+  6. `--save-replays`: `{i}` counts from 0, in `run_match`'s game order (seed S with x as player
+     0, seed S swapped, seed S+1, ...); the saved games are complete (no action limit).
+  7. Usage errors (exit 2) also include: `play` with one or three bots, an unknown bot name, a
+     missing option value; `tournament --seed -3`, `--gate-min high`.
+  8. `PlayerView::reachable_tiles` panics for any unit that is not the viewer's, hidden or not.
+  9. Not tested: the reward fallback ("else the first legal ChooseReward"), since every preference
+     is always on its menu with the current tables.
+- Options: A) as listed. B) owner changes any item (the matching tests change in a new phase A
+  commit).
+- Agent's pick and why: A, the most direct reading of each sentence.
+- Owner answer:
