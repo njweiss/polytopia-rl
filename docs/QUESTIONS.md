@@ -233,3 +233,22 @@ Append entries below. Format:
   commit).
 - Agent's pick and why: A, the most direct reading of each sentence.
 - Owner answer: A on 2026-10-21
+
+## Q13: Rush beats Economy 84% of the time, outside the brief's 25%-75% target
+
+- Needed for: milestone 8, "Decisions already made" (Rush vs Economy balance is reported, not
+  gated; the implementer reports if it cannot stay between 25% and 75% using only the open options)
+- Result: `scripts/bots_gate.sh` (seeds 0..100, both seats, turn cap 30):
+  `rush vs economy: rush 168 win, economy 32 win, 0 draw | by capture 168/26 | mean score diff -267.2`.
+  Every Rush win is a capital capture. Economy is ahead on score at every checkpoint
+  (turn 20: 3337.7 vs 1309.8), but it trains only up to 2 units per city and only Warriors, and
+  its attack threshold is 3. So it rarely defends its capital in time.
+- Open options I had: almost none. H6 makes the rules the specification. The only choices left
+  to me (several visible enemy capitals: nearest, ties row-major; the reward fallback) never
+  come up in these games, so they cannot move the balance.
+- Options: A) accept the imbalance for now (both bots pass the 80% gate against random, which is
+  what RL needs first). B) owner changes Economy's rules (for example a higher unit bound, or a
+  defend-the-capital rule), with new goldens in a new phase A commit.
+- Agent's pick and why: A. The milestone's hard gate passes, and any rebalance is a behavior change
+  that needs the owner (H6).
+- Owner answer:
