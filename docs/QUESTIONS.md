@@ -361,7 +361,9 @@ Append entries below. Format:
   build does not need MKL-backed numpy. The milestone 10 tests were validated with
   `MKL_INTERFACE_LAYER=LP64` set by hand (option C as a stopgap). Nothing was changed in
   `pixi.toml`.
-- Owner answer:
+- Owner answer: A on 2026-10-22. Done: `pixi.toml` pins `libblas` to the `*openblas` build
+  (resolved `libblas 3.11.0 *_openblas`, `libopenblas 0.3.34`, `nomkl`; `pytorch 2.14.1` moved to
+  its `cpu_generic` build). The milestone 9 pytest suite passes without `MKL_INTERFACE_LAYER`.
 
 ## Q19: Details the milestone 10 tests assume
 
@@ -428,7 +430,7 @@ Append entries below. Format:
   commit).
 - Agent's pick and why: A, the most direct reading of the brief plus the smallest additions that
   make each listed test possible.
-- Owner answer:
+- Owner answer: A on 2026-10-22
 
 ## Q20: How `evaluate` passes `greedy` to `policy_fn`
 
@@ -440,4 +442,4 @@ Append entries below. Format:
   C) drop `greedy` from `evaluate`, and `net_policy(net, greedy)` takes it instead.
 - Agent's pick and why: A. It keeps both signatures close to the brief, and one `net_policy`
   serves greedy and sampled evaluation. The tests use A.
-- Owner answer:
+- Owner answer: A on 2026-10-22
