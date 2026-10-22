@@ -252,3 +252,96 @@ Append entries below. Format:
 - Agent's pick and why: A. The milestone's hard gate passes, and any rebalance is a behavior change
   that needs the owner (H6).
 - Owner answer: A on 2026-10-22
+
+## Q14: `sim-py` must enable `extension-module` for the cargo gate to link
+
+- Needed for: milestone 9, "Changes to earlier tests" (`sim-py` builds without the
+  `extension-module` feature under `cargo clippy/test --workspace`)
+- Ambiguity: it works the other way round. Without `extension-module`, PyO3 links the cdylib
+  against `libpython3.12.so`. That library is not installed on this machine (only
+  `libpython3.12.so.1`), so `cargo build --workspace` fails with
+  `rust-lld: unable to find library -lpython3.12`. With the feature on, the cdylib leaves the
+  Python symbols undefined, as an extension module should, and links without libpython. Either
+  way, PyO3's build script runs `python3` once to read the interpreter config.
+- Options: A) make `extension-module` a default feature of `sim-py` and set `test = false`,
+  `doctest = false` on its lib (it has no Rust tests, J1). This is what the stub commit does.
+  B) keep the feature off and install the Python dev package (`libpython3.12-dev`) wherever the
+  gate runs. C) set `PYO3_BUILD_EXTENSION_MODULE=1` in `.cargo/config.toml`.
+- Agent's pick and why: A. The gate stays self-contained and matches what maturin builds.
+  `pyo3` macros compile under the workspace `unsafe_code = "forbid"` lint, so `sim-py` needs no
+  exception.
+- Owner answer: B on 2026-10-22
+
+## Q15: Details the milestone 9 tests assume
+
+- Needed for: milestone 9, "Public API", "Observation", "Factored action space", "Env",
+  "Python layer"
+- Ambiguity: these points are not fully pinned by the brief. The tests encode the choices below.
+  1. Names: the phase group is `phase.fresh` .. `phase.done`, and the tech flags in
+     `global_names` are `tech.climbing` .. `tech.mining`. Python `spec()` lists are snake_case
+     data names: `action_types` `move` .. `end_turn` (`choose_reward`, `end_turn`), and
+     `unit_types`, `rewards`, `techs`, `site_actions` as in `data/*.json`.
+  2. `can_promote`, `can_harvest` and `can_build` come from `view.legal_actions()`, so all three
+     are 0 everywhere when it is not the viewer's turn and while a reward is pending.
+  3. `pending_reward` is 1 only when the observer has a pending city.
+  4. `DecodeError` is `ActorOutOfRange | NoActor | WrongKind | BadArg` (each test case breaks
+     one rule only). `step_factored` with `actor >= num_actors` may return `BadIndex` or
+     `Decode(ActorOutOfRange)`; both are accepted. In Python a `kind >= 10` is a `ValueError`.
+  5. `ActionMasks::arg(a, k)` has length `arg_len(k)` for every actor, all false when the slot
+     has no such action.
+  6. Rust `Env` has no `replay_json` (the brief's API leaves it out). The Rust tests rebuild a
+     replay log from `action_log()` with `sim_tools::replay::record_game` (so `sim-env` has a
+     dev-dependency on `sim-tools`). The pytest suite checks `replay_json()` with
+     `polytopia verify` (`$POLYTOPIA_BIN`, else `cargo run -p sim-tools --bin polytopia`).
+     Where the replay-building code lives is left to the implementer. "No game logic in
+     `sim-py`" suggests `sim-env`.
+  7. `info()["agent_actions"]` counts the caller's successful steps since `reset`, and
+     `info()["scores"]` is a `(s0, s1)` tuple. The default of Python's `agent_seat` is not
+     tested.
+  8. In two-seat mode the "acting player" of a step is `state.current` before the step.
+  9. After truncation only the `Finished` errors are tested. `is_terminal()` and
+     `legal_actions()` are not.
+  10. `Env::new`'s size assertion is not tested. `MapParams` has no explicit size check, and
+      sizes below 5 underflow in `generate_map`.
+  11. Pinned versions: Rust `pyo3 =0.30.1` and `numpy =0.30.0` (`crates/sim-py`); Python
+      `maturin==1.15.0`, `numpy==2.5.4`, `pytest==9.1.1` (`python/pyproject.toml`).
+  12. The pytest files live in `python/tests/`, which the `check.sh` test lock does not cover
+      (it only compares `crates/*/tests/`).
+- Options: A) as listed. B) owner changes any item (the matching tests change in a new phase A
+  commit).
+- Agent's pick and why: A, the most direct reading of each sentence. For 12, extending the
+  lock to `python/tests/` would be a one-line change to `check.sh`.
+- Owner answer: A on 2026-10-22
+
+## Q16: Which map sizes `Env::new` accepts
+
+- Needed for: milestone 9, "Public API" (`Env::new` asserts `size` is accepted by `MapParams`);
+  Q15.10
+- Ambiguity: `MapParams` had no size check, so "accepted" was undefined. `generate_map` picks
+  both capitals from the inland tiles (rows and cols `2..=size-3`). Sizes 0 to 4 have no
+  inland tile and panic (or underflow `size - 3`). Size 5 has one, so both capitals land on the
+  same tile for every seed (checked on seeds 0..300). Sizes 6 to 255 generate two distinct
+  capitals and a full game for every seed checked.
+- Options: A) `MapParams::MIN_SIZE = 6`; `Env::new` asserts `size >= MIN_SIZE`, and Python's
+  `Env(size=...)` raises `ValueError` below it. B) a larger minimum (for example 8, so each
+  capital's inner ring fits away from the other). C) validate inside `generate_map` instead.
+- Agent's pick and why: A, the smallest size the generator handles correctly. No upper bound:
+  `u8` already caps it at 255, which generates fine.
+- Owner answer: A on 2026-10-22 (fix requested after the milestone 9 review)
+
+## Q17: pixi as the Python environment manager
+
+- Needed for: milestone 9, "Out of scope" (new dependencies: Python `maturin`, `numpy`,
+  `pytest` only, versions pinned and recorded)
+- Ambiguity: the brief approves the Python packages but not how the interpreter and tools are
+  installed. Commit 654b518 added `pixi.toml`, `pixi.lock`, `.gitattributes` and the pixi
+  tasks `check` and `py-gate`.
+- Decision: pixi (tested with 0.76.1, conda-forge channel, `linux-64`) is the owner-approved
+  manager for the Python side. `pixi.toml` gives ranges; `pixi.lock` pins the resolved
+  versions: `python 3.15.1`, `numpy 2.5.4`, `maturin 1.15.0`, `pytest 9.1.1`, `pip 26.2.2`.
+  These match the exact pins in `python/pyproject.toml` (Q15.11). `pip` is approved as part of
+  the environment (maturin uses it in `maturin develop`). Run the full gate, Python tests
+  included, with `pixi run check`; plain `./scripts/check.sh` outside the pixi env skips them.
+  Add a Python dependency only with the owner's approval, via `pixi add`, and commit the
+  updated `pixi.lock`.
+- Owner answer: approved on 2026-10-22
