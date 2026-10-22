@@ -3,6 +3,8 @@
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::data::{Tables, Tech, UnitType};
 use crate::grid::Pos;
 use crate::map::{Resource, Terrain};
@@ -11,10 +13,10 @@ use crate::rng::Rng;
 /// 0 or 1. Player 0 always moves first.
 pub type PlayerId = u8;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct UnitId(pub u32);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct CityId(pub u32);
 
 /// Per-unit progress within a turn (spec: "Unit phases").
@@ -60,7 +62,7 @@ impl TechSet {
 }
 
 /// Score weights (spec: "Score"; docs/MILESTONE_6 "Score").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScoreWeights {
     /// Times the unit's cost in stars.
     pub unit_per_star: u32,
@@ -94,7 +96,7 @@ impl Default for ScoreWeights {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     pub full_observability: bool,
     pub turn_cap: u32,
@@ -174,7 +176,7 @@ pub struct PlayerState {
     pub explored: Vec<bool>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Outcome {
     Win(PlayerId),
     Draw,

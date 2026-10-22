@@ -84,6 +84,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sim-tools"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sim-core",
+]
+
+[[package]]
 name = "syn"
 version = "3.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
