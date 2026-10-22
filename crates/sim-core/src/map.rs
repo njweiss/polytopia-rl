@@ -21,6 +21,15 @@ pub enum Resource {
     Metal,
 }
 
+pub const ALL_TERRAINS: [Terrain; 3] = [Terrain::Field, Terrain::Forest, Terrain::Mountain];
+
+pub const ALL_RESOURCES: [Resource; 4] = [
+    Resource::Fruit,
+    Resource::Crop,
+    Resource::Animal,
+    Resource::Metal,
+];
+
 /// What stands on the tile at game start. Capital and village tiles are always `Terrain::Field`
 /// with no resource (see docs/MILESTONE_2.md, clarification C2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -51,6 +60,12 @@ pub struct MapParams {
     pub outer_ring_factor: f32,
     /// Each capital's 8 neighbors must hold at least this many fruit.
     pub min_capital_fruit: u32,
+}
+
+impl MapParams {
+    /// The smallest `size` `generate_map` accepts: two distinct inland capitals need an inland
+    /// region (rows and cols `2..=size-3`) of at least two tiles (docs/QUESTIONS.md Q16).
+    pub const MIN_SIZE: u8 = 6;
 }
 
 impl Default for MapParams {

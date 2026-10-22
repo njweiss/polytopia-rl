@@ -1,0 +1,27 @@
+[package]
+name = "sim-py"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "polytopia_sim"
+crate-type = ["cdylib"]
+# No Rust tests here (J1); the test harness would have to link libpython.
+test = false
+doctest = false
+
+[features]
+# Enabled by maturin (python/pyproject.toml), never by the cargo workspace gate. Without it the
+# cdylib links libpython, so the gate needs the Python dev package (docs/QUESTIONS.md Q14).
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+sim-env = { path = "../sim-env" }
+sim-core = { path = "../sim-core" }
+bots = { path = "../bots" }
+pyo3 = "=0.30.1"
+numpy = "=0.30.0"
+
+[lints]
+workspace = true

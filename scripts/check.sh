@@ -16,4 +16,9 @@ fi
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+if command -v maturin >/dev/null && command -v python3 >/dev/null; then
+  ./scripts/py_check.sh
+else
+  echo "SKIPPED python tests (maturin not found)"
+fi
 echo "check.sh: OK"
