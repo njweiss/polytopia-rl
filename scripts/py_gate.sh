@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Milestone 9 gate: a release wheel in a throwaway venv, the pytest suite, then the random-agent
-# benchmark (2000 complete games).
+# Milestone 9 gate (run inside the pixi env: `pixi run ./scripts/py_gate.sh`): a release wheel,
+# unpacked into a throwaway directory that shadows any `maturin develop` build, then the pytest
+# suite and the random-agent benchmark (2000 complete games).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-python3 -m venv "$tmp/venv"
-maturin build -q --release -m python/pyproject.toml -o "$tmp/wheels"
-wheel="$(ls "$tmp"/wheels/*.whl)"
-"$tmp/venv/bin/pip" install -q "$wheel[dev]"
+(cd python && maturin build -q --release -o "$tmp/wheels")
+python3 -m zipfile -e "$tmp"/wheels/*.whl "$tmp/site"
 cargo build -q --release -p sim-tools --bin polytopia
-POLYTOPIA_BIN="$PWD/target/release/polytopia" "$tmp/venv/bin/python" -m pytest -q python/tests
-"$tmp/venv/bin/python" python/bench/random_agent.py
+export PYTHONPATH="$tmp/site"
+python3 -c 'import polytopia_sim, sys; assert polytopia_sim.__file__.startswith(sys.argv[1])' "$tmp/site"
+POLYTOPIA_BIN="$PWD/target/release/polytopia" python3 -m pytest -q python/tests
+python3 python/bench/random_agent.py
