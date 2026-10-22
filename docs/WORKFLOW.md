@@ -12,18 +12,21 @@ separate Claude Code sessions, each started fresh from the repo root:
 Always `/clear` or start a new session between phases. A phase must work from the repo alone.
 
 ## Launch lines
+
 - Phase A: `claude` (default permissions), then `/write-tests N`.
-- Phase B: `claude --disallowedTools "Edit(crates/*/tests/**)" "Write(crates/*/tests/**)"`, then
+- Phase B: `claude --disallowedTools "Edit(crates/*/tests/**)" "Write(crates/*/tests/**)" "Edit(python/tests/rl/**)" "Write(python/tests/rl/**)"`, then
   `/implement N`. Check `/permissions` once to confirm the deny rules loaded. Even if they did not,
   `./scripts/check.sh` fails on any change under `crates/*/tests/` after step 1 of `/implement`.
 - Phase C: start `claude` in plan mode (Shift+Tab until it says plan), then `/review N`.
 
 ## When to skip phases
+
 - Small, mechanical milestones: A and B in one session is fine (still tests first).
 - C only for rules-heavy milestones: movement/legality, economy, capture/win/score, and one full
   pass before RL starts.
 
 ## Rules that never change
+
 - The owner approves the tests before phase B starts. Tests are the spec in executable form.
 - Tests never change during phase B. A wrong test is a QUESTIONS.md entry, then an owner decision,
   then a new phase A commit.
