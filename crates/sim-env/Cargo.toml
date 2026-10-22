@@ -7,8 +7,6 @@ publish.workspace = true
 [dependencies]
 sim-core = { path = "../sim-core" }
 bots = { path = "../bots" }
-
-[dev-dependencies]
 sim-tools = { path = "../sim-tools" }
 
 [lints]

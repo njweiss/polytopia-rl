@@ -279,8 +279,10 @@ dependencies = [
 name = "sim-py"
 version = "0.1.0"
 dependencies = [
+ "bots",
  "numpy",
  "pyo3",
+ "sim-core",
  "sim-env",
 ]
 

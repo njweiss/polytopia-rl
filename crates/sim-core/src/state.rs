@@ -28,6 +28,8 @@ pub enum Phase {
     Done,
 }
 
+pub const ALL_PHASES: [Phase; 4] = [Phase::Fresh, Phase::Moved, Phase::Attacked, Phase::Done];
+
 /// A unit's last direction: each component in -1..=1, not both 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Dir {
@@ -152,6 +154,9 @@ pub enum Improvement {
     Farm,
     Mine,
 }
+
+pub const ALL_IMPROVEMENTS: [Improvement; 3] =
+    [Improvement::LumberHut, Improvement::Farm, Improvement::Mine];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TileState {

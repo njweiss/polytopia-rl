@@ -21,6 +21,15 @@ pub enum Resource {
     Metal,
 }
 
+pub const ALL_TERRAINS: [Terrain; 3] = [Terrain::Field, Terrain::Forest, Terrain::Mountain];
+
+pub const ALL_RESOURCES: [Resource; 4] = [
+    Resource::Fruit,
+    Resource::Crop,
+    Resource::Animal,
+    Resource::Metal,
+];
+
 /// What stands on the tile at game start. Capital and village tiles are always `Terrain::Field`
 /// with no resource (see docs/MILESTONE_2.md, clarification C2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

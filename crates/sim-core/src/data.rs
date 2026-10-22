@@ -92,6 +92,17 @@ pub const ALL_SITE_ACTIONS: [SiteAction; 6] = [
     SiteAction::Mine,
 ];
 
+pub const ALL_REWARDS: [Reward; 8] = [
+    Reward::Workshop,
+    Reward::Explorer,
+    Reward::CityWall,
+    Reward::Resources,
+    Reward::PopulationGrowth,
+    Reward::BorderGrowth,
+    Reward::Park,
+    Reward::SuperUnit,
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct UnitStats {
     /// `None` for reward-only units (Super Unit).

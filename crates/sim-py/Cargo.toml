@@ -18,6 +18,8 @@ extension-module = ["pyo3/extension-module"]
 
 [dependencies]
 sim-env = { path = "../sim-env" }
+sim-core = { path = "../sim-core" }
+bots = { path = "../bots" }
 pyo3 = "=0.30.1"
 numpy = "=0.30.0"
 
