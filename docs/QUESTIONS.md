@@ -242,7 +242,7 @@ Append entries below. Format:
   `rush vs economy: rush 168 win, economy 32 win, 0 draw | by capture 168/26 | mean score diff -267.2`.
   Every Rush win is a capital capture. Economy is ahead on score at every checkpoint
   (turn 20: 3337.7 vs 1309.8), but it trains only up to 2 units per city and only Warriors, and
-  its attack threshold is 3. So it rarely defends its capital in time.
+  its attack threshold is 3. My guess (not measured) is that it rarely defends its capital in time.
 - Open options I had: almost none. H6 makes the rules the specification. The only choices left
   to me (several visible enemy capitals: nearest, ties row-major; the reward fallback) never
   come up in these games, so they cannot move the balance.
