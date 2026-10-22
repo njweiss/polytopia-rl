@@ -37,6 +37,8 @@ pub fn run_cli(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32
         Some("verify") => verify(&args[1..], out),
         Some("view") => view(&args[1..], out),
         Some("html") => html(&args[1..]),
+        Some("play") => play(&args[1..], out),
+        Some("tournament") => tournament(&args[1..], out),
         Some(other) => usage(&format!("unknown subcommand {other:?}")),
         None => usage("missing subcommand"),
     };
@@ -198,4 +200,15 @@ fn html(args: &[String]) -> Result<(), Fail> {
     let log = load(path)?;
     let page = html_page(&log).map_err(|e| Fail::Run(format!("{path}: {e:?}")))?;
     std::fs::write(page_path, page).map_err(|e| Fail::Run(format!("{page_path}: {e}")))
+}
+
+/// `play`: one bot game recorded as a replay log (docs/MILESTONE_8 "CLI additions").
+fn play(_args: &[String], _out: &mut dyn Write) -> Result<(), Fail> {
+    unimplemented!()
+}
+
+/// `tournament`: every pair of the listed bots through `run_match` (docs/MILESTONE_8 "CLI
+/// additions").
+fn tournament(_args: &[String], _out: &mut dyn Write) -> Result<(), Fail> {
+    unimplemented!()
 }
