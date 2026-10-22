@@ -118,8 +118,9 @@ each struct, fields in declaration order. `config` is included. The digest never
 ### Random policy
 
 `random_action(state, rng)`: let `legal = legal_actions(state)` (non-empty if the game is not terminal;
-panic on a terminal state). Let `others` be `legal` without `EndTurn`. If `others` is empty, return
-`EndTurn`. Otherwise draw `u = rng.gen_f32()`; if `u < 0.15` return `EndTurn`, else
+panic on a terminal state). If `EndTurn` is not in `legal` (a reward is pending), return
+`legal[rng.gen_range(legal.len() as u32)]` with no `gen_f32` draw (Q7). Let `others` be `legal`
+without `EndTurn`. If `others` is empty, return `EndTurn`. Otherwise draw `u = rng.gen_f32()`; if `u < 0.15` return `EndTurn`, else
 `others[rng.gen_range(others.len() as u32)]`. Draw order is exactly: the `gen_f32` first, then (only in
 the second case) the `gen_range`.
 
@@ -267,7 +268,7 @@ Golden strings are written by hand from the formats above, never captured from t
 7. **HTML:** `frames_json` parses; `frames.len() == n + 1`, `labels.len() == n`; frame 0 and the last
    frame's units/cities/turn/players equal values from the independently replayed states; the page
    contains `const REPLAY =`, a slider (`<input type="range"`) and no `http://`/`https://`; the embedded
-   JSON equals `frames_json`; size stays reasonable (a 50-turn random game under about 5 MB).
+   JSON equals `frames_json`; size stays reasonable (a 50-turn random game under 10 MB; Q8).
    The visual quality is checked by the owner opening `scripts/demo.sh`'s output; if a headless
    browser is available the implementer should additionally load the page and report any console
    errors (informational, not part of the gate).
