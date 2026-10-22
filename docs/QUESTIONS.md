@@ -443,3 +443,19 @@ Append entries below. Format:
 - Agent's pick and why: A. It keeps both signatures close to the brief, and one `net_policy`
   serves greedy and sampled evaluation. The tests use A.
 - Owner answer: A on 2026-10-22
+
+## Q21: The pixi env's torch has no CUDA
+
+- Needed for: milestone 10, "Decisions already made" (compute: training must run on the RTX 4060)
+  and "Out of scope" (pin versions and record the CUDA build used)
+- Ambiguity: since Q18 (OpenBLAS pin) the pixi env resolves `pytorch 2.14.1 cpu_generic`
+  (`torch.version.cuda` is `None`, `torch.cuda.is_available()` is `False`), so `device="auto"`
+  falls back to the CPU. Switching to a CUDA build is a dependency change I may not make.
+- Options: A) the owner adds a CUDA build in `pixi.toml` (for example a conda-forge
+  `pytorch=*=cuda*` build plus the `cuda-version` it needs, checked against the OpenBLAS pin) and
+  commits `pixi.lock`; `python/requirements-rl.txt` then records that build. B) stay on CPU for
+  milestone 10 (the 10a smoke run was done on CPU) and decide on GPU when 10b needs it.
+- Agent's pick and why: A before 10b (20M steps). The code is device-agnostic (`device="auto"`,
+  sampling uses a CPU generator so it also works with a CUDA model); nothing else changes. The
+  RL_REPORT timing split shows how much the GPU can help (the forward pass share).
+- Owner answer:

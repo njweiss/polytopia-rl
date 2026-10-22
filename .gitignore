@@ -12,3 +12,6 @@ __pycache__/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# training runs (milestone 10)
+runs/

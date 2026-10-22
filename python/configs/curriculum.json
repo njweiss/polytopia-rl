@@ -1,0 +1,6 @@
+{
+  "opponents": ["random"],
+  "stages": [{"opponents": ["random"]}, {"opponents": ["economy"]}, {"opponents": ["economy", "rush"]}],
+  "stage_window": 200,
+  "stage_win_rate": 0.8
+}
