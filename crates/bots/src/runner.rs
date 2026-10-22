@@ -2,10 +2,17 @@
 
 use std::ops::Range;
 
+use sim_core::actions::apply;
 use sim_core::map::MapParams;
-use sim_core::state::{Config, Outcome};
+use sim_core::score::score;
+use sim_core::setup::new_game_from_seed;
+use sim_core::state::{Config, Outcome, State};
+use sim_core::view::PlayerView;
 
-use crate::BotKind;
+use crate::{bot_rng, make_bot, BotKind};
+
+/// The turns at which `play_game` takes snapshots.
+const SNAPSHOT_TURNS: [u32; 3] = [10, 20, 30];
 
 /// Per-player counts at the first moment `state.turn == turn && state.current == 0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,13 +38,71 @@ pub struct GameResult {
 }
 
 pub fn play_game(
-    _seed: u64,
-    _bots: [BotKind; 2],
-    _epsilons: [f32; 2],
-    _map: &MapParams,
-    _config: &Config,
+    seed: u64,
+    bots: [BotKind; 2],
+    epsilons: [f32; 2],
+    map: &MapParams,
+    config: &Config,
 ) -> GameResult {
-    unimplemented!()
+    let players = [
+        make_bot(bots[0], epsilons[0]),
+        make_bot(bots[1], epsilons[1]),
+    ];
+    let mut rngs = [bot_rng(seed, 0), bot_rng(seed, 1)];
+    let mut state = new_game_from_seed(seed, map, config);
+    let mut snapshots: Vec<Snapshot> = Vec::new();
+    loop {
+        let t = state.turn;
+        if state.current == 0
+            && SNAPSHOT_TURNS.contains(&t)
+            && !snapshots.iter().any(|x| x.turn == t)
+        {
+            snapshots.push(snapshot(&state));
+        }
+        if state.is_terminal() {
+            break;
+        }
+        let cur = state.current as usize;
+        let action = players[cur].choose(&PlayerView::new(&state, state.current), &mut rngs[cur]);
+        apply(&mut state, &action).expect("bots choose legal actions");
+    }
+    let outcome = state.outcome.expect("the loop ends on a terminal state");
+    // A capture win leaves the winner owning every capital; the cap never does (Q12).
+    let captured_capital = match outcome {
+        Outcome::Win(w) => state
+            .cities
+            .iter()
+            .filter(|c| c.is_capital)
+            .all(|c| c.owner == w),
+        Outcome::Draw => false,
+    };
+    GameResult {
+        seed,
+        bots,
+        outcome,
+        turns: state.turn,
+        scores: [score(&state, 0), score(&state, 1)],
+        captured_capital,
+        snapshots,
+    }
+}
+
+fn snapshot(state: &State) -> Snapshot {
+    let count = |p: u8| {
+        (
+            state.cities.iter().filter(|c| c.owner == p).count() as u32,
+            state.units.iter().filter(|u| u.owner == p).count() as u32,
+        )
+    };
+    let (c0, u0) = count(0);
+    let (c1, u1) = count(1);
+    Snapshot {
+        turn: state.turn,
+        cities: [c0, c1],
+        units: [u0, u1],
+        stars: [state.players[0].stars, state.players[1].stars],
+        score: [score(state, 0), score(state, 1)],
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -73,28 +138,106 @@ pub struct MatchStats {
 }
 
 impl MatchStats {
-    pub fn from_results(_a: BotKind, _b: BotKind, _results: &[GameResult]) -> MatchStats {
-        unimplemented!()
+    /// Each result is attributed to `a` and `b` through `result.bots` (`a` is the first seat
+    /// holding kind `a`).
+    pub fn from_results(a: BotKind, b: BotKind, results: &[GameResult]) -> MatchStats {
+        let mut m = MatchStats {
+            a,
+            b,
+            games: 0,
+            a_wins: 0,
+            b_wins: 0,
+            draws: 0,
+            a_capture_wins: 0,
+            b_capture_wins: 0,
+            mean_score_diff: 0.0,
+            checkpoints: Vec::new(),
+        };
+        let mut diff = 0.0;
+        let seats: Vec<(usize, usize)> = results
+            .iter()
+            .map(|r| {
+                let a_seat = r.bots.iter().position(|&k| k == a).expect("a played");
+                (a_seat, 1 - a_seat)
+            })
+            .collect();
+        for (r, &(a_seat, b_seat)) in results.iter().zip(&seats) {
+            m.games += 1;
+            match r.outcome {
+                Outcome::Win(w) if w as usize == a_seat => {
+                    m.a_wins += 1;
+                    m.a_capture_wins += u32::from(r.captured_capital);
+                }
+                Outcome::Win(_) => {
+                    m.b_wins += 1;
+                    m.b_capture_wins += u32::from(r.captured_capital);
+                }
+                Outcome::Draw => m.draws += 1,
+            }
+            diff += r.scores[a_seat] as f64 - r.scores[b_seat] as f64;
+        }
+        if m.games > 0 {
+            m.mean_score_diff = diff / m.games as f64;
+        }
+        for turn in SNAPSHOT_TURNS {
+            let reached: Vec<(&Snapshot, usize, usize)> = results
+                .iter()
+                .zip(&seats)
+                .filter_map(|(r, &(sa, sb))| {
+                    r.snapshots
+                        .iter()
+                        .find(|x| x.turn == turn)
+                        .map(|x| (x, sa, sb))
+                })
+                .collect();
+            if reached.is_empty() {
+                continue;
+            }
+            let n = reached.len() as f64;
+            let means = |seat: fn(&(&Snapshot, usize, usize)) -> usize| {
+                let mean = |f: fn(&Snapshot, usize) -> u32| {
+                    reached.iter().map(|x| f(x.0, seat(x)) as f64).sum::<f64>() / n
+                };
+                PlayerMeans {
+                    cities: mean(|s, i| s.cities[i]),
+                    units: mean(|s, i| s.units[i]),
+                    stars: mean(|s, i| s.stars[i]),
+                    score: mean(|s, i| s.score[i]),
+                }
+            };
+            m.checkpoints.push(CheckpointStats {
+                turn,
+                games: reached.len() as u32,
+                a: means(|x| x.1),
+                b: means(|x| x.2),
+            });
+        }
+        m
     }
 
     /// `a_wins / games` (draws count as no win).
     pub fn win_rate_a(&self) -> f64 {
-        unimplemented!()
+        self.a_wins as f64 / self.games as f64
     }
 
     /// `b_wins / games` (draws count as no win).
     pub fn win_rate_b(&self) -> f64 {
-        unimplemented!()
+        self.b_wins as f64 / self.games as f64
     }
 }
 
 /// Plays each seed twice: `a` as player 0, then `b` as player 0, epsilons 0.
 pub fn run_match(
-    _a: BotKind,
-    _b: BotKind,
-    _seeds: Range<u64>,
-    _map: &MapParams,
-    _config: &Config,
+    a: BotKind,
+    b: BotKind,
+    seeds: Range<u64>,
+    map: &MapParams,
+    config: &Config,
 ) -> MatchStats {
-    unimplemented!()
+    let results: Vec<GameResult> = seeds
+        .flat_map(|seed| {
+            [[a, b], [b, a]].map(|bots| play_game(seed, bots, [0.0, 0.0], map, config))
+        })
+        .collect();
+    MatchStats::from_results(a, b, &results)
 }
