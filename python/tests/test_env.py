@@ -286,6 +286,31 @@ def test_error_types():
         env.step_factored(363, END_TURN, 0)
 
 
+def test_accessors_before_reset_raise_runtime_error():
+    env = make("rush")
+    for call in [
+        env.observation,
+        env.actor_mask,
+        lambda: env.kind_mask(0),
+        lambda: env.arg_mask(0, 0),
+        env.legal_count,
+        env.info,
+        env.replay_json,
+    ]:
+        with pytest.raises(RuntimeError):
+            call()
+    assert env.spec()["height"] == 11
+
+
+def test_map_size_below_six_is_a_value_error():
+    for size in [0, 4, 5]:
+        with pytest.raises(ValueError):
+            make("none", size=size)
+    env = make("none", size=6)
+    env.reset(0)
+    assert env.observation()[0].shape == (C, 6, 6)
+
+
 def test_truncation():
     env = make("economy", max_agent_actions=3)
     env.reset(0)

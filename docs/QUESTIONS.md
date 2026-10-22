@@ -312,3 +312,36 @@ Append entries below. Format:
 - Agent's pick and why: A, the most direct reading of each sentence. For 12, extending the
   lock to `python/tests/` would be a one-line change to `check.sh`.
 - Owner answer: A on 2026-10-22
+
+## Q16: Which map sizes `Env::new` accepts
+
+- Needed for: milestone 9, "Public API" (`Env::new` asserts `size` is accepted by `MapParams`);
+  Q15.10
+- Ambiguity: `MapParams` had no size check, so "accepted" was undefined. `generate_map` picks
+  both capitals from the inland tiles (rows and cols `2..=size-3`). Sizes 0 to 4 have no
+  inland tile and panic (or underflow `size - 3`). Size 5 has one, so both capitals land on the
+  same tile for every seed (checked on seeds 0..300). Sizes 6 to 255 generate two distinct
+  capitals and a full game for every seed checked.
+- Options: A) `MapParams::MIN_SIZE = 6`; `Env::new` asserts `size >= MIN_SIZE`, and Python's
+  `Env(size=...)` raises `ValueError` below it. B) a larger minimum (for example 8, so each
+  capital's inner ring fits away from the other). C) validate inside `generate_map` instead.
+- Agent's pick and why: A, the smallest size the generator handles correctly. No upper bound:
+  `u8` already caps it at 255, which generates fine.
+- Owner answer: A on 2026-10-22 (fix requested after the milestone 9 review)
+
+## Q17: pixi as the Python environment manager
+
+- Needed for: milestone 9, "Out of scope" (new dependencies: Python `maturin`, `numpy`,
+  `pytest` only, versions pinned and recorded)
+- Ambiguity: the brief approves the Python packages but not how the interpreter and tools are
+  installed. Commit 654b518 added `pixi.toml`, `pixi.lock`, `.gitattributes` and the pixi
+  tasks `check` and `py-gate`.
+- Decision: pixi (tested with 0.76.1, conda-forge channel, `linux-64`) is the owner-approved
+  manager for the Python side. `pixi.toml` gives ranges; `pixi.lock` pins the resolved
+  versions: `python 3.15.1`, `numpy 2.5.4`, `maturin 1.15.0`, `pytest 9.1.1`, `pip 26.2.2`.
+  These match the exact pins in `python/pyproject.toml` (Q15.11). `pip` is approved as part of
+  the environment (maturin uses it in `maturin develop`). Run the full gate, Python tests
+  included, with `pixi run check`; plain `./scripts/check.sh` outside the pixi env skips them.
+  Add a Python dependency only with the owner's approval, via `pixi add`, and commit the
+  updated `pixi.lock`.
+- Owner answer: approved on 2026-10-22

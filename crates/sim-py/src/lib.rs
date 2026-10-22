@@ -51,6 +51,14 @@ pub struct PyEnv {
 }
 
 impl PyEnv {
+    /// The env, or `RuntimeError` (as for `NotReset` from a step) before the first `reset`.
+    fn env(&self) -> PyResult<&Env> {
+        if !self.env.is_reset() {
+            return Err(py_err(EnvError::NotReset));
+        }
+        Ok(&self.env)
+    }
+
     fn check_actor(&self, actor: usize) -> PyResult<()> {
         if actor >= num_actors(self.size) {
             return Err(PyValueError::new_err(format!("no actor {actor}")));
@@ -89,6 +97,12 @@ impl PyEnv {
         potential_scale: f32,
         max_agent_actions: u32,
     ) -> PyResult<PyEnv> {
+        if size < MapParams::MIN_SIZE {
+            return Err(PyValueError::new_err(format!(
+                "map size {size} is below {}",
+                MapParams::MIN_SIZE
+            )));
+        }
         let bot = |kind| Opponent::Bot {
             kind,
             epsilon: opponent_epsilon,
@@ -154,7 +168,7 @@ impl PyEnv {
         py: Python<'py>,
     ) -> PyResult<(Bound<'py, PyArray3<f32>>, Bound<'py, PyArray1<f32>>)> {
         let spec = obs_spec(self.size);
-        let view = self.env.view();
+        let view = self.env()?.view();
         let mut board = vec![0.0f32; spec.channels * spec.height * spec.width];
         encode_board(&view, &mut board);
         let mut globals = vec![0.0f32; spec.globals];
@@ -165,7 +179,7 @@ impl PyEnv {
     }
 
     fn actor_mask<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<bool>>> {
-        Ok(PyArray1::from_slice(py, self.env.masks().actor()))
+        Ok(PyArray1::from_slice(py, self.env()?.masks().actor()))
     }
 
     fn kind_mask<'py>(
@@ -174,7 +188,7 @@ impl PyEnv {
         actor: usize,
     ) -> PyResult<Bound<'py, PyArray1<bool>>> {
         self.check_actor(actor)?;
-        Ok(PyArray1::from_slice(py, &self.env.masks().kind(actor)))
+        Ok(PyArray1::from_slice(py, &self.env()?.masks().kind(actor)))
     }
 
     fn arg_mask<'py>(
@@ -185,11 +199,14 @@ impl PyEnv {
     ) -> PyResult<Bound<'py, PyArray1<bool>>> {
         self.check_actor(actor)?;
         let kind = kind_of(kind)?;
-        Ok(PyArray1::from_slice(py, self.env.masks().arg(actor, kind)))
+        Ok(PyArray1::from_slice(
+            py,
+            self.env()?.masks().arg(actor, kind),
+        ))
     }
 
     fn legal_count(&self) -> PyResult<usize> {
-        Ok(self.env.legal_actions().len())
+        Ok(self.env()?.legal_actions().len())
     }
 
     /// `(reward, rewards float32[2], terminated, truncated)`.
@@ -214,26 +231,27 @@ impl PyEnv {
     }
 
     fn info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let view = self.env.view();
-        let outcome = match self.env.state().outcome {
+        let env = self.env()?;
+        let view = env.view();
+        let outcome = match env.state().outcome {
             None => None,
             Some(Outcome::Win(p)) => Some(format!("win_{p}")),
             Some(Outcome::Draw) => Some("draw".to_string()),
         };
         let d = PyDict::new(py);
-        d.set_item("seed", self.env.seed())?;
+        d.set_item("seed", env.seed())?;
         d.set_item("turn", view.turn())?;
         d.set_item("current_player", view.current())?;
-        d.set_item("observer", self.env.observer())?;
-        d.set_item("agent_seat", self.env.agent_seat())?;
+        d.set_item("observer", env.observer())?;
+        d.set_item("agent_seat", env.agent_seat())?;
         d.set_item("scores", (view.score(0), view.score(1)))?;
         d.set_item("outcome", outcome)?;
-        d.set_item("agent_actions", self.env.agent_actions())?;
+        d.set_item("agent_actions", env.agent_actions())?;
         Ok(d)
     }
 
     fn replay_json(&self) -> PyResult<String> {
-        Ok(self.env.replay_json())
+        Ok(self.env()?.replay_json())
     }
 
     fn spec<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
