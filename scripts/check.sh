@@ -19,6 +19,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 if command -v maturin >/dev/null && command -v python3 >/dev/null; then
   ./scripts/py_check.sh
+  if python3 -c 'import torch' 2>/dev/null; then
+    ./scripts/rl_check.sh
+  else
+    echo "SKIPPED rl tests (torch not found)"
+  fi
 else
   echo "SKIPPED python tests (maturin not found)"
 fi

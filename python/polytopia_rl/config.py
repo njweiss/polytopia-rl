@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 from dataclasses import dataclass, field
 
 
@@ -52,12 +54,21 @@ class PPOConfig:
     eval_seeds: int = 50
 
     def to_json(self) -> str:
-        raise NotImplementedError
+        return json.dumps(dataclasses.asdict(self), indent=2)
 
     @classmethod
     def from_json(cls, text: str) -> PPOConfig:
         """Fields missing from `text` keep their defaults; an unknown key raises `ValueError`."""
-        raise NotImplementedError
+        data = json.loads(text)
+        _check_keys(data)
+        return cls(**data)
+
+
+def _check_keys(keys) -> None:
+    known = {f.name for f in dataclasses.fields(PPOConfig)}
+    unknown = sorted(set(keys) - known)
+    if unknown:
+        raise ValueError(f"unknown config keys: {unknown}")
 
 
 def load_config(path: str, overrides: list[str] = ()) -> PPOConfig:
@@ -67,4 +78,15 @@ def load_config(path: str, overrides: list[str] = ()) -> PPOConfig:
     otherwise it is the raw string (`device=cuda`). An unknown key, or an override without `=`,
     raises `ValueError`.
     """
-    raise NotImplementedError
+    with open(path) as f:
+        data = json.load(f)
+    for item in overrides:
+        key, sep, raw = item.partition("=")
+        if not sep or not key:
+            raise ValueError(f"override {item!r} is not key=value")
+        _check_keys([key])
+        try:
+            data[key] = json.loads(raw)
+        except json.JSONDecodeError:
+            data[key] = raw
+    return PPOConfig.from_json(json.dumps(data))

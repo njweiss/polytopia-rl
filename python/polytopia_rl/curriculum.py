@@ -15,4 +15,12 @@ def next_stage(stage: int, history: StageHistory, cfg) -> int:
     """`stage + 1` when `history.steps_in_stage >= cfg.min_stage_steps` and the win rate of the last
     `cfg.stage_window` outcomes (the window must be full) is `>= cfg.stage_win_rate`; the last stage
     (`len(cfg.stages) - 1`) never advances. Otherwise `stage`."""
-    raise NotImplementedError
+    if stage >= len(cfg.stages) - 1:
+        return stage
+    if history.steps_in_stage < cfg.min_stage_steps:
+        return stage
+    window = history.outcomes[-cfg.stage_window :]
+    if len(window) < cfg.stage_window:
+        return stage
+    win_rate = sum(o == "win" for o in window) / len(window)
+    return stage + 1 if win_rate >= cfg.stage_win_rate else stage
