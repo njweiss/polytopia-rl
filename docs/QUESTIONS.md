@@ -187,7 +187,7 @@ Append entries below. Format:
   them stateless. The tests encode the brief as written, so `economy_beats_random` fails against
   the literal rules. The implementer cannot get `check.sh` green until this is answered and the
   brief, and if needed the goldens, are updated in a new phase A commit.
-- Owner answer:
+- Owner answer: A on 2026-10-21
 
 ## Q11: Zone of Control from units on unexplored tiles reaches `reachable_tiles` and `legal_actions`
 
@@ -204,7 +204,7 @@ Append entries below. Format:
   it out (then the view's legal list differs from `legal_actions`, which breaks the brief's API).
 - Agent's pick and why: A for milestone 8, since it leaves the existing rules alone. B is worth
   considering before RL, because the learner's legal mask will carry the same signal. The test encodes A (`bots/tests/no_cheating.rs`, header comment).
-- Owner answer:
+- Owner answer: A on 2026-10-21
 
 ## Q12: Details the milestone 8 tests assume
 
@@ -232,4 +232,4 @@ Append entries below. Format:
 - Options: A) as listed. B) owner changes any item (the matching tests change in a new phase A
   commit).
 - Agent's pick and why: A, the most direct reading of each sentence.
-- Owner answer:
+- Owner answer: A on 2026-10-21

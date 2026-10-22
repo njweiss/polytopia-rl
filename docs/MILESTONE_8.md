@@ -115,7 +115,10 @@ never expose the rng.
   dist(unit.pos, target)`, pick the one with the smallest `dist(t, target)`, ties smallest `(row, col)`;
   `None` if there is none.
 - **`explore_step(unit)`**: among `reachable_tiles(unit)` with vision gain > 0, pick the largest gain,
-  ties smallest `(row, col)`; `None` if none.
+  ties smallest `(row, col)`. If no reachable tile has vision gain > 0 (Q10): let `f` be the nearest
+  explored tile (by `dist` from the unit, any occupant or terrain) with vision gain > 0, ties
+  smallest `(row, col)`, and return `greedy_step(unit, f)`; `None` if there is no such tile or
+  `greedy_step` gives `None`.
 - **Attack score** for a legal `Attack{unit, target}`: let `d` be the visible enemy unit at `target`.
   With defense bonus fixed at `1.0` (enemy techs are hidden), compute
   `sim_core::combat::compute_damage(attacker, defender, 1.0)` from the attacker's real health and the
@@ -203,7 +206,7 @@ reaches `EndTurn` within 200 of its own actions in one turn.
   pair), `K = 50`, `S = 0`. For every pair `(x, y)` with `x` before `y` in the list it runs
   `run_match(x, y, S..S+N)` and prints:
 
-  ```
+  ```Rust
   tournament: {N} seeds per pair ({2N} games), turn cap {K}
   {x} vs {y}: {x} {xw} win, {y} {yw} win, {d} draw | by capture {xc}/{yc} | mean score diff {sd:+.1}
     turn {t}: {x} cities {..} units {..} stars {..} score {..} | {y} cities {..} units {..} stars {..} score {..}
@@ -224,11 +227,11 @@ reaches `EndTurn` within 200 of its own actions in one turn.
   underestimate forest/mountain/city bonuses. - Confirmed
 - **H3: a "win" in the gate** is a win in the outcome (capture or higher score at the cap); draws are
   not wins. - Confirmed
-- **H4: `RandomBot` duplicates `random_action`'s logic** and a parity test in `sim-tools` checks they agree.
+- **H4: `RandomBot` duplicates `random_action`'s logic** and a parity test in `sim-tools` checks they agree. - Confirmed
 - **H5: the Explorer reward is preferred by Rush** (to find the enemy), the Super Unit at level 5.
-  Economy never takes Explorer or Super Unit.
+  Economy never takes Explorer or Super Unit. - Confirmed
 - **H6: the rules above are the specification of the bots.** Behavior changes are spec changes and need
-  the owner's approval; tuning thresholds is not part of this milestone.
+  the owner's approval; tuning thresholds is not part of this milestone. - Confirmed
 
 ## Changes to earlier tests
 

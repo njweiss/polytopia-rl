@@ -520,3 +520,19 @@ fn training_comes_before_recover_and_recover_before_move() {
     let s = base().build();
     assert_choice(&EconomyBot, &s, Action::Recover { unit: UnitId(0) });
 }
+
+#[test]
+fn explore_heads_for_the_nearest_fog_when_no_reachable_tile_sees_any() {
+    // Q10, the stuck start: a Warrior on its capital with radius 2 explored around it. Gain
+    // tiles are the ring at distance 2; f = (2,2), the first in row-major order -> (3,3).
+    // Explored here: rows 2..=6, columns 2..=6 of a 9x9 board.
+    let s = StateBuilder::new(9)
+        .explore(0, &rect(2, 6, 2, 6))
+        .city_with(0, p(4, 4), |c| c.is_capital = true)
+        .unit(0, W, p(4, 4))
+        .build();
+    assert_choice(&EconomyBot, &s, mv(0, 3, 3));
+    // Only (8,8) unexplored -> f = (7,7) -> (5,5).
+    let s = open(9).hide(0, &[p(8, 8)]).unit(0, W, p(4, 4)).build();
+    assert_choice(&EconomyBot, &s, mv(0, 5, 5));
+}

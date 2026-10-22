@@ -707,3 +707,50 @@ fn dealt_equal_to_health_is_a_kill() {
         },
     );
 }
+
+#[test]
+fn explore_heads_for_the_nearest_fog_when_no_reachable_tile_sees_any() {
+    // Q10. Only (8,8) is unexplored: no neighbor of (4,4) sees it. Tiles with gain: (7,7) at 3,
+    // (7,8) and (8,7) at 4 -> f = (7,7); greedy_step from (4,4): (5,5) is the only tile at 2.
+    let s = open(9).hide(0, &[p(8, 8)]).unit(0, W, p(4, 4)).build();
+    assert_choice(
+        &RushBot,
+        &s,
+        Action::Move {
+            unit: UnitId(0),
+            to: p(5, 5),
+        },
+    );
+    // (0,8) and (8,0) unexplored: (1,7) and (7,1) both at 3 -> (1,7) row-major -> (3,5).
+    let s = open(9)
+        .hide(0, &[p(0, 8), p(8, 0)])
+        .unit(0, W, p(4, 4))
+        .build();
+    assert_choice(
+        &RushBot,
+        &s,
+        Action::Move {
+            unit: UnitId(0),
+            to: p(3, 5),
+        },
+    );
+}
+
+#[test]
+fn the_fog_fallback_also_follows_a_failed_greedy_step() {
+    // Score -3 attack refused, no recover next to the enemy, the target is adjacent: explore,
+    // and with only (0,0) unexplored f = (1,1) at 3 -> greedy_step to (3,3).
+    let s = open(9)
+        .hide(0, &[p(0, 0)])
+        .unit_with(0, W, p(4, 4), |u| u.health = 4)
+        .unit(1, W, p(4, 5))
+        .build();
+    assert_choice(
+        &RushBot,
+        &s,
+        Action::Move {
+            unit: UnitId(0),
+            to: p(3, 3),
+        },
+    );
+}
