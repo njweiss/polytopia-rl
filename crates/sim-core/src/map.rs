@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::grid::{chebyshev, Pos};
+use crate::grid::{all_tiles, chebyshev, neighbors, Pos};
 use crate::rng::Rng;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -85,9 +85,7 @@ impl GeneratedMap {
 
     /// All village positions in row-major order.
     pub fn villages(&self) -> Vec<Pos> {
-        let n = self.size;
-        (0..n)
-            .flat_map(|r| (0..n).map(move |c| Pos::new(r, c)))
+        all_tiles(self.size)
             .filter(|&p| self.tile(p).site == Site::Village)
             .collect()
     }
@@ -99,9 +97,7 @@ impl GeneratedMap {
 pub fn generate_map(rng: &mut Rng, params: &MapParams) -> GeneratedMap {
     let n = params.size;
     let idx = |p: Pos| p.row as usize * n as usize + p.col as usize;
-    let all: Vec<Pos> = (0..n)
-        .flat_map(|r| (0..n).map(move |c| Pos::new(r, c)))
-        .collect();
+    let all: Vec<Pos> = all_tiles(n).collect();
     let mut tiles = vec![
         Tile {
             terrain: Terrain::Field,
@@ -193,11 +189,7 @@ pub fn generate_map(rng: &mut Rng, params: &MapParams) -> GeneratedMap {
 
     // Imperius guarantee: overwrite random capital neighbors with fruit until there are enough.
     for cap in [cap1, cap2] {
-        let neighbors: Vec<usize> = all
-            .iter()
-            .filter(|&&p| chebyshev(p, cap) == 1)
-            .map(|&p| idx(p))
-            .collect();
+        let neighbors: Vec<usize> = neighbors(n, cap).map(idx).collect();
         let fruit_count = |tiles: &[Tile]| {
             neighbors
                 .iter()

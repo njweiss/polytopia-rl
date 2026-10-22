@@ -2,20 +2,16 @@
 //! "defense_bonus").
 
 use crate::data::{Skill, Tech};
-use crate::grid::{chebyshev, Pos};
+use crate::grid::{all_tiles, chebyshev, neighbors, Pos};
 use crate::map::Terrain;
-use crate::state::{State, UnitId};
+use crate::state::{PlayerId, State, UnitId};
 
-/// The in-bounds 8-neighbors of `p`, row-major.
-pub(crate) fn neighbors(size: u8, p: Pos) -> impl Iterator<Item = Pos> {
-    (-1i32..=1)
-        .flat_map(|dr| (-1i32..=1).map(move |dc| (dr, dc)))
-        .filter(|&d| d != (0, 0))
-        .filter_map(move |(dr, dc)| {
-            let (r, c) = (p.row as i32 + dr, p.col as i32 + dc);
-            let n = size as i32;
-            (r >= 0 && c >= 0 && r < n && c < n).then(|| Pos::new(r as u8, c as u8))
-        })
+/// Whether `player`'s techs allow standing on `p`'s terrain: mountains need Climbing.
+pub(crate) fn terrain_allows(state: &State, player: PlayerId, p: Pos) -> bool {
+    state.tile(p).terrain != Terrain::Mountain
+        || state.players[player as usize]
+            .techs
+            .contains(Tech::Climbing)
 }
 
 /// Tiles the unit could move to with its full movement budget, row-major, excluding its own
@@ -28,9 +24,6 @@ pub fn reachable_tiles(state: &State, unit: UnitId) -> Vec<Pos> {
         return Vec::new();
     };
     let budget = state.tables.unit(u.kind).movement;
-    let climbing = state.players[u.owner as usize]
-        .techs
-        .contains(Tech::Climbing);
     let enemies: Vec<Pos> = state
         .units
         .iter()
@@ -39,10 +32,9 @@ pub fn reachable_tiles(state: &State, unit: UnitId) -> Vec<Pos> {
         .collect();
 
     let enterable = |q: Pos| {
-        let t = state.tile(q);
         state.is_explored(u.owner, q)
-            && t.unit.is_none()
-            && (t.terrain != Terrain::Mountain || climbing)
+            && state.tile(q).unit.is_none()
+            && terrain_allows(state, u.owner, q)
     };
     let stops = |q: Pos| {
         matches!(state.tile(q).terrain, Terrain::Forest | Terrain::Mountain)
@@ -71,9 +63,7 @@ pub fn reachable_tiles(state: &State, unit: UnitId) -> Vec<Pos> {
     }
     seen[state.index(u.pos)] = false;
 
-    let n = state.size;
-    (0..n)
-        .flat_map(|r| (0..n).map(move |c| Pos::new(r, c)))
+    all_tiles(state.size)
         .filter(|&q| seen[state.index(q)])
         .collect()
 }

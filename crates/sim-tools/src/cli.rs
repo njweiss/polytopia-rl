@@ -82,7 +82,7 @@ fn load(path: &str) -> Result<ReplayLog, Fail> {
 fn play_random(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     let mut seed: Option<u64> = None;
     let mut path: Option<String> = None;
-    let mut turn_cap: u32 = 50;
+    let mut turn_cap = Config::default().turn_cap;
     let mut max_actions: usize = 5000;
     let mut full_observability = false;
     let mut it = args.iter();
@@ -166,28 +166,25 @@ fn view(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
         return usage("--step and --all are exclusive");
     }
     let log = load(path)?;
-    let mut states = Vec::with_capacity(log.actions.len() + 1);
-    replay_each(&log, &mut |_, s| states.push(s.clone()))
-        .map_err(|e| Fail::Run(format!("{path}: {e:?}")))?;
     let n = log.actions.len();
-    let text = if all {
-        let mut text = String::new();
-        for (i, s) in states.iter().enumerate() {
+    let target = step.unwrap_or(n);
+    let mut text = String::new();
+    replay_each(&log, &mut |i, s| {
+        if all {
             let label = match i {
                 0 => "start".to_string(),
                 _ => action_label(&log.actions[i - 1]),
             };
             text.push_str(&format!("== step {i}: {label} ==\n"));
             text.push_str(&render(s, view));
+        } else if i == target {
+            text = render(s, view);
         }
-        text
-    } else {
-        let i = step.unwrap_or(n);
-        if i > n {
-            return usage(&format!("--step {i} is past the last step {n}"));
-        }
-        render(&states[i], view)
-    };
+    })
+    .map_err(|e| Fail::Run(format!("{path}: {e:?}")))?;
+    if !all && target > n {
+        return usage(&format!("--step {target} is past the last step {n}"));
+    }
     out.write_all(text.as_bytes()).map_err(io_fail)
 }
 

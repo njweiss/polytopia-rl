@@ -3,12 +3,11 @@
 
 use std::collections::VecDeque;
 
-use crate::data::Tech;
-use crate::grid::{chebyshev, Pos};
-use crate::map::Terrain;
-use crate::movement::neighbors;
+use crate::actions::reveal_within;
+use crate::grid::{all_tiles, neighbors, Pos};
+use crate::movement::terrain_allows;
 use crate::rng::Rng;
-use crate::state::{CityId, PlayerId, State};
+use crate::state::{CityId, State};
 
 /// Moves the explorer makes before it disappears.
 pub const EXPLORER_MOVES: u32 = 15;
@@ -24,13 +23,13 @@ const VISITED_PENALTY: f32 = 0.5;
 pub fn explorer_walk(state: &mut State, city: CityId) {
     let c = state.city(city);
     let (owner, mut cur) = (c.owner, c.pos);
-    let climbing = state.players[owner as usize].techs.contains(Tech::Climbing);
-    let passable = |s: &State, q: Pos| s.tile(q).terrain != Terrain::Mountain || climbing;
+    let passable = |s: &State, q: Pos| terrain_allows(s, owner, q);
     let n = state.size;
 
     let mut visited = vec![false; n as usize * n as usize];
     visited[state.index(cur)] = true;
-    reveal_radius_1(state, owner, cur);
+    // Explorer vision: Chebyshev 1 with no mountain bonus.
+    reveal_within(state, owner, cur, 1);
 
     for _ in 0..EXPLORER_MOVES {
         let dist = bfs(state, cur, &passable);
@@ -95,12 +94,8 @@ pub fn explorer_walk(state: &mut State, city: CityId) {
 
         cur = next;
         visited[state.index(cur)] = true;
-        reveal_radius_1(state, owner, cur);
+        reveal_within(state, owner, cur, 1);
     }
-}
-
-fn all_tiles(n: u8) -> impl Iterator<Item = Pos> {
-    (0..n).flat_map(move |r| (0..n).map(move |c| Pos::new(r, c)))
 }
 
 /// BFS step counts from `from` over passable tiles (8-neighbors), indexed row-major; `None` where
@@ -128,15 +123,5 @@ fn pick(rng: &mut Rng, options: &[Pos]) -> Option<Pos> {
         0 => None,
         1 => Some(options[0]),
         k => Some(options[rng.gen_range(k as u32) as usize]),
-    }
-}
-
-/// Explorer vision: Chebyshev 1 with no mountain bonus. The mask never shrinks.
-fn reveal_radius_1(state: &mut State, player: PlayerId, at: Pos) {
-    for q in all_tiles(state.size) {
-        if chebyshev(at, q) <= 1 {
-            let i = state.index(q);
-            state.players[player as usize].explored[i] = true;
-        }
     }
 }
