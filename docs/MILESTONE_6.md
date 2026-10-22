@@ -4,11 +4,13 @@ The spec's milestone 6. After this the simulator plays complete games: every pla
 winner or a draw. Depends on milestones 1 to 5.
 
 ## Goal
+
 Add the `Capture` action (villages become cities, enemy cities change hands), the win condition
 (capital capture), turn-cap termination decided by score, and the derived `score` function, so
 random playouts always finish with a valid `Outcome`.
 
 ## In scope
+
 1. `Action::Capture` for villages and enemy cities, including orphaning and origin migration.
 2. Ending the game by capital capture.
 3. Turn-cap termination in `EndTurn` (higher score wins, equal scores draw).
@@ -16,6 +18,7 @@ random playouts always finish with a valid `Outcome`.
 5. Updating earlier tests that this changes (list below).
 
 ## Out of scope (do not build)
+
 Observation encoding and the public opponent-score feature (milestone 9), reward shaping, bots,
 rendering and replay tooling (milestone 7), PyO3, roads, monuments, temples. No other elimination or
 victory condition exists.
@@ -50,11 +53,13 @@ impl ScoreBreakdown { pub fn total(&self) -> u32; }
 pub fn score_breakdown(state: &State, player: PlayerId) -> ScoreBreakdown;
 pub fn score(state: &State, player: PlayerId) -> u32;   // == score_breakdown(..).total()
 ```
+
 `new_game` asserts `config.turn_cap >= 1`.
 
 ## Rules
 
 ### Capture
+
 Legal when no reward is pending, the game has no outcome, the unit belongs to the current player,
 `phase == Fresh`, and the unit's tile is either a village (`village == true`) or holds a city owned
 by the other player. Any unit type may capture (including the Super Unit).
@@ -78,6 +83,7 @@ capturer's explored mask gains every tile the city owns (cities see all their ti
 immediately. The state is final: `legal_actions` is empty and `apply` returns `Err(Illegal)`.
 
 ### Turn cap (changes EndTurn)
+
 `EndTurn` behaves as before, except: if the ending player is player 1 and `turn + 1 == config.turn_cap`,
 then `turn += 1`, `current = 0`, and `outcome` is set from the scores of both players
 (`Win(p)` for the higher score, `Draw` if equal). In that case income and the unit reset are NOT
@@ -85,7 +91,9 @@ applied. So each player plays exactly `turn_cap` turns (turns `0..turn_cap`). A 
 final turn wins before the cap is evaluated.
 
 ### Score
+
 `score_breakdown(state, player)`, using `state.config.score_weights` `w` and the tables:
+
 - **units:** over the player's living units: `w.super_unit` for a Super Unit, else
   `w.unit_per_star * cost` (the unit table's cost).
 - **territory:** `w.territory_per_tile` times the number of tiles whose `owner_city` belongs to a city
@@ -100,9 +108,11 @@ final turn wins before the cap is evaluated.
 Score is public to both players in the observation (milestone 9) but nothing here hides it.
 
 ### legal_actions order (extends the milestone 5 order)
+
 Per unit: Move, Attack, **Capture**, Recover, Promote. Everything else unchanged.
 
 ## Clarifications to the spec (owner: confirm or overrule, then update the doc)
+
 - **F1: new city id** is `cities.len()` (ids are dense and never reused). The village tile is claimed
   together with its unclaimed 3x3 neighbors. - Confirmed
 - **F2: capturing an enemy city keeps its population and buildings**, and orphans the previous
@@ -119,7 +129,9 @@ Per unit: Move, Attack, **Capture**, Recover, Promote. Everything else unchanged
 - **F9: no other elimination rule.** A player with no units and no money can still end turns. - Confirmed
 
 ## Changes to earlier tests
+
 The test author updates these in phase A, in the same `tests(m6)` commit, and lists every change:
+
 - A unit standing on a village or an enemy city now has a `Capture` action. Tests comparing a unit's
   full action list in such positions (milestone 3 enterable-city/village tests, playout enumerators)
   change; the brute-force legality enumerator gains the Capture rule.
@@ -129,7 +141,9 @@ The test author updates these in phase A, in the same `tests(m6)` commit, and li
 - Playouts may now reach a terminal state; they must stop (not fail) when `is_terminal()`.
 
 ## Tests (phase A guidance)
+
 Golden values come from the rules above and hand arithmetic, never from the code under test.
+
 1. **Score goldens:** the starting score is 515 per player with breakdown
    `{units: 10, territory: 180, exploration: 125, cities: 100, parks: 0, techs: 100}`. Then scripted
    states, each changing exactly one term by exactly its weight: add a Rider (+15), a Defender (+15), a
@@ -178,10 +192,12 @@ dropped term, surplus measured against the next threshold, starting tech omitted
 by cost; `apply` accepting actions after the game ended.
 
 ## Gate
+
 `./scripts/check.sh` passes, including the terminating playouts, under about 60 seconds in a debug
 build.
 
 ## Notes for the implementer
+
 - Keep capture and scoring in clearly named modules (`capture` logic may live in `actions`), and keep
   `score` free of side effects; it will be called often by shaping and observations later.
 - No `HashMap`/`HashSet` where order affects state.
