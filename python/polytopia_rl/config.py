@@ -1,0 +1,70 @@
+"""Training configuration (docs/MILESTONE_10 "Default hyperparameters")."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+def _default_stages() -> list[dict]:
+    return [{"opponents": ["random"]}, {"opponents": ["economy"]}, {"opponents": ["economy", "rush"]}]
+
+
+@dataclass
+class PPOConfig:
+    # Environment (passed to `polytopia_sim.Env`).
+    size: int = 11
+    turn_cap: int = 30
+    full_observability: bool = False
+    opponents: list[str] = field(default_factory=lambda: ["random"])
+    opponent_epsilon: float = 0.0
+    shaping_weight: float = 1.0
+    terminal_weight: float = 1.0
+    potential_scale: float = 1000.0
+    # PPO.
+    num_envs: int = 32
+    num_steps: int = 128
+    num_minibatches: int = 8
+    update_epochs: int = 4
+    lr: float = 3e-4
+    max_grad_norm: float = 0.5
+    gamma: float = 0.999
+    gae_lambda: float = 0.95
+    clip_eps: float = 0.2
+    ent_coef: float = 0.01
+    vf_coef: float = 0.5
+    target_kl: float | None = None
+    norm_adv: bool = True
+    clip_vloss: bool = True
+    # Model.
+    width: int = 64
+    blocks: int = 4
+    # Run.
+    total_steps: int = 20_000_000
+    seed: int = 1
+    device: str = "auto"
+    # Curriculum: each stage dict overrides config fields (only "opponents" is used).
+    stages: list[dict] = field(default_factory=_default_stages)
+    min_stage_steps: int = 1_000_000
+    stage_window: int = 200
+    stage_win_rate: float = 0.8
+    # Evaluation and checkpoints during training.
+    eval_every: int = 500_000
+    eval_seeds: int = 50
+
+    def to_json(self) -> str:
+        raise NotImplementedError
+
+    @classmethod
+    def from_json(cls, text: str) -> PPOConfig:
+        """Fields missing from `text` keep their defaults; an unknown key raises `ValueError`."""
+        raise NotImplementedError
+
+
+def load_config(path: str, overrides: list[str] = ()) -> PPOConfig:
+    """Load a JSON config, then apply `key=value` overrides in order.
+
+    A value is parsed as JSON when it parses (`3`, `0.5`, `true`, `null`, `["economy","rush"]`),
+    otherwise it is the raw string (`device=cuda`). An unknown key, or an override without `=`,
+    raises `ValueError`.
+    """
+    raise NotImplementedError
