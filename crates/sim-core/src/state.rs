@@ -142,7 +142,7 @@ pub struct City {
     pub parks: u32,
     pub wall: bool,
     pub border_growth_used: bool,
-    /// Placeholder; milestone 5 refines it.
+    /// A level-up reward the owner must choose before anything else (D9).
     pub pending_reward: bool,
 }
 
@@ -158,7 +158,7 @@ pub struct TileState {
     pub terrain: Terrain,
     pub resource: Option<Resource>,
     pub improvement: Option<Improvement>,
-    /// Unclaimed village (capture is milestone 6).
+    /// Unclaimed village.
     pub village: bool,
     /// A city stands here.
     pub city: Option<CityId>,
@@ -219,6 +219,51 @@ impl State {
             .iter()
             .find(|c| c.id == id)
             .expect("city ids are never removed")
+    }
+
+    pub(crate) fn unit_mut(&mut self, id: UnitId) -> &mut Unit {
+        self.units
+            .iter_mut()
+            .find(|u| u.id == id)
+            .expect("living unit")
+    }
+
+    pub(crate) fn city_mut(&mut self, id: CityId) -> &mut City {
+        self.cities
+            .iter_mut()
+            .find(|c| c.id == id)
+            .expect("city ids are never removed")
+    }
+
+    /// Creates a unit at full table health, phase Done, with the next id, on the empty tile `pos`.
+    pub(crate) fn add_unit(
+        &mut self,
+        kind: UnitType,
+        owner: PlayerId,
+        pos: Pos,
+        origin: Option<CityId>,
+    ) -> UnitId {
+        let health = self.tables.unit(kind).health;
+        let id = UnitId(self.next_unit_id);
+        self.next_unit_id += 1;
+        // Ids only grow, so pushing keeps `units` in ascending id order.
+        self.units.push(Unit {
+            id,
+            kind,
+            owner,
+            pos,
+            health,
+            max_health: health,
+            origin,
+            kills: 0,
+            veteran: false,
+            promotion_available: false,
+            phase: Phase::Done,
+            last_dir: None,
+        });
+        let i = self.index(pos);
+        self.tiles[i].unit = Some(id);
+        id
     }
 
     pub fn is_explored(&self, player: PlayerId, p: Pos) -> bool {

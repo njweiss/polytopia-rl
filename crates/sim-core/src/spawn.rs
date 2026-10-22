@@ -1,11 +1,11 @@
 //! Super Unit spawn and the forced push of a city tile's occupant (spec: "Forced unit spawn";
 //! docs/MILESTONE_5 "Super Unit spawn").
 
-use crate::actions::reveal;
-use crate::data::{Tech, UnitType};
+use crate::actions::{direction, reveal};
+use crate::data::UnitType;
 use crate::grid::Pos;
-use crate::map::Terrain;
-use crate::state::{CityId, Dir, Phase, PlayerId, State, Unit, UnitId};
+use crate::movement::terrain_allows;
+use crate::state::{CityId, Dir, PlayerId, State, UnitId};
 
 /// The eight directions clockwise as seen on the board (rows grow downward), starting north.
 const RING: [Dir; 8] = [
@@ -31,28 +31,7 @@ pub fn spawn_super_unit(state: &mut State, city: CityId) -> UnitId {
     if let Some(occupant) = state.tile(pos).unit {
         push(state, occupant, owner);
     }
-
-    let health = state.tables.unit(UnitType::SuperUnit).health;
-    let id = UnitId(state.next_unit_id);
-    state.next_unit_id += 1;
-    // Ids only grow, so pushing keeps `state.units` in ascending id order.
-    state.units.push(Unit {
-        id,
-        kind: UnitType::SuperUnit,
-        owner,
-        pos,
-        health,
-        max_health: health,
-        origin: Some(city),
-        kills: 0,
-        veteran: false,
-        promotion_available: false,
-        phase: Phase::Done,
-        last_dir: None,
-    });
-    let i = state.index(pos);
-    state.tiles[i].unit = Some(id);
-    id
+    state.add_unit(UnitType::SuperUnit, owner, pos, Some(city))
 }
 
 /// The direction `occupant` is intended to be pushed when a Super Unit spawns on a city owned by
@@ -66,13 +45,10 @@ pub fn push_direction(state: &State, occupant: UnitId, city_owner: PlayerId) -> 
             dc: -d.dc,
         },
         None => {
-            let center = (state.size as i32 - 1) / 2;
-            let dr = (center - u.pos.row as i32).signum() as i8;
-            let dc = (center - u.pos.col as i32).signum() as i8;
-            if dr == 0 && dc == 0 {
-                Dir { dr: 1, dc: 0 }
-            } else {
-                Dir { dr, dc }
+            let center = (state.size - 1) / 2;
+            match direction(u.pos, Pos::new(center, center)) {
+                Dir { dr: 0, dc: 0 } => Dir { dr: 1, dc: 0 },
+                d => d,
             }
         }
     }
@@ -88,7 +64,6 @@ fn push(state: &mut State, occupant: UnitId, city_owner: PlayerId) {
         .expect("push directions are ring directions");
     let u = state.unit(occupant).expect("living occupant");
     let (from, owner) = (u.pos, u.owner);
-    let climbing = state.players[owner as usize].techs.contains(Tech::Climbing);
     let n = state.size as i32;
     let target = PROBE_OFFSETS.iter().find_map(|&k| {
         let d = RING[(start + k) % 8];
@@ -97,8 +72,7 @@ fn push(state: &mut State, occupant: UnitId, city_owner: PlayerId) {
             return None;
         }
         let q = Pos::new(r as u8, c as u8);
-        let tile = state.tile(q);
-        let free = tile.unit.is_none() && (tile.terrain != Terrain::Mountain || climbing);
+        let free = state.tile(q).unit.is_none() && terrain_allows(state, owner, q);
         free.then_some(q)
     });
 
@@ -108,12 +82,7 @@ fn push(state: &mut State, occupant: UnitId, city_owner: PlayerId) {
         Some(to) => {
             let ti = state.index(to);
             state.tiles[ti].unit = Some(occupant);
-            state
-                .units
-                .iter_mut()
-                .find(|u| u.id == occupant)
-                .expect("living occupant")
-                .pos = to;
+            state.unit_mut(occupant).pos = to;
             reveal(state, owner, to);
         }
         None => state.units.retain(|u| u.id != occupant),

@@ -1,5 +1,7 @@
 //! Rules data tables (spec: "Data tables"). Rules live in `data/*.json`, not in code branches.
 
+use std::sync::{Arc, OnceLock};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -203,6 +205,14 @@ impl Tables {
             include_str!("../../../data/site_actions.json"),
             include_str!("../../../data/rewards.json"),
         )
+    }
+
+    /// The embedded tables, parsed once per process and shared by every new game.
+    pub(crate) fn shared() -> Arc<Tables> {
+        static SHARED: OnceLock<Arc<Tables>> = OnceLock::new();
+        SHARED
+            .get_or_init(|| Arc::new(Tables::load().expect("embedded tables load")))
+            .clone()
     }
 
     /// Same as `load` but from caller-provided JSON (used to test error handling).

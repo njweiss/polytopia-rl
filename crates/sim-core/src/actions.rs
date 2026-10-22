@@ -13,9 +13,9 @@ use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
 };
 use crate::explorer::explorer_walk;
-use crate::grid::{chebyshev, Pos};
+use crate::grid::{all_tiles, chebyshev, within, Pos};
 use crate::map::{Resource, Terrain};
-use crate::movement::{defense_bonus, reachable_tiles};
+use crate::movement::{defense_bonus, reachable_tiles, terrain_allows};
 use crate::score::score;
 use crate::spawn::spawn_super_unit;
 use crate::state::{City, CityId, Dir, Improvement, Outcome, Phase, PlayerId, State, Unit, UnitId};
@@ -66,13 +66,10 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
             }
         }
     }
-    for row in 0..state.size {
-        for col in 0..state.size {
-            let at = Pos::new(row, col);
-            for action in ALL_SITE_ACTIONS {
-                if site_legal(state, at, action) {
-                    out.push(Action::Site { at, action });
-                }
+    for at in all_tiles(state.size) {
+        for action in ALL_SITE_ACTIONS {
+            if site_legal(state, at, action) {
+                out.push(Action::Site { at, action });
             }
         }
     }
@@ -220,27 +217,17 @@ fn push_unit_actions(state: &State, u: &Unit, out: &mut Vec<Action>) {
         }
     }
     if u.phase == Phase::Fresh || (u.phase == Phase::Moved && dash) {
-        // Row-major over the square of radius `range`, clipped to the board.
-        let r = stats.range as i32;
-        for dr in -r..=r {
-            for dc in -r..=r {
-                let (row, col) = (u.pos.row as i32 + dr, u.pos.col as i32 + dc);
-                let n = state.size as i32;
-                if (dr, dc) == (0, 0) || row < 0 || col < 0 || row >= n || col >= n {
-                    continue;
-                }
-                let q = Pos::new(row as u8, col as u8);
-                let enemy_there = state
-                    .tile(q)
-                    .unit
-                    .and_then(|id| state.unit(id))
-                    .is_some_and(|e| e.owner != u.owner);
-                if state.is_explored(u.owner, q) && enemy_there {
-                    out.push(Action::Attack {
-                        unit: u.id,
-                        target: q,
-                    });
-                }
+        for q in within(state.size, u.pos, stats.range).filter(|&q| q != u.pos) {
+            let enemy_there = state
+                .tile(q)
+                .unit
+                .and_then(|id| state.unit(id))
+                .is_some_and(|e| e.owner != u.owner);
+            if state.is_explored(u.owner, q) && enemy_there {
+                out.push(Action::Attack {
+                    unit: u.id,
+                    target: q,
+                });
             }
         }
     }
@@ -257,16 +244,8 @@ fn push_unit_actions(state: &State, u: &Unit, out: &mut Vec<Action>) {
     }
 }
 
-fn unit_mut(state: &mut State, id: UnitId) -> &mut Unit {
-    state
-        .units
-        .iter_mut()
-        .find(|u| u.id == id)
-        .expect("legal actions name living units")
-}
-
 /// Sign of `to - from` per axis.
-fn direction(from: Pos, to: Pos) -> Dir {
+pub(crate) fn direction(from: Pos, to: Pos) -> Dir {
     Dir {
         dr: (to.row as i32 - from.row as i32).signum() as i8,
         dc: (to.col as i32 - from.col as i32).signum() as i8,
@@ -280,7 +259,7 @@ fn relocate(state: &mut State, id: UnitId, to: Pos) {
     let (fi, ti) = (state.index(from), state.index(to));
     state.tiles[fi].unit = None;
     state.tiles[ti].unit = Some(id);
-    let u = unit_mut(state, id);
+    let u = state.unit_mut(id);
     u.pos = to;
     u.last_dir = Some(direction(from, to));
     let owner = u.owner;
@@ -294,21 +273,20 @@ pub(crate) fn reveal(state: &mut State, player: PlayerId, at: Pos) {
     } else {
         1
     };
-    let n = state.size;
-    for r in 0..n {
-        for c in 0..n {
-            let q = Pos::new(r, c);
-            if chebyshev(at, q) <= radius {
-                let i = state.index(q);
-                state.players[player as usize].explored[i] = true;
-            }
-        }
+    reveal_within(state, player, at, radius);
+}
+
+/// Marks every tile within Chebyshev `radius` of `at` explored for `player`.
+pub(crate) fn reveal_within(state: &mut State, player: PlayerId, at: Pos, radius: u32) {
+    for q in within(state.size, at, radius) {
+        let i = state.index(q);
+        state.players[player as usize].explored[i] = true;
     }
 }
 
 fn apply_move(state: &mut State, id: UnitId, to: Pos) {
     relocate(state, id, to);
-    let u = unit_mut(state, id);
+    let u = state.unit_mut(id);
     u.phase = match u.phase {
         Phase::Fresh => Phase::Moved,
         _ => Phase::Done,
@@ -339,8 +317,8 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
     );
     let attacker_ranged = sa.range > 1;
 
-    unit_mut(state, attacker_id).health = outcome.attacker_health;
-    unit_mut(state, defender_id).health = outcome.defender_health;
+    state.unit_mut(attacker_id).health = outcome.attacker_health;
+    state.unit_mut(defender_id).health = outcome.defender_health;
     let attacker_died = outcome.attacker_health == 0;
     let defender_died = outcome.defender_health == 0;
     for (dead, pos) in [(attacker_died, a.pos), (defender_died, d.pos)] {
@@ -359,7 +337,7 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
     };
     if let Some(k) = killer {
         let tables = state.tables.clone();
-        let u = unit_mut(state, k);
+        let u = state.unit_mut(k);
         u.kills += 1;
         if u.kills >= tables.rules().promotion_kills
             && !u.veteran
@@ -373,15 +351,10 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
         return;
     }
     // Kill-move for melee attackers, unless the tile is a mountain the owner cannot climb.
-    if defender_died && !attacker_ranged {
-        let climbing = state.players[a.owner as usize]
-            .techs
-            .contains(Tech::Climbing);
-        if state.tile(d.pos).terrain != Terrain::Mountain || climbing {
-            relocate(state, attacker_id, d.pos);
-        }
+    if defender_died && !attacker_ranged && terrain_allows(state, a.owner, d.pos) {
+        relocate(state, attacker_id, d.pos);
     }
-    let u = unit_mut(state, attacker_id);
+    let u = state.unit_mut(attacker_id);
     u.phase = Phase::Attacked;
     if attacker_ranged {
         u.last_dir = Some(direction(a.pos, d.pos));
@@ -396,7 +369,7 @@ fn apply_capture(state: &mut State, id: UnitId) {
     let (at, owner) = (u.pos, u.owner);
     let city = match state.tile(at).city {
         Some(city) => {
-            city_mut(state, city).owner = owner;
+            state.city_mut(city).owner = owner;
             for v in state.units.iter_mut().filter(|v| v.origin == Some(city)) {
                 v.origin = None;
             }
@@ -404,7 +377,7 @@ fn apply_capture(state: &mut State, id: UnitId) {
         }
         None => found_city(state, at, owner),
     };
-    let u = unit_mut(state, id);
+    let u = state.unit_mut(id);
     u.origin = Some(city);
     u.phase = Phase::Done;
     for i in 0..state.tiles.len() {
@@ -437,14 +410,10 @@ fn found_city(state: &mut State, at: Pos, owner: PlayerId) -> CityId {
     let i = state.index(at);
     state.tiles[i].village = false;
     state.tiles[i].city = Some(id);
-    let n = state.size;
-    for r in 0..n {
-        for c in 0..n {
-            let q = Pos::new(r, c);
-            let i = state.index(q);
-            if chebyshev(at, q) <= 1 && state.tiles[i].owner_city.is_none() {
-                state.tiles[i].owner_city = Some(id);
-            }
+    for q in within(state.size, at, 1) {
+        let i = state.index(q);
+        if state.tiles[i].owner_city.is_none() {
+            state.tiles[i].owner_city = Some(id);
         }
     }
     id
@@ -462,31 +431,23 @@ fn apply_recover(state: &mut State, id: UnitId) {
     } else {
         rules.recover_elsewhere
     };
-    let u = unit_mut(state, id);
+    let u = state.unit_mut(id);
     u.health = (u.health + heal).min(u.max_health);
     u.phase = Phase::Done;
 }
 
 fn apply_promote(state: &mut State, id: UnitId) {
     let bonus = state.tables.rules().veteran_health_bonus;
-    let u = unit_mut(state, id);
+    let u = state.unit_mut(id);
     u.max_health += bonus;
     u.health = u.max_health;
     u.veteran = true;
     u.promotion_available = false;
 }
 
-fn city_mut(state: &mut State, id: CityId) -> &mut City {
-    state
-        .cities
-        .iter_mut()
-        .find(|c| c.id == id)
-        .expect("city ids are never removed")
-}
-
 /// One level at a time, and only while no reward is pending; resolving a reward re-runs it.
 fn level_up_check(state: &mut State, id: CityId) {
-    let c = city_mut(state, id);
+    let c = state.city_mut(id);
     if !c.pending_reward && c.population >= cumulative_population_for_level(c.level + 1) {
         c.level += 1;
         c.pending_reward = true;
@@ -494,30 +455,15 @@ fn level_up_check(state: &mut State, id: CityId) {
 }
 
 fn apply_train(state: &mut State, city: CityId, kind: UnitType) {
-    let stats = state.tables.unit(kind);
-    let (cost, health) = (stats.cost.expect("legal Train is trainable"), stats.health);
+    let cost = state
+        .tables
+        .unit(kind)
+        .cost
+        .expect("legal Train is trainable");
     let c = state.city(city);
     let (pos, owner) = (c.pos, c.owner);
     state.players[owner as usize].stars -= cost;
-    let id = UnitId(state.next_unit_id);
-    state.next_unit_id += 1;
-    // Ids only grow, so pushing keeps `state.units` in ascending id order.
-    state.units.push(Unit {
-        id,
-        kind,
-        owner,
-        pos,
-        health,
-        max_health: health,
-        origin: Some(city),
-        kills: 0,
-        veteran: false,
-        promotion_available: false,
-        phase: Phase::Done,
-        last_dir: None,
-    });
-    let i = state.index(pos);
-    state.tiles[i].unit = Some(id);
+    state.add_unit(kind, owner, pos, Some(city));
 }
 
 fn apply_site(state: &mut State, at: Pos, action: SiteAction) {
@@ -537,7 +483,7 @@ fn apply_site(state: &mut State, at: Pos, action: SiteAction) {
         SiteAction::Mine => t.improvement = Some(Improvement::Mine),
     }
     let owner_city = t.owner_city.expect("legal site actions are on owned tiles");
-    city_mut(state, owner_city).population += info.population;
+    state.city_mut(owner_city).population += info.population;
     level_up_check(state, owner_city);
 }
 
@@ -552,12 +498,12 @@ fn apply_choose_reward(state: &mut State, city: CityId, reward: Reward) {
     let tables = state.tables.clone();
     let owner = state.city(city).owner;
     match reward {
-        Reward::Workshop => city_mut(state, city).workshop = true,
-        Reward::CityWall => city_mut(state, city).wall = true,
-        Reward::Park => city_mut(state, city).parks += 1,
+        Reward::Workshop => state.city_mut(city).workshop = true,
+        Reward::CityWall => state.city_mut(city).wall = true,
+        Reward::Park => state.city_mut(city).parks += 1,
         Reward::Resources => state.players[owner as usize].stars += tables.resources_reward_stars(),
         Reward::PopulationGrowth => {
-            city_mut(state, city).population += tables.population_growth_amount()
+            state.city_mut(city).population += tables.population_growth_amount()
         }
         Reward::BorderGrowth => border_growth(state, city),
         Reward::Explorer => explorer_walk(state, city),
@@ -565,26 +511,22 @@ fn apply_choose_reward(state: &mut State, city: CityId, reward: Reward) {
             spawn_super_unit(state, city);
         }
     }
-    city_mut(state, city).pending_reward = false;
+    state.city_mut(city).pending_reward = false;
     level_up_check(state, city);
 }
 
 /// Claims every in-bounds tile within Chebyshev 2 of the city that has no owning city, is not a
 /// village and holds no city (D7), and reveals the claimed tiles to the owner.
 fn border_growth(state: &mut State, city: CityId) {
-    let c = city_mut(state, city);
+    let c = state.city_mut(city);
     c.border_growth_used = true;
     let (at, owner) = (c.pos, c.owner);
-    let n = state.size;
-    for r in 0..n {
-        for col in 0..n {
-            let q = Pos::new(r, col);
-            let i = state.index(q);
-            let t = &mut state.tiles[i];
-            if chebyshev(at, q) <= 2 && t.owner_city.is_none() && !t.village && t.city.is_none() {
-                t.owner_city = Some(city);
-                state.players[owner as usize].explored[i] = true;
-            }
+    for q in within(state.size, at, 2) {
+        let i = state.index(q);
+        let t = &mut state.tiles[i];
+        if t.owner_city.is_none() && !t.village && t.city.is_none() {
+            t.owner_city = Some(city);
+            state.players[owner as usize].explored[i] = true;
         }
     }
 }

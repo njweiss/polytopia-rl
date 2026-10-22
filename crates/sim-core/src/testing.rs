@@ -1,10 +1,8 @@
 //! Test support: `StateBuilder` assembles scripted boards as plain data. It applies no game rules
 //! beyond what each method says (no vision, no legality checks).
 
-use std::sync::Arc;
-
 use crate::data::{Tables, Tech, UnitType};
-use crate::grid::{chebyshev, Pos};
+use crate::grid::{within, Pos};
 use crate::map::{Resource, Terrain};
 use crate::rng::Rng;
 use crate::state::{
@@ -42,7 +40,7 @@ impl StateBuilder {
                 current: 0,
                 rng: Rng::new(0),
                 config: Config::default(),
-                tables: Arc::new(Tables::load().expect("embedded tables load")),
+                tables: Tables::shared(),
                 tiles: vec![tile; n],
                 units: Vec::new(),
                 cities: Vec::new(),
@@ -54,7 +52,7 @@ impl StateBuilder {
     }
 
     fn tile_mut(&mut self, p: Pos) -> &mut TileState {
-        let i = p.row as usize * self.state.size as usize + p.col as usize;
+        let i = self.state.index(p);
         &mut self.state.tiles[i]
     }
 
@@ -107,13 +105,10 @@ impl StateBuilder {
         edit(&mut city);
         self.state.cities.push(city);
         self.tile_mut(p).city = Some(id);
-        let size = self.state.size;
-        for r in 0..size {
-            for c in 0..size {
-                let q = Pos::new(r, c);
-                if chebyshev(p, q) <= 1 && self.tile_mut(q).owner_city.is_none() {
-                    self.tile_mut(q).owner_city = Some(id);
-                }
+        for q in within(self.state.size, p, 1) {
+            let t = self.tile_mut(q);
+            if t.owner_city.is_none() {
+                t.owner_city = Some(id);
             }
         }
         self
@@ -174,21 +169,19 @@ impl StateBuilder {
         self
     }
 
-    pub fn explore(mut self, player: PlayerId, tiles: &[Pos]) -> StateBuilder {
-        let size = self.state.size as usize;
-        for p in tiles {
-            self.state.players[player as usize].explored[p.row as usize * size + p.col as usize] =
-                true;
-        }
-        self
+    pub fn explore(self, player: PlayerId, tiles: &[Pos]) -> StateBuilder {
+        self.set_explored(player, tiles, true)
     }
 
     /// Marks tiles unexplored for `player` (useful after `explore_all`).
-    pub fn hide(mut self, player: PlayerId, tiles: &[Pos]) -> StateBuilder {
-        let size = self.state.size as usize;
-        for p in tiles {
-            self.state.players[player as usize].explored[p.row as usize * size + p.col as usize] =
-                false;
+    pub fn hide(self, player: PlayerId, tiles: &[Pos]) -> StateBuilder {
+        self.set_explored(player, tiles, false)
+    }
+
+    fn set_explored(mut self, player: PlayerId, tiles: &[Pos], value: bool) -> StateBuilder {
+        for &p in tiles {
+            let i = self.state.index(p);
+            self.state.players[player as usize].explored[i] = value;
         }
         self
     }

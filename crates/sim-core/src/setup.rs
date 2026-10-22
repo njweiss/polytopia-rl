@@ -1,7 +1,5 @@
 //! Creating a game from a generated map (docs/MILESTONE_3 "new_game").
 
-use std::sync::Arc;
-
 use crate::data::{Tables, UnitType};
 use crate::grid::{chebyshev, Pos};
 use crate::map::{generate_map, GeneratedMap, MapParams, Site};
@@ -15,7 +13,7 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
     assert!(config.turn_cap >= 1, "turn_cap must be at least 1");
     let flip = rng.gen_range(2) as usize;
     let seats = [map.capitals[flip], map.capitals[1 - flip]];
-    let tables = Arc::new(Tables::load().expect("embedded tables load"));
+    let tables = Tables::shared();
 
     let mut tiles: Vec<TileState> = map
         .tiles
