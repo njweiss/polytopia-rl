@@ -119,3 +119,9 @@ The Rust env is far under 20% of the step time, so **subprocess workers are not 
 the time is the PPO update's forward and backward pass on CPU. The GPU (Q21) is the obvious next lever
 for 10b's 20M steps, which would take about 34 h at this CPU rate (about 22 h for one run alone on all 12
 threads, which measured ~255 sps).
+
+**Update (same day, after Q21):** with the CUDA build on the RTX 4060, the default config trains at
+~1,550 sps (rollout 1.3 s + update 1.3 s per 4,096 steps), so 10b's 20M steps take about 3.6 h. The
+rollout (single-env forward passes and mask fetches in Python) is now half the time, while the Rust
+env is still only ~4% of it. Subprocess workers are still not worth it; batching the per-step mask
+fetch is the next thing to profile.
