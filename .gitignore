@@ -5,6 +5,8 @@ target/
 
 **/*.rs.bk
 
+.vscode
+
 *.pyc
 __pycache__/
 # pixi environments
