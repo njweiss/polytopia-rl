@@ -1,8 +1,10 @@
 //! Minimal grid helpers shared by map generation and (later) the state model.
 
+use serde::{Deserialize, Serialize};
+
 /// A tile position. `row` grows downward, `col` grows rightward; row-major order is
 /// `(row, col)` lexicographic. The map is at most 255 wide, so `u8` is enough.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Pos {
     pub row: u8,
     pub col: u8,

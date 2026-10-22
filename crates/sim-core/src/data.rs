@@ -1,8 +1,8 @@
 //! Rules data tables (spec: "Data tables"). Rules live in `data/*.json`, not in code branches.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnitType {
     Warrior,
@@ -21,7 +21,7 @@ pub enum Skill {
     Static,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Tech {
     Climbing,
@@ -56,7 +56,7 @@ pub const ALL_TECHS: [Tech; 9] = [
 ];
 
 /// Tile (site) actions (docs/MILESTONE_4 "Site actions").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SiteAction {
     HarvestAnimal,
@@ -68,7 +68,7 @@ pub enum SiteAction {
 }
 
 /// Level-up rewards (docs/MILESTONE_4 "Reward menus", docs/MILESTONE_5 "Menus").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reward {
     Workshop,

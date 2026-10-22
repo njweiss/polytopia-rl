@@ -1,6 +1,8 @@
 //! Seeded map generation (spec: "Map generation"). Copies the Tribes `LevelGenerator` pipeline
 //! with water, ruins and lighthouses skipped.
 
+use serde::{Deserialize, Serialize};
+
 use crate::grid::{chebyshev, Pos};
 use crate::rng::Rng;
 
@@ -36,7 +38,7 @@ pub struct Tile {
 }
 
 /// Generation parameters. `Default` is the v1 spec / terrainProbs.json (Imperius) values.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MapParams {
     pub size: u8,
     pub forest_prob: f32,

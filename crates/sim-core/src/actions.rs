@@ -3,6 +3,8 @@
 
 use std::cmp::Ordering;
 
+use serde::{Deserialize, Serialize};
+
 use crate::combat::{resolve_attack, Combatant};
 use crate::data::{
     Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
@@ -18,7 +20,7 @@ use crate::score::score;
 use crate::spawn::spawn_super_unit;
 use crate::state::{City, CityId, Dir, Improvement, Outcome, Phase, PlayerId, State, Unit, UnitId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Action {
     Move { unit: UnitId, to: Pos },
     Attack { unit: UnitId, target: Pos },
