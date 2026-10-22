@@ -1,0 +1,15 @@
+[package]
+name = "sim-env"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sim-core = { path = "../sim-core" }
+bots = { path = "../bots" }
+
+[dev-dependencies]
+sim-tools = { path = "../sim-tools" }
+
+[lints]
+workspace = true

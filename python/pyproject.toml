@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin==1.15.0"]
+build-backend = "maturin"
+
+[project]
+name = "polytopia-sim"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["numpy==2.5.4"]
+
+[project.optional-dependencies]
+dev = ["maturin==1.15.0", "pytest==9.1.1"]
+
+[tool.maturin]
+manifest-path = "../crates/sim-py/Cargo.toml"
+module-name = "polytopia_sim"
+features = ["extension-module"]
