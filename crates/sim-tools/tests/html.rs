@@ -191,8 +191,9 @@ fn page_is_self_contained_and_embeds_the_frames() {
     assert_eq!(html_page(&log).unwrap(), page);
 }
 
+/// Bound raised from the brief's 5 MB to 10 MB by the owner (docs/QUESTIONS.md Q8, answer B).
 #[test]
-fn page_for_a_50_turn_game_stays_under_5_mb() {
+fn page_for_a_50_turn_game_stays_under_10_mb() {
     let mut rng = Rng::new(1 ^ POLICY_SEED_XOR);
     let log = record_game(
         1,
@@ -203,7 +204,7 @@ fn page_for_a_50_turn_game_stays_under_5_mb() {
     );
     let page = html_page(&log).unwrap();
     assert!(
-        page.len() < 5 * 1024 * 1024,
+        page.len() < 10 * 1024 * 1024,
         "{} bytes for {} actions",
         page.len(),
         log.actions.len()

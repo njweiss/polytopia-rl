@@ -106,7 +106,7 @@ Append entries below. Format:
   with `common::my_digest`). (3) is only checked by property tests (the three outcomes give three
   different digests); terminal states are excluded from the exact comparison, but the replay/CLI
   tests do compare the digests of finished games, so they assume A for (3) as well.
-- Owner answer:
+- Owner answer: A on 2026-10-21
 
 ## Q7: The random policy returns an illegal EndTurn when a reward is pending
 
@@ -124,7 +124,7 @@ Append entries below. Format:
   `policy.rs::pending_reward_never_returns_end_turn`, `default_games_with_rewards_stay_legal`, and
   every test that replays the policy, including the CLI log tests). The brief's "Random policy"
   paragraph should be updated.
-- Owner answer:
+- Owner answer: A on 2026-10-21
 
 ## Q8: The 5 MB HTML bound effectively requires a compact frame encoding
 
@@ -138,7 +138,7 @@ Append entries below. Format:
   when they change.
 - Agent's pick and why: A, it is the brief's number, and compact frames load faster in the browser.
   Test: `html.rs::page_for_a_50_turn_game_stays_under_5_mb`.
-- Owner answer:
+- Owner answer: B on 2026-10-21
 
 ## Q9: Formatting details the milestone 7 tests assume
 
@@ -164,4 +164,4 @@ Append entries below. Format:
 - Options: A) as listed. B) owner changes any item (the matching tests change in a new phase A
   commit).
 - Agent's pick and why: A, the most natural reading of each format.
-- Owner answer:
+- Owner answer: A on 2026-10-21
