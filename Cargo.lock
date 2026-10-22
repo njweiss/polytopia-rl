@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "bots"
+version = "0.1.0"
+dependencies = [
+ "sim-core",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -87,6 +94,7 @@ dependencies = [
 name = "sim-tools"
 version = "0.1.0"
 dependencies = [
+ "bots",
  "serde",
  "serde_json",
  "sim-core",
