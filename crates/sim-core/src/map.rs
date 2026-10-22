@@ -62,6 +62,12 @@ pub struct MapParams {
     pub min_capital_fruit: u32,
 }
 
+impl MapParams {
+    /// The smallest `size` `generate_map` accepts: two distinct inland capitals need an inland
+    /// region (rows and cols `2..=size-3`) of at least two tiles (docs/QUESTIONS.md Q16).
+    pub const MIN_SIZE: u8 = 6;
+}
+
 impl Default for MapParams {
     fn default() -> MapParams {
         MapParams {

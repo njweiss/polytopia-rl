@@ -117,6 +117,11 @@ fn potentials(s: &State, r: &RewardConfig) -> [f32; 2] {
 
 impl Env {
     pub fn new(cfg: EnvConfig) -> Env {
+        assert!(
+            cfg.map.size >= MapParams::MIN_SIZE,
+            "Env::new: map size {} is below MapParams::MIN_SIZE",
+            cfg.map.size
+        );
         let opponent = match cfg.opponent {
             Opponent::TwoSeat => None,
             Opponent::Bot { kind, epsilon } => Some(make_bot(kind, epsilon)),
@@ -164,6 +169,11 @@ impl Env {
             apply(&mut ep.state, &a).expect("bots choose legal actions");
             ep.log.push((me, a));
         }
+    }
+
+    /// False until the first `reset`; every accessor below panics until then.
+    pub fn is_reset(&self) -> bool {
+        self.episode.is_some()
     }
 
     fn ep(&self) -> &Episode {
