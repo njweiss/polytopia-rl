@@ -125,3 +125,51 @@ threads, which measured ~255 sps).
 rollout (single-env forward passes and mask fetches in Python) is now half the time, while the Rust
 env is still only ~4% of it. Subprocess workers are still not worth it; batching the per-step mask
 fetch is the next thing to profile.
+
+# Milestone 10b: curriculum run and gate
+
+Run by the owner on 2026-10-22/23 on the RTX 4060: `pixi run scripts/train.sh
+python/configs/curriculum.json` (defaults: 20M steps, `shaping_weight 1.0`, seed 1), run dir
+`runs/curriculum_seed1/`. 4,882 updates at a mean of ~1,300 sps, so 4.4 h of training (evals not
+included).
+
+## Curriculum
+
+| stage | opponents | entered at | training win rate when it advanced |
+| --- | --- | --- | --- |
+| 0 | random | step 0 | 0.99 (at 1.0M, the `min_stage_steps` floor) |
+| 1 | economy | 1.0M | ~0.95 (at 2.0M, the floor again) |
+| 2 | economy + rush | 2.0M | final stage (0.99 at 20M) |
+
+Each stage was passed as soon as `min_stage_steps` (1M) allowed. In-training greedy evals (50
+seeds, 100 games) in stage 2 started at 0.89-0.97 vs economy and 0.76-0.89 vs rush (2.5-4.5M), and
+were 0.99-1.00 vs economy and 0.96-1.00 vs rush over 17-19.5M. Over training, entropy fell from 2.10
+to 0.52 and episodes shortened from ~210 to ~74 agent actions. KL stayed high (0.04-0.12) through
+most of stage 2 without destabilizing, then fell with the LR.
+
+## Gate (K2): greedy, 200 eval seeds, side-swapped (400 games per opponent)
+
+`scripts/rl_gate.sh` on both final candidates (outputs in `runs/curriculum_seed1/gate_*.txt`):
+
+| checkpoint | opponent | W-L-D | win rate | Wilson 95% | seat 0 / seat 1 | length | score diff | gate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `best.pt` (13.0M) | random | 399-1-0 | 0.998 | [0.986, 1.000] | 1.000 / 0.995 | 118.7 | +1347 | PASS (>= 0.90) |
+| | economy | 397-3-0 | 0.993 | [0.978, 0.997] | 0.990 / 0.995 | 114.7 | +959 | PASS (>= 0.60) |
+| | rush | 389-11-0 | 0.973 | [0.951, 0.985] | 0.985 / 0.960 | 98.6 | +1454 | reported |
+| `latest.pt` (20.0M) | random | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 / 1.000 | 74.4 | +1139 | PASS (>= 0.90) |
+| | economy | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 / 1.000 | 70.0 | +903 | PASS (>= 0.60) |
+| | rush | 391-9-0 | 0.978 | [0.958, 0.988] | 0.995 / 0.960 | 67.0 | +1223 | reported |
+
+**10b passes with both checkpoints.** Notes for the owner:
+
+- **No forgetting vs random.** The agent last trained against random at 1M steps, and nothing
+  evaluated it against random after that, yet both checkpoints win 399-400 of 400.
+- **`best.pt` is not the best checkpoint.** It was picked by a 50-seed eval (0.995 mean at 13.0M).
+  Later checkpoints only tied that score, so it was never replaced. On 400 games, `latest.pt` is as
+  good or better and finishes games ~40% faster. At these win rates, 50 seeds cannot separate
+  checkpoints; use `latest.pt` (or rank by a larger eval) going forward.
+- **Rush is the weak spot, mainly as seat 1** (0.960 for both checkpoints, vs 0.985-0.995 as seat 0).
+  Every loss is a decisive game; there are no draws.
+- **The bots no longer test the agent much.** With the gate this far exceeded, the next signal has to
+  come from harder opposition (self-play, the spec's follow-up) or harder settings (turn cap, spec
+  open question 1).
