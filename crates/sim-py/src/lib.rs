@@ -232,6 +232,15 @@ impl PyEnv {
         Ok(step_result(py, out))
     }
 
+    /// `(actor, kind, arg)` of `sim_env::env::Env::bot_action`; `ValueError` for an unknown bot
+    /// name, `RuntimeError` once finished.
+    fn bot_action(&mut self, name: &str) -> PyResult<(usize, usize, usize)> {
+        let kind = BotKind::from_name(name)
+            .ok_or_else(|| PyValueError::new_err(format!("unknown bot {name:?}")))?;
+        let f = self.env.bot_action(kind).map_err(py_err)?;
+        Ok((f.actor, f.kind as usize, f.arg))
+    }
+
     fn info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let env = self.env()?;
         let view = env.view();

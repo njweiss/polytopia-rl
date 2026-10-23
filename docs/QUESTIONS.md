@@ -465,3 +465,151 @@ Append entries below. Format:
   Triton, which compiles a C helper at run time against `cuda.h` (without it, `train_update` on
   CUDA fails with `cuda.h: No such file or directory`). Measured on the RTX 4060 (default config):
   ~1,550 sps vs ~255 sps on CPU.
+
+## Q22: The exact bytes behind `obs_hash` and `rules_hash`
+
+- Needed for: milestone 11, "Public API" (`obs_hash`, `rules_hash`) and L9 (`RULES_VERSION` is part
+  of `rules_hash`); the tests pin a golden canonical string for `size = 3`.
+- Ambiguity: the brief lists the ingredients but not the separators, whether lists are delimited,
+  how numbers are written, or where `RULES_VERSION` goes in the rules bytes.
+- Options: A) one flat list of items joined with `\n` (no section markers, no trailing newline):
+  `size`, channel names, global names, the 10 action-type names, `arg_len` per action type in
+  decimal, unit types, rewards, techs, site actions. Rules bytes: for each embedded file in file-name
+  order, its bare name (`units.json`), `\0`, its contents; then `RULES_VERSION`, `\0`, the version in
+  decimal. B) the same with a header line per section (`[channels]`, ...), which rules out an item
+  moving across a section boundary without a hash change. C) `RULES_VERSION` first instead of last.
+- Agent's pick and why: A, the literal reading of "each item joined with `\n`". The section-boundary
+  case of B cannot happen without also changing a name. Test hooks (public, in `sim_env::hash`):
+  `hex64(u64) -> String`, `obs_canonical(size) -> String`, `embedded_data_files()`,
+  `rules_canonical(files, version) -> Vec<u8>`. The Python test assumes `RULES_VERSION == 1`; bumping
+  it means updating that constant in `python/tests/rl/sp_helpers.py` and the Rust test.
+- Owner answer:
+
+## Q23: A hook to play the Rust bots' moves from Python (`Env.bot_action`)
+
+- Needed for: milestone 11 "Tests" 3 ("a policy that plays the Rust bot's exact choices (through
+  `step_legal` lookup)") and 7 ("a scripted policy equal to the Rust economy bot (via the two-seat
+  path)"), and the tournament's bot-vs-bot games.
+- Ambiguity: nothing in the current API lets Python ask what a bot would play, so neither test can be
+  written; the brief does not name the mechanism.
+- Options: A) `sim_env::env::Env::bot_action(&mut self, kind: BotKind) -> Result<Factored,
+  EnvError>`, exposed as `Env.bot_action(name) -> (actor, kind, arg)`: the move bot `name` (epsilon
+  0) picks for the player to move from that player's `PlayerView`, with one rng stream per seat
+  (`bot_rng(seed, seat)`, created at `reset`, advanced only by this call), so driving a seat with it
+  reproduces `bots::play_game`. `Finished` (Python `RuntimeError`) once over, `ValueError` for an
+  unknown name. The env's own opponent is unaffected. B) return an index into `legal_actions()`
+  plus a new `step_legal` binding; C) expose `legal_actions` as JSON and match in Python.
+- Agent's pick and why: A. One call, no new action encoding in Python, and it works with
+  `step_factored`, which every policy already uses. It reads only the mover's own view, so it does not
+  cheat. Tested in `crates/sim-env/tests/bot_action.rs` against `bots::bot_policy`.
+- Owner answer:
+
+## Q24: Loss review definitions
+
+- Needed for: milestone 11 "Loss review" (`collect_losses`, `LossRecord`).
+- Ambiguity: which seeds, greedy or not, the record fields, how to tell a capital capture from a
+  score loss, and what "the turn the first city was lost" means when the agent only observes at its
+  own decisions.
+- Options and the tests' choices: seeds are the suite seeds `SUITE_SEED_BASE + j`, `j <
+  seeds`, seat 0 then seat 1, greedy, epsilon 0, stopping at `limit` losses. `LossRecord(seed, seat,
+  final_turn, loss_type, scores, first_city_lost_turn, path)`, `scores` seat-indexed from `info()`.
+  `loss_type` is `capital_captured` when the game ended before the turn cap (`info()["turn"] <
+  turn_cap`), else `score`. `first_city_lost_turn` is `info()["turn"]` at the first agent
+  observation (a decision or the final observation) where a tile that showed `city.mine` at its
+  previous observation no longer does, or None. Alternative: the exact turn of the capturing move,
+  which needs the opponent's moves decoded in Python (not possible with the current API). Note: for a
+  seat-0 agent, a city lost during the opponent's turn `t` is first seen at turn `t + 1`, except when
+  it ends the game.
+- Agent's pick and why: as above; observation-based, so it uses only what a policy may see. The
+  scripted test agent never holds a second city, so the tests check only "capital capture: equals
+  the final turn" and "score loss: None".
+- Owner answer:
+
+## Q25: Pool thinning and the snapshot draw
+
+- Needed for: milestone 11 "Self-play" (snapshots, opponent per episode), L4.
+- Ambiguity: "when full, thin by dropping every second entry except the first and the newest" does
+  not say whether thinning happens before or after the new entry is added, nor whether "uniformly
+  drawn entry of the whole pool" includes the newest.
+- Options: A) `add` appends, then while `len > pool_max` keep positions 0, 2, 4, ... and the newest
+  (pool_max 4, adding steps 0..4 gives `[0, 2, 4]`). B) thin a full pool before appending (gives
+  `[0, 2, 3, 4]`). The uniform draw includes the newest (so it has probability `p_latest + (1 -
+  p_latest) / K`).
+- Agent's pick and why: A, and the newest included in the uniform draw ("the whole pool"). The tests
+  pin both. Also fixed by the tests: `SnapshotPool(pool_max=40, p_latest=0.5)`, `Entry(step, state,
+  name="snap_{step}")`, and `selfplay.draw_opponent(pool, rng, p_bot)` (bot with probability `p_bot`,
+  uniform over `BOT_OPPONENTS = ("economy", "rush")`, else `pool.sample(rng)`).
+- Owner answer:
+
+## Q26: Truncation and the final observation in two-seat slots
+
+- Needed for: milestone 11 "Tests" 7 ("an opponent that is mid-turn at the learner's truncation is
+  handled") and "Execution".
+- Ambiguity: a two-seat `Env` counts both seats' actions towards `max_agent_actions`, so it can
+  truncate on an opponent move; and in two-seat mode `observation()` is the mover's (or the last
+  actor's) view, so after the opponent's move the learner's view of the final state is not available.
+- Options: A) a slot ends whenever its env reports `terminated` or `truncated` on any sub-step (the
+  learner's or the opponent's); the episode is then truncated for the learner, and the final
+  observation is defined (and tested) only when the learner's own action ended the episode.
+  B) count learner actions in Python and truncate only after a complete opponent turn (needs the
+  two-seat env's own limit raised). C) add `observation(seat)` to `Env`.
+- Agent's pick and why: A, no new API; truncation in two-seat slots is rare at the 5000-action
+  default, and a terminated episode does not bootstrap. The tests also fix: the learner's reward
+  equals the M9 formula exactly in float32 (`tw * t + sw * (gamma * phi' - phi)`), and opponent calls
+  are batched so that, in a step where no episode ends, each snapshot gets exactly one call per round.
+  A truncation inside the opponent's opening moves right after a reset is not tested.
+- Owner answer:
+
+## Q27: Details the milestone 11 tests assume
+
+- Needed for: milestone 11, "Public API" (several types are named but not specified), "Rules".
+- Ambiguity and the choices the tests fix (stubs in `python/polytopia_rl/` document each):
+  1. `checkpoint`: `SpecWarning(UserWarning)` raised via `warnings.warn` for every non-strict
+     mismatch and for a file without `spec`; `Checkpoint(model, optimizer, cfg, global_step, stage,
+     seed_index, rng_state, spec, extra)` with `model`/`optimizer` state dicts and `cfg` a
+     `PPOConfig`; `save_checkpoint` takes the module and optimizer; the file keeps `model`,
+     `optimizer`, `config` (JSON), `global_step`, `stage` and adds `spec`, so `train.load_policy`
+     still reads it.
+  2. `suite`: `SUITE_SEED_LIMIT = 1_500_000_000` (a range reaching it raises `ValueError`);
+     `run_suite(..., *, step=None)`; `SuiteResult(conditions: dict name -> ConditionResult,
+     obs_hash, rules_hash, step)` with the hashes of the running build; `ConditionResult` holds
+     `evaluate`'s fields plus `loss_capital_share`, `loss_score_share` (0 without losses) and a
+     per-game `loss_type`; `Comparison(name, win_rate_a, win_rate_b, diff = b - a, z, significant)`,
+     z with the pooled proportion, 0 when the pooled sd is 0; `compare` covers the conditions in
+     both, in `a`'s order. The suite CLI's `--out DIR` writes `suite.json` (with `obs_hash`,
+     `step`) and `suite.md`; `--compare` prints one line per condition. `python/configs/suite.json`
+     has `"seeds": 200`.
+  3. `tournament`: `Player(name, bot=None, policy_fn=None, greedy=True)`; `PairResult(a, b, games,
+     a_wins, b_wins, draws, seat_wins, per_game)`, per-game dicts `{seed, a_seat, winner: "a" |
+     "b" | None, length}`; `TournamentResult(players, wins (decisive), draws, games, seat_win_rate
+     (share of all games won by each seat), ratings)`, anchored at the player named `random` (else
+     player 0); `tournament_markdown`; `tournament.json` holds the same fields (matrices as lists,
+     `seat_win_rate` keyed `"0"`/`"1"`).
+  4. `selfplay`: `SelfPlayVecEnv(env_fn, num_envs, seed_base, seed_stride=1, *, pool, make_policy,
+     rng, p_bot=0.2, reward)`: `env_fn(opponent)` builds an env (`"none"` for two-seat),
+     `make_policy(entry)` returns a batch policy `policy(envs) -> actions`, `rng` is the dedicated
+     NumPy generator, `reward` the four M9 weights; `envs[i]` is slot `i`'s current env;
+     `EpisodeStat.opponent` is the bot name or `snap_{step}` (this is the per-episode opponent log).
+     `net_batch_policy(net, generator, greedy=False, device="cpu")` makes one `trunk` call per
+     batch. `regression(win_rates, floor)`: any rate `< floor`.
+  5. Self-play trainer (`train.run(cfg, run_dir, resume=None, init_checkpoint=None)`, CLI
+     `--init-checkpoint`), switched on by the config key `selfplay`. New `PPOConfig` keys and
+     defaults: `selfplay=False`, `snapshot_every=1_000_000`, `pool_max=40`, `p_bot=0.2`,
+     `p_latest=0.5`, `opponent_greedy=False`, `rating_every=2_000_000`, `rating_seeds=50`,
+     `regression_floor=0.9`, `tournament_seeds=100`; the suite subset uses `eval_seeds`. A snapshot
+     is added each time `global_step` crosses a multiple of `snapshot_every` (so also at the last
+     update when it lands on one). `eval.jsonl` rows carry `"type": "suite"` (`suite: {name:
+     {win_rate, ...}}`, `regression`) or `"type": "rating"` (`rating: {learner, snapshot_0}`);
+     metrics rows add `pool_size`. Checkpoints `ckpt_{step}.pt` and `latest.pt` at every evaluation
+     as in milestone 10, plus `ckpt_final.pt`; `pool/snap_{step}.pt` are checkpoints whose
+     `global_step` is the snapshot's step; `train.log` is written. Resume restores the pool, the
+     opponent RNG and sampling generator, and the env state exactly.
+  6. CLIs that take a checkpoint print its `obs_hash`, `rules_hash` and step on the first line.
+     `losses` CLI: `--checkpoint`, `--opponent`, `--count`, `--out`.
+  7. Changed milestone 10 test: `CKPT_KEYS` in `test_train.py` gains `spec` (the brief's "Changes
+     to earlier tests"). No other earlier test changes.
+- Options: A) as listed. B) the owner changes any item (the matching tests change in a new phase A
+  commit).
+- Agent's pick and why: A, the most direct reading of the brief plus the smallest additions that
+  make each listed test possible.
+- Owner answer:

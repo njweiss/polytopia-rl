@@ -45,7 +45,7 @@ DOC_KEYS = [
     "adv_mean",
     "adv_std",
 ]
-CKPT_KEYS = ["model", "optimizer", "config", "global_step", "stage", "vec_env", "rng"]
+CKPT_KEYS = ["model", "optimizer", "config", "global_step", "stage", "vec_env", "rng", "spec"]
 
 
 def tiny_cfg(**kw):
