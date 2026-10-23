@@ -127,7 +127,8 @@ def net_policy(net, generator=None, device="cpu"):
 
 
 def main(argv: list[str] | None = None) -> None:
-    from polytopia_rl.train import load_policy, resolve_device
+    from polytopia_rl.checkpoint import describe, load_net
+    from polytopia_rl.train import resolve_device
 
     p = argparse.ArgumentParser(description="Side-swapped evaluation of a checkpoint.")
     p.add_argument("--checkpoint", required=True)
@@ -135,7 +136,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--seeds", type=int, default=200)
     a = p.parse_args(argv)
     device = resolve_device("auto")
-    net, cfg = load_policy(a.checkpoint, device)
+    net, ck = load_net(a.checkpoint, device)
+    cfg = ck.cfg
+    print(describe(a.checkpoint, ck), flush=True)
     for opponent in a.opponents.split(","):
         res = evaluate(net_policy(net, device=device), opponent, a.seeds, env_kwargs_of(cfg), greedy=True)
         print(

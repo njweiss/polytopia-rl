@@ -613,3 +613,22 @@ Append entries below. Format:
 - Agent's pick and why: A, the most direct reading of the brief plus the smallest additions that
   make each listed test possible.
 - Owner answer:  A on 2026-10-23
+
+## Q28: Self-play rollout throughput (the opponent rounds)
+
+- Needed for: milestone 11 gate 11b (20M self-play steps), "Execution" and "Notes for the
+  implementer" (batch the opponents' forward passes).
+- Ambiguity: none in the rules; the implementation follows "Execution" exactly. But measured on the
+  RTX 4060 (size 11, 32 envs, 2-update smoke run from the M10 `latest.pt`), self-play runs at
+  ~200-240 sps overall (rollout ~220-280 sps, update ~1,600-2,500 sps), against ~1,550 sps for the M10
+  bot-mode training. A cProfile of one 4,096-step rollout: 13.1 s, of which 11.5 s is 1,369 opponent
+  batch-policy calls (~10 rounds per learner step, ~8 ms each, mostly small-batch launch overhead).
+  The rounds wait for the longest opponent turn among the slots whose learner just ended its turn. At
+  this rate 20M steps take ~25 h, not the "several hours" the brief expects.
+- Options: A) accept it (11b is an overnight-plus run). B) a later speed milestone: e.g. step the
+  learner's and the opponents' moves of all slots in one forward pass per snapshot (slots that wait
+  on an opponent are not stepped by the learner meanwhile), or more envs per batch, or the M10 note's
+  batched mask fetch. C) cut 11b to fewer steps.
+- Agent's pick and why: A for now, B after profiling as CLAUDE.md asks. Nothing changed here; the
+  metrics rows now also log `rollout_sps` and `update_sps` so the owner's runs show the split.
+- Owner answer:

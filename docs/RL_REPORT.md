@@ -173,3 +173,52 @@ most of stage 2 without destabilizing, then fell with the LR.
 - **The bots no longer test the agent much.** With the gate this far exceeded, the next signal has to
   come from harder opposition (self-play, the spec's follow-up) or harder settings (turn cap, spec
   open question 1).
+
+# Milestone 11: evaluation suite, versioning and snapshot-pool self-play
+
+## What was built (11a)
+
+- **Hashes.** `Env.spec()` has `obs_hash` (FNV-1a 64 of the observation and action layout: size,
+  channel and global names, action types, arg lengths, unit/reward/tech/site-action names, one item
+  per line) and `rules_hash` (FNV-1a 64 of every embedded `data/*.json`, by file name, then
+  `RULES_VERSION`). Current build, size 11: obs `d5f9b1033cfd55ca`, rules `a8b52b91eae34503`.
+  **Bumping `RULES_VERSION`:** a rules change made in Rust code rather than in `data/*.json` is not
+  visible to `rules_hash`; increase `RULES_VERSION` in `crates/sim-env/src/hash.rs` by one (and the
+  matching constant in `crates/sim-env/tests/hash.rs` and `python/tests/rl/sp_helpers.py`, a phase A
+  change).
+- **Checkpoints** (`polytopia_rl.checkpoint`) store `spec`; loading refuses another `obs_hash`
+  (`SpecMismatch`), warns on another `rules_hash`, and loads M10 files (no `spec`) with a warning.
+  Every CLI that takes a checkpoint prints its hashes and step on its first line.
+- **Suite** (`scripts/suite.sh CKPT`, `--compare A.json B.json`): the 8 standing conditions,
+  200 seeds side-swapped from `[1e9, 1.5e9)`.
+- **Loss review** (`python -m polytopia_rl.losses --checkpoint CKPT --opponent rush --count 5 --out DIR`).
+- **Ratings and tournaments** (`scripts/tournament.sh RUNDIR`): Bradley-Terry in Elo units, random
+  bot = 0, seeds `>= 2e9`.
+- **Self-play** (`scripts/selfplay.sh python/configs/selfplay.json`, warm start from
+  `runs/curriculum_seed1/latest.pt` by default). The rating rows in `eval.jsonl` play the learner
+  against each rated opponent only (a star graph), so opponents the learner beats equally often get
+  equal ratings there (in the smoke run all three bots rated 0). The full round robin at the end
+  (`tournament.md`) separates them.
+
+## Sanity runs by the implementer (not the gate)
+
+- Suite CLI on the M10 `latest.pt`, 3 seeds per condition: 6-0-0 in every condition. Not a result:
+  far too few games.
+- Self-play smoke, 2 updates (8,192 steps) from the M10 `latest.pt`: every output is written (pool,
+  eval rows, ratings, `ckpt_final.pt`, `tournament.json`/`.md`, `train.log`). **Throughput is
+  ~200-240 sps** against ~1,550 sps for M10 training. The opponent rounds dominate the rollout (see
+  docs/QUESTIONS.md Q28). At this rate 20M steps take ~25 h.
+
+## Gate 11a (owner's machine): to fill in
+
+1. `pixi run scripts/suite.sh runs/curriculum_seed1/latest.pt` -> `runs/curriculum_seed1/suite_latest/suite.md`:
+   _paste the table_.
+2. `pixi run python -m polytopia_rl.losses --checkpoint runs/curriculum_seed1/latest.pt --opponent rush --count 5 --out runs/curriculum_seed1/losses_rush`
+   (with `PYTHONPATH=python`): _paste the summary_.
+3. `pixi run scripts/selfplay.sh python/configs/selfplay.json total_steps=3000000 --run-dir runs/selfplay_smoke`.
+4. `runs/selfplay_smoke/tournament.md` (or `scripts/tournament.sh runs/selfplay_smoke`): _paste_.
+
+### What we learned
+
+_To write after the runs: how the agent loses to rush (seat, capture vs score, how early), noisy
+opponents and full observability, the Elo curve._
