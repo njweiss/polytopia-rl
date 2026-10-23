@@ -29,7 +29,7 @@ class EvalResult:
     by_seat: dict  # {0: win rate as seat 0, 1: win rate as seat 1}
     mean_length: float  # agent actions per game
     mean_score_diff: float  # agent score minus opponent score at the end
-    per_game: list  # dicts {"seed", "seat", "outcome", "length", "score_diff"}, seed order, seat 0 first
+    per_game: list  # dicts {"seed", "seat", "outcome", "length", "score_diff", "turn"}, seed order, seat 0 first
 
 
 def wilson_interval(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -43,31 +43,37 @@ def wilson_interval(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return max(0.0, center - half), min(1.0, center + half)
 
 
-def _play(policy_fn, env, seat: int, greedy: bool) -> dict:
-    """One game to the end; the result from the agent seat's perspective."""
+def _play(policy_fn, env, seat: int, greedy: bool, watch=None) -> dict:
+    """One game to the end; the result from the agent seat's perspective. `watch(env)`, if given,
+    sees every agent observation: the first one and the one after each agent action."""
     length = 0
+    if watch:
+        watch(env)
     while True:
         actor, kind, arg = policy_fn(env, greedy)
         _, _, terminated, truncated = env.step_factored(actor, kind, arg)
         length += 1
+        if watch:
+            watch(env)
         if terminated or truncated:
             break
     info = env.info()
     scores = info["scores"]
-    return {"seed": info["seed"], "seat": seat, "outcome": agent_outcome(info["outcome"], seat), "length": length, "score_diff": scores[seat] - scores[1 - seat]}
+    return {"seed": info["seed"], "seat": seat, "outcome": agent_outcome(info["outcome"], seat), "length": length, "score_diff": scores[seat] - scores[1 - seat], "turn": info["turn"]}
 
 
-def evaluate(policy_fn, opponent: str, seeds: int, env_kwargs: dict, greedy: bool) -> EvalResult:
-    """Play seeds `EVAL_SEED_BASE + j` for `j in range(seeds)`, each as seat 0 then seat 1, against
-    `opponent` with epsilon 0. `env_kwargs` go to `polytopia_sim.Env` (opponent, epsilon and seat are
-    set here). `policy_fn(env, greedy) -> (actor, kind, arg)`."""
+def evaluate(policy_fn, opponent: str, seeds: int, env_kwargs: dict, greedy: bool, *, seed_base: int = EVAL_SEED_BASE, epsilon: float = 0.0) -> EvalResult:
+    """Play seeds `seed_base + j` for `j in range(seeds)`, each as seat 0 then seat 1, against
+    `opponent` with `epsilon`. `env_kwargs` go to `polytopia_sim.Env` (opponent, epsilon and seat are
+    set here). `policy_fn(env, greedy) -> (actor, kind, arg)`. `turn` in a game's dict is the final
+    `info()["turn"]`."""
     kwargs = {k: v for k, v in env_kwargs.items() if k not in ("opponent", "opponent_epsilon", "agent_seat")}
     per_game = []
     for j in range(seeds):
         for seat in (0, 1):
             # Same seed, same map; only the side changes.
-            env = polytopia_sim.Env(**kwargs, opponent=opponent, opponent_epsilon=0.0, agent_seat=seat)
-            env.reset(EVAL_SEED_BASE + j)
+            env = polytopia_sim.Env(**kwargs, opponent=opponent, opponent_epsilon=epsilon, agent_seat=seat)
+            env.reset(seed_base + j)
             per_game.append(_play(policy_fn, env, seat, greedy))
     games = len(per_game)
     wins = sum(g["outcome"] == "win" for g in per_game)
