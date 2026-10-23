@@ -345,3 +345,123 @@ Append entries below. Format:
   Add a Python dependency only with the owner's approval, via `pixi add`, and commit the
   updated `pixi.lock`.
 - Owner answer: approved on 2026-10-22
+
+## Q18: The pixi env's numpy cannot load MKL
+
+- Needed for: milestone 10 (and the milestone 9 pytest suite), Q17
+- Ambiguity: the uncommitted `pixi.toml` change (python 3.12, `pytorch`, `matplotlib`) resolved
+  conda-forge `libblas 3.11.0 *_mkl` with `mkl 2026.2.0`. Its activation script sets
+  `MKL_INTERFACE_LAYER=LP64,GNU`, but that mkl build has no `libmkl_gf_lp64.so.3`, so a plain
+  `import numpy` followed by any linear algebra (and `import polytopia_sim`) aborts with
+  `Intel oneMKL FATAL ERROR: Cannot load libmkl_gf_lp64.so.3`. Importing torch first hides it.
+- Options: A) pin the BLAS to OpenBLAS (`pixi add "libblas=*=*openblas"`). B) pin an `mkl` build
+  that ships the GNU interface layer. C) set `MKL_INTERFACE_LAYER=LP64` in a pixi
+  `[activation.env]`.
+- Agent's pick and why: A. It removes the MKL interface-layer problem entirely, and torch's CPU
+  build does not need MKL-backed numpy. The milestone 10 tests were validated with
+  `MKL_INTERFACE_LAYER=LP64` set by hand (option C as a stopgap). Nothing was changed in
+  `pixi.toml`.
+- Owner answer: A on 2026-10-22. Done: `pixi.toml` pins `libblas` to the `*openblas` build
+  (resolved `libblas 3.11.0 *_openblas`, `libopenblas 0.3.34`, `nomkl`; `pytorch 2.14.1` moved to
+  its `cpu_generic` build). The milestone 9 pytest suite passes without `MKL_INTERFACE_LAYER`.
+
+## Q19: Details the milestone 10 tests assume
+
+- Needed for: milestone 10, "Public API" (several pieces are named but not specified), "Rules"
+- Ambiguity and the choices the tests fix (stubs in `python/polytopia_rl/` document each):
+  1. API additions the tests need: `vec_env.make_vec_env(cfg, seed_base, seed_stride=1)`;
+     `SyncVecEnv(..., opponents=None)` (labels for `EpisodeStat.opponent`, since `Env` cannot
+     report its opponent); `SyncVecEnv.state_dict()`/`load_state_dict()` (exact resume: per-env
+     episode index and seed, plus the agent actions of each episode in progress, restored by
+     reset and replay); `vec_env.TRAIN_SEED_LIMIT`; `evaluate.EVAL_SEED_BASE`,
+     `evaluate.wilson_interval`, `evaluate.net_policy(net, generator=None, device="cpu")`;
+     `curriculum.StageHistory(steps_in_stage, outcomes)` as `next_stage`'s `history`;
+     `ppo.collect_rollout(net, vec_env, buffer, generator)`; `train.run(cfg, run_dir,
+     resume=None) -> PolicyNet`, `train.load_policy(path, device) -> (net, cfg)`,
+     `train.main(argv)` with `--config`, `--run-dir`, `--resume` and `key=value` overrides;
+     `plot.plot_run(run_dir) -> list[str]` (PNG paths under the run dir).
+  2. `ActOut` also returns the three masks it fetched (`actor_mask`, `kind_mask`, `arg_mask`) so
+     the rollout buffer can store them. `Features` has exactly `fmap` (B, width, H, W) and `g`; the
+     layout tests build `Features` by hand, perturb `fmap` at one tile and hold `g` fixed.
+  3. Heads are the submodules `actor_head`, `kind_head`, `arg_head`, `value_head`, sharing no
+     parameters: the kind and argument heads each own their global-actor vector and family
+     embedding ("no weight sharing between the three stage heads beyond the trunk").
+  4. `masks_fn("actor")`, `masks_fn("kind", actors)`, `masks_fn("arg", actors, kinds)` with numpy
+     int64 arrays, returning bool arrays. A row whose kind has no argument stores `arg = 0` and an
+     all-false arg mask.
+  5. `PPOConfig` field names beyond the table: `size`, `turn_cap`, `full_observability`,
+     `opponents`, `opponent_epsilon`, `clip_vloss` (default true, CleanRL), `stages`,
+     `min_stage_steps` (default 1_000_000, my pick), `stage_window`, `stage_win_rate`,
+     `eval_every`, `eval_seeds` (default 50). A stage dict overrides config fields (only
+     `opponents` is used). `from_json` and overrides reject unknown keys with `ValueError`;
+     override values parse as JSON, else as the raw string.
+  6. Advantage normalization lives in `ppo_loss` (unbiased std, `+ 1e-8`), so it is per
+     minibatch by construction. `approx_kl = mean((r - 1) - log r)`, `clipfrac =
+     mean(|r - 1| > clip_eps)`; the value clip uses `clip_eps`.
+  7. GAE's `next_values[t]` is read only where `truncated[t]`; if both flags were set, the
+     terminated rule (no bootstrap) wins. `RolloutBuffer` field names are fixed (the
+     `collect_rollout` test reads `values`, `next_values`, `last_value`, `truncated`, ...).
+  8. LR annealing is CleanRL's `lr * (1 - (update - 1) / num_updates)` with update 1-based and
+     `num_updates = total_steps // (num_envs * num_steps)`; it never reaches exactly 0.
+  9. `EpisodeStat.outcome` is `"draw"` when the episode has no outcome (truncation). Episodes that
+     finish on the same step are reported in env-index order. `length` counts agent actions.
+  10. `evaluate(..., seeds: int)` plays `EVAL_SEED_BASE + j`, `j < seeds`; `per_game` entries are
+      dicts `{seed, seat, outcome, length, score_diff}` in seed order, seat 0 first; `length` is
+      agent actions; `by_seat = {0: rate, 1: rate}`; Wilson uses z = 1.96. `env_kwargs` may not
+      override the opponent, its epsilon (forced to 0) or the seat.
+  11. Checkpoints are written at every evaluation (each time `global_step` crosses a multiple of
+      `eval_every`) and at the end, and hold at least `model`, `optimizer`, `config` (JSON),
+      `global_step`, `stage`, `vec_env`, `rng`. The resume and repeatability tests compare
+      metrics with timing keys removed (any key containing `sps` or `time`).
+  12. Metric names: per-head entropies `entropy_actor`, `entropy_kind`, `entropy_arg`;
+      `kind_freq` is a dict over `spec()["action_types"]` summing to 1; `mean_return`,
+      `train_win_rate` and `mean_episode_len` are over the same last-`stage_window` window and
+      are `null` until an episode has finished.
+  13. `python/configs/stage1_random.json` has exactly one stage (`random`), and
+      `python/configs/curriculum.json` the brief's three.
+  14. The vector env and the model use only these `Env` methods: `reset`, `observation`,
+      `actor_mask`, `kind_mask`, `arg_mask`, `step_factored`, `info` (`agent_seat`,
+      `outcome`), `spec` (`height`, `width`, `channels`, `globals`, `num_actors`, `arg_lens`,
+      `action_types`). The learning tests' `FakeEnv` implements only these.
+  15. The `check.sh` test lock now also covers `python/tests/rl/`. `py_check.sh` still runs
+      `pytest python/tests`, which includes `python/tests/rl/`; the implementer's `rl_check.sh`
+      wiring should keep the two suites apart (for example `--ignore=python/tests/rl`).
+- Options: A) as listed. B) the owner changes any item (the matching tests change in a new phase A
+  commit).
+- Agent's pick and why: A, the most direct reading of the brief plus the smallest additions that
+  make each listed test possible.
+- Owner answer: A on 2026-10-22
+
+## Q20: How `evaluate` passes `greedy` to `policy_fn`
+
+- Needed for: milestone 10, "Public API" (`evaluate(policy_fn, opponent, seeds, env_kwargs,
+  greedy)`) and "Evaluation" (`policy_fn(env) -> (actor, kind, arg)`)
+- Ambiguity: `evaluate` takes `greedy`, but a `policy_fn(env)` has no way to receive it.
+- Options: A) `evaluate` calls `policy_fn(env, greedy)`; scripted policies ignore the flag.
+  B) keep `policy_fn(env)`, and `greedy` is only used when `evaluate` wraps a net itself.
+  C) drop `greedy` from `evaluate`, and `net_policy(net, greedy)` takes it instead.
+- Agent's pick and why: A. It keeps both signatures close to the brief, and one `net_policy`
+  serves greedy and sampled evaluation. The tests use A.
+- Owner answer: A on 2026-10-22
+
+## Q21: The pixi env's torch has no CUDA
+
+- Needed for: milestone 10, "Decisions already made" (compute: training must run on the RTX 4060)
+  and "Out of scope" (pin versions and record the CUDA build used)
+- Ambiguity: since Q18 (OpenBLAS pin) the pixi env resolves `pytorch 2.14.1 cpu_generic`
+  (`torch.version.cuda` is `None`, `torch.cuda.is_available()` is `False`), so `device="auto"`
+  falls back to the CPU. Switching to a CUDA build is a dependency change I may not make.
+- Options: A) the owner adds a CUDA build in `pixi.toml` (for example a conda-forge
+  `pytorch=*=cuda*` build plus the `cuda-version` it needs, checked against the OpenBLAS pin) and
+  commits `pixi.lock`; `python/requirements-rl.txt` then records that build. B) stay on CPU for
+  milestone 10 (the 10a smoke run was done on CPU) and decide on GPU when 10b needs it.
+- Agent's pick and why: A before 10b (20M steps). The code is device-agnostic (`device="auto"`,
+  sampling uses a CPU generator so it also works with a CUDA model); nothing else changes. The
+  RL_REPORT timing split shows how much the GPU can help (the forward pass share).
+- Owner answer: A on 2026-10-22. Done: `pixi.toml` declares `cuda = "12.9"` on the linux-64 platform
+  and pins `pytorch` to the `cuda129_generic*` build (`pytorch 2.14.1 cuda129_generic_py312`,
+  `cuda-version 12.9`; the conda-forge `cuda129_mkl` builds would break the Q18 OpenBLAS pin). It
+  also adds `cuda-cudart-dev 12.9`: torch 2.14 runs one batched-matmul backward kernel through
+  Triton, which compiles a C helper at run time against `cuda.h` (without it, `train_update` on
+  CUDA fails with `cuda.h: No such file or directory`). Measured on the RTX 4060 (default config):
+  ~1,550 sps vs ~255 sps on CPU.

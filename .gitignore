@@ -5,8 +5,13 @@ target/
 
 **/*.rs.bk
 
+.vscode
+
 *.pyc
 __pycache__/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# training runs (milestone 10)
+runs/
