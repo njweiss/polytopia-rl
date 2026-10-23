@@ -521,10 +521,3 @@ The sim is finished as a solid prototype before RL starts, which is the owner's 
 | Map validity | No checks beyond the pipeline, as in Tribes. A connectivity check is unnecessary on all-land maps, and Climbing is available to both players. |
 | Opponent information | Only the opponent's score is visible. Their stars and techs are hidden. |
 | Imperius resource multipliers | The Tribes JSON values (1 for fruit and animal), not the wiki's 2.0x fruit and 0.5x animals |
-
-### Open questions
-
-| # | Question | Options or draft assumption |
-| --- | --- | --- |
-| 1 | Turn cap value | Tune with bots: 30, 40, or 50 |
-| 2 | RL library choice | PPO with masking: compare options |

@@ -483,7 +483,7 @@ Append entries below. Format:
   `hex64(u64) -> String`, `obs_canonical(size) -> String`, `embedded_data_files()`,
   `rules_canonical(files, version) -> Vec<u8>`. The Python test assumes `RULES_VERSION == 1`; bumping
   it means updating that constant in `python/tests/rl/sp_helpers.py` and the Rust test.
-- Owner answer:
+- Owner answer: A on 2026-10-23
 
 ## Q23: A hook to play the Rust bots' moves from Python (`Env.bot_action`)
 
@@ -502,7 +502,7 @@ Append entries below. Format:
 - Agent's pick and why: A. One call, no new action encoding in Python, and it works with
   `step_factored`, which every policy already uses. It reads only the mover's own view, so it does not
   cheat. Tested in `crates/sim-env/tests/bot_action.rs` against `bots::bot_policy`.
-- Owner answer:
+- Owner answer: A on 2026-10-23
 
 ## Q24: Loss review definitions
 
@@ -523,7 +523,7 @@ Append entries below. Format:
 - Agent's pick and why: as above; observation-based, so it uses only what a policy may see. The
   scripted test agent never holds a second city, so the tests check only "capital capture: equals
   the final turn" and "score loss: None".
-- Owner answer:
+- Owner answer:  As above on 2026-10-23
 
 ## Q25: Pool thinning and the snapshot draw
 
@@ -539,7 +539,7 @@ Append entries below. Format:
   pin both. Also fixed by the tests: `SnapshotPool(pool_max=40, p_latest=0.5)`, `Entry(step, state,
   name="snap_{step}")`, and `selfplay.draw_opponent(pool, rng, p_bot)` (bot with probability `p_bot`,
   uniform over `BOT_OPPONENTS = ("economy", "rush")`, else `pool.sample(rng)`).
-- Owner answer:
+- Owner answer:  A on 2026-10-23
 
 ## Q26: Truncation and the final observation in two-seat slots
 
@@ -558,7 +558,7 @@ Append entries below. Format:
   equals the M9 formula exactly in float32 (`tw * t + sw * (gamma * phi' - phi)`), and opponent calls
   are batched so that, in a step where no episode ends, each snapshot gets exactly one call per round.
   A truncation inside the opponent's opening moves right after a reset is not tested.
-- Owner answer:
+- Owner answer:  A on 2026-10-23
 
 ## Q27: Details the milestone 11 tests assume
 
@@ -612,4 +612,4 @@ Append entries below. Format:
   commit).
 - Agent's pick and why: A, the most direct reading of the brief plus the smallest additions that
   make each listed test possible.
-- Owner answer:
+- Owner answer:  A on 2026-10-23
