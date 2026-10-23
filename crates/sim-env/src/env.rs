@@ -288,6 +288,16 @@ impl Env {
         self.step(&a)
     }
 
+    /// The action bot `kind` (epsilon 0) chooses for the player to move, from that player's
+    /// `PlayerView`, encoded against the current state. Each seat draws from its own rng stream
+    /// `bot_rng(seed, seat)`, created at `reset` and advanced only by this call, so driving a seat
+    /// with it reproduces that seat's moves in `bots::play_game`. `Finished` once the episode is
+    /// over. A test and tournament hook: the env's own opponent is not affected.
+    pub fn bot_action(&mut self, kind: BotKind) -> Result<Factored, EnvError> {
+        let _ = kind;
+        unimplemented!()
+    }
+
     /// Every applied action, the opponent's included, in order.
     pub fn action_log(&self) -> &[(PlayerId, Action)] {
         &self.ep().log

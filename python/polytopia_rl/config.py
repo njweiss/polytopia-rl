@@ -52,6 +52,17 @@ class PPOConfig:
     # Evaluation and checkpoints during training.
     eval_every: int = 500_000
     eval_seeds: int = 50
+    # Self-play (docs/MILESTONE_11 "Self-play"); `selfplay` switches the trainer to it.
+    selfplay: bool = False
+    snapshot_every: int = 1_000_000
+    pool_max: int = 40
+    p_bot: float = 0.2
+    p_latest: float = 0.5
+    opponent_greedy: bool = False
+    rating_every: int = 2_000_000
+    rating_seeds: int = 50
+    regression_floor: float = 0.9
+    tournament_seeds: int = 100
 
     def to_json(self) -> str:
         return json.dumps(dataclasses.asdict(self), indent=2)

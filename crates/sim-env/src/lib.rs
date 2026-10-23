@@ -3,4 +3,5 @@
 
 pub mod actions;
 pub mod env;
+pub mod hash;
 pub mod obs;

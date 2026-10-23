@@ -1,6 +1,6 @@
 """Training driver (docs/MILESTONE_10).
 
-`python -m polytopia_rl.train --config CONFIG [--run-dir DIR] [--resume CKPT] [key=value ...]`
+`python -m polytopia_rl.train --config CONFIG [--run-dir DIR] [--resume CKPT] [--init-checkpoint CKPT] [key=value ...]`
 
 `RUNDIR` gets `metrics.jsonl` (one line per update), `eval.jsonl`, and the checkpoints
 `ckpt_{global_step}.pt` and `latest.pt` (written at every evaluation, i.e. each time global_step
@@ -72,10 +72,22 @@ def _window_metrics(recent: list[dict]) -> dict:
     }
 
 
-def run(cfg, run_dir: str, resume: str | None = None):
+def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | None = None):
     """Train for `cfg.total_steps` agent steps and return the `PolicyNet`. With `resume`, model,
     optimizer, counters, curriculum state, RNG states and env state come from that checkpoint, and
-    the run continues as if it had never stopped."""
+    the run continues as if it had never stopped. With `init_checkpoint`, only the model weights
+    come from that checkpoint (obs hash enforced); optimizer and LR schedule start fresh.
+
+    `cfg.selfplay` (docs/MILESTONE_11 "Self-play"): the learner plays `SelfPlayVecEnv` against the
+    pool and the bots instead of the curriculum. Snapshot 0 is the initial weights; then one every
+    `snapshot_every` steps. `eval.jsonl` gets rows `{"type": "suite", "global_step", "suite": {name:
+    {"win_rate", ...}}, "regression"}` every `eval_every` steps (conditions economy_e0, rush_e0,
+    rush_e20, `eval_seeds` seeds) and `{"type": "rating", "global_step", "rating": {"learner",
+    "snapshot_0"}}` every `rating_every` steps. Metrics rows also have `pool_size`. At the end:
+    `ckpt_final.pt`, `pool/snap_{step}.pt` (checkpoints), `tournament.json`, `tournament.md`
+    (`tournament_seeds` seeds) and `train.log`."""
+    if cfg.selfplay or init_checkpoint is not None:
+        raise NotImplementedError
     os.makedirs(run_dir, exist_ok=True)
     device = resolve_device(cfg.device)
     random.seed(cfg.seed)
@@ -228,11 +240,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--config", required=True)
     p.add_argument("--run-dir", help="default: runs/<config name>_seed<seed>")
     p.add_argument("--resume", help="checkpoint to continue from")
+    p.add_argument("--init-checkpoint", help="checkpoint whose weights start the run (fresh optimizer)")
     p.add_argument("overrides", nargs="*", help="key=value config overrides")
     a = p.parse_args(argv)
     cfg = load_config(a.config, a.overrides)
     run_dir = a.run_dir or os.path.join("runs", f"{os.path.splitext(os.path.basename(a.config))[0]}_seed{cfg.seed}")
-    run(cfg, run_dir, resume=a.resume)
+    run(cfg, run_dir, resume=a.resume, init_checkpoint=a.init_checkpoint)
 
 
 if __name__ == "__main__":
