@@ -1,0 +1,8 @@
+# Milestone 10 (PPO) Python dependencies, as resolved in pixi.lock (conda-forge, linux-64).
+# The pixi env is the source of truth; this file records the pins.
+# torch build: pytorch 2.14.1 cuda129_generic (CUDA 12.9, generic BLAS so numpy keeps OpenBLAS,
+# Q18), plus cuda-cudart-dev 12.9 for cuda.h, which Triton compiles against at run time (Q21).
+torch==2.14.1
+numpy==2.5.4
+matplotlib==3.11.2
+pytest==9.1.1
