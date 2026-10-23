@@ -1,0 +1,17 @@
+{
+  "selfplay": true,
+  "total_steps": 20000000,
+  "opponents": ["economy", "rush"],
+  "stages": [{"opponents": ["economy", "rush"]}],
+  "snapshot_every": 1000000,
+  "pool_max": 40,
+  "p_bot": 0.2,
+  "p_latest": 0.5,
+  "opponent_greedy": false,
+  "eval_every": 1000000,
+  "eval_seeds": 50,
+  "regression_floor": 0.9,
+  "rating_every": 2000000,
+  "rating_seeds": 50,
+  "tournament_seeds": 100
+}
