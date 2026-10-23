@@ -11,6 +11,7 @@ use sim_core::map::MapParams;
 use sim_core::state::{Config, Outcome};
 use sim_env::actions::{arg_len, num_actors, ActionType, Factored};
 use sim_env::env::{AgentSeat, Env, EnvConfig, EnvError, Opponent, RewardConfig, StepOut};
+use sim_env::hash::{obs_hash, rules_hash};
 use sim_env::obs::{
     encode_board_with_legal, encode_globals, obs_spec, snake_name, CHANNELS, GLOBALS,
 };
@@ -285,6 +286,8 @@ impl PyEnv {
         d.set_item("rewards", snake_names(&ALL_REWARDS))?;
         d.set_item("techs", snake_names(&ALL_TECHS))?;
         d.set_item("site_actions", snake_names(&ALL_SITE_ACTIONS))?;
+        d.set_item("obs_hash", obs_hash(self.size))?;
+        d.set_item("rules_hash", rules_hash())?;
         Ok(d)
     }
 }
