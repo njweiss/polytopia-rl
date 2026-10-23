@@ -2,12 +2,13 @@
 
 use serde::Serialize;
 use sim_core::actions::Action;
-use sim_core::data::{Tech, UnitType, ALL_TECHS};
+use sim_core::data::{UnitType, ALL_TECHS};
 use sim_core::economy::income;
 use sim_core::grid::Pos;
 use sim_core::map::{Resource, Terrain};
 use sim_core::score::score;
 use sim_core::state::{Improvement, Outcome, Phase, PlayerId, State, TileState};
+use sim_core::view::resource_visible;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -64,17 +65,13 @@ fn explored(state: &State, view: View, pos: Pos) -> bool {
     }
 }
 
-/// The tile's resource as the view sees it: a crop needs Organization, a metal Climbing.
+/// The tile's resource as the view sees it (`resource_visible`).
 fn visible_resource(state: &State, view: View, t: &TileState) -> Option<Resource> {
     let View::Player(p) = view else {
         return t.resource;
     };
     let techs = &state.players[p as usize].techs;
-    t.resource.filter(|r| match r {
-        Resource::Crop => techs.contains(Tech::Organization),
-        Resource::Metal => techs.contains(Tech::Climbing),
-        _ => true,
-    })
+    t.resource.filter(|&r| resource_visible(techs, r))
 }
 
 fn cell(state: &State, view: View, pos: Pos) -> String {

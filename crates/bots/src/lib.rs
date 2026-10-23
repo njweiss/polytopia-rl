@@ -6,19 +6,19 @@ mod random;
 mod runner;
 mod rush;
 
-use sim_core::actions::Action;
+use sim_core::actions::{vision_radius, Action};
 use sim_core::combat::{compute_damage, Combatant};
 use sim_core::data::{Reward, SiteAction, UnitType};
-use sim_core::grid::{chebyshev, Pos};
-use sim_core::map::Terrain;
+use sim_core::grid::{all_tiles, chebyshev, within, Pos};
 use sim_core::rng::Rng;
 use sim_core::state::{Phase, PlayerId, Unit, UnitId};
 use sim_core::view::{PlayerView, UnitView};
 
 pub use economy::EconomyBot;
-pub use random::RandomBot;
+pub use random::{random_choice, RandomBot};
 pub use runner::{
-    play_game, run_match, CheckpointStats, GameResult, MatchStats, PlayerMeans, Snapshot,
+    bot_policy, play_game, run_match, CheckpointStats, GameResult, MatchStats, PlayerMeans,
+    Snapshot,
 };
 pub use rush::RushBot;
 
@@ -44,6 +44,13 @@ impl BotKind {
             BotKind::Rush => "rush",
             BotKind::Economy => "economy",
         }
+    }
+
+    /// The inverse of `name`.
+    pub fn from_name(name: &str) -> Option<BotKind> {
+        [BotKind::Random, BotKind::Rush, BotKind::Economy]
+            .into_iter()
+            .find(|k| k.name() == name)
     }
 }
 
@@ -228,19 +235,10 @@ fn recover(view: &PlayerView, legal: &[Action]) -> Option<Action> {
 /// Unexplored in-bounds tiles within radius 2 of `t` if `t` is a mountain, 1 otherwise. `t` must
 /// be explored.
 fn vision_gain(view: &PlayerView, t: Pos) -> u32 {
-    let mountain = view.tile(t).is_some_and(|x| x.terrain == Terrain::Mountain);
-    let r: i32 = if mountain { 2 } else { 1 };
-    let n = view.size() as i32;
-    let mut gain = 0;
-    for dr in -r..=r {
-        for dc in -r..=r {
-            let (row, col) = (t.row as i32 + dr, t.col as i32 + dc);
-            if row >= 0 && col >= 0 && row < n && col < n {
-                gain += u32::from(!view.is_explored(Pos::new(row as u8, col as u8)));
-            }
-        }
-    }
-    gain
+    let r = view.tile(t).map_or(1, |x| vision_radius(x.terrain));
+    within(view.size(), t, r)
+        .filter(|&q| !view.is_explored(q))
+        .count() as u32
 }
 
 /// The reachable tile strictly closer to `target` with the smallest distance, ties row-major
@@ -265,9 +263,7 @@ fn explore_step(view: &PlayerView, unit: &Unit) -> Option<Pos> {
     if let Some((_, t)) = best {
         return Some(t);
     }
-    let n = view.size();
-    let fog = (0..n)
-        .flat_map(|r| (0..n).map(move |c| Pos::new(r, c)))
+    let fog = all_tiles(view.size())
         .filter(|&q| view.is_explored(q) && vision_gain(view, q) > 0)
         .min_by_key(|&q| (chebyshev(unit.pos, q), q))?;
     greedy_step(view, unit, fog)

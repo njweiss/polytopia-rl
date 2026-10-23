@@ -13,7 +13,8 @@ import numpy as np
 import polytopia_sim
 import torch
 
-EVAL_SEED_BASE = 1_000_000_000
+from polytopia_rl.vec_env import TRAIN_SEED_LIMIT as EVAL_SEED_BASE
+from polytopia_rl.vec_env import agent_outcome, env_kwargs_of
 
 
 @dataclass
@@ -52,14 +53,8 @@ def _play(policy_fn, env, seat: int, greedy: bool) -> dict:
         if terminated or truncated:
             break
     info = env.info()
-    if info["outcome"] == f"win_{seat}":
-        outcome = "win"
-    elif info["outcome"] == f"win_{1 - seat}":
-        outcome = "loss"
-    else:
-        outcome = "draw"
     scores = info["scores"]
-    return {"seed": info["seed"], "seat": seat, "outcome": outcome, "length": length, "score_diff": scores[seat] - scores[1 - seat]}
+    return {"seed": info["seed"], "seat": seat, "outcome": agent_outcome(info["outcome"], seat), "length": length, "score_diff": scores[seat] - scores[1 - seat]}
 
 
 def evaluate(policy_fn, opponent: str, seeds: int, env_kwargs: dict, greedy: bool) -> EvalResult:
@@ -105,7 +100,7 @@ def net_policy(net, generator=None, device="cpu"):
 
     def policy_fn(env, greedy):
         board, glob = env.observation()
-        n = env.spec()["height"] * env.spec()["width"]
+        n = board.shape[1] * board.shape[2]
 
         def masks_fn(stage, actors=None, kinds=None):
             if stage == "actor":
@@ -123,11 +118,6 @@ def net_policy(net, generator=None, device="cpu"):
         return int(out.actors[0]), int(out.kinds[0]), int(out.args[0])
 
     return policy_fn
-
-
-def env_kwargs_of(cfg) -> dict:
-    """The map and rule settings of a training config, as `Env` keyword arguments."""
-    return dict(size=cfg.size, turn_cap=cfg.turn_cap, full_observability=cfg.full_observability)
 
 
 def main(argv: list[str] | None = None) -> None:
