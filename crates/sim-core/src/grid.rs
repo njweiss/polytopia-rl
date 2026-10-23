@@ -24,7 +24,7 @@ pub fn chebyshev(a: Pos, b: Pos) -> u32 {
 }
 
 /// Every position of an `n`-wide board, row-major.
-pub(crate) fn all_tiles(n: u8) -> impl Iterator<Item = Pos> {
+pub fn all_tiles(n: u8) -> impl Iterator<Item = Pos> {
     (0..n).flat_map(move |r| (0..n).map(move |c| Pos::new(r, c)))
 }
 
@@ -34,7 +34,7 @@ pub(crate) fn neighbors(size: u8, p: Pos) -> impl Iterator<Item = Pos> {
 }
 
 /// The in-bounds tiles within Chebyshev `radius` of `p` (including `p`), row-major.
-pub(crate) fn within(size: u8, p: Pos, radius: u32) -> impl Iterator<Item = Pos> {
+pub fn within(size: u8, p: Pos, radius: u32) -> impl Iterator<Item = Pos> {
     let span = |x: u8| {
         let x = u32::from(x);
         x.saturating_sub(radius) as u8..=x.saturating_add(radius).min(u32::from(size) - 1) as u8

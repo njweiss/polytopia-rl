@@ -11,7 +11,9 @@ use sim_core::map::MapParams;
 use sim_core::state::{Config, Outcome};
 use sim_env::actions::{arg_len, num_actors, ActionType, Factored};
 use sim_env::env::{AgentSeat, Env, EnvConfig, EnvError, Opponent, RewardConfig, StepOut};
-use sim_env::obs::{encode_board, encode_globals, obs_spec, snake_name};
+use sim_env::obs::{
+    encode_board_with_legal, encode_globals, obs_spec, snake_name, CHANNELS, GLOBALS,
+};
 
 fn py_err(e: EnvError) -> PyErr {
     match e {
@@ -107,12 +109,12 @@ impl PyEnv {
             kind,
             epsilon: opponent_epsilon,
         };
-        let opponent = match opponent {
-            "random" => bot(BotKind::Random),
-            "rush" => bot(BotKind::Rush),
-            "economy" => bot(BotKind::Economy),
-            "none" => Opponent::TwoSeat,
-            other => return Err(PyValueError::new_err(format!("unknown opponent {other:?}"))),
+        let opponent = match (opponent, BotKind::from_name(opponent)) {
+            ("none", _) => Opponent::TwoSeat,
+            (_, Some(kind)) => bot(kind),
+            (other, None) => {
+                return Err(PyValueError::new_err(format!("unknown opponent {other:?}")))
+            }
         };
         let agent_seat = match agent_seat {
             None => AgentSeat::Fixed(0),
@@ -167,14 +169,14 @@ impl PyEnv {
         &self,
         py: Python<'py>,
     ) -> PyResult<(Bound<'py, PyArray3<f32>>, Bound<'py, PyArray1<f32>>)> {
-        let spec = obs_spec(self.size);
-        let view = self.env()?.view();
-        let mut board = vec![0.0f32; spec.channels * spec.height * spec.width];
-        encode_board(&view, &mut board);
-        let mut globals = vec![0.0f32; spec.globals];
+        let n = self.size as usize;
+        let env = self.env()?;
+        let view = env.view();
+        let mut board = vec![0.0f32; CHANNELS * n * n];
+        encode_board_with_legal(&view, env.legal_actions(), &mut board);
+        let mut globals = vec![0.0f32; GLOBALS];
         encode_globals(&view, &mut globals);
-        let board =
-            PyArray1::from_vec(py, board).reshape([spec.channels, spec.height, spec.width])?;
+        let board = PyArray1::from_vec(py, board).reshape([CHANNELS, n, n])?;
         Ok((board, PyArray1::from_vec(py, globals)))
     }
 

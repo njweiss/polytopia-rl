@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use sim_core::actions::Action;
 use sim_core::data::{SiteAction, ALL_TECHS, ALL_UNITS};
-use sim_core::grid::Pos;
+use sim_core::grid::{all_tiles, Pos};
 use sim_core::map::{ALL_RESOURCES, ALL_TERRAINS};
 use sim_core::state::{ALL_IMPROVEMENTS, ALL_PHASES};
 use sim_core::view::PlayerView;
@@ -66,7 +66,7 @@ const VETERAN: usize = PHASE + ALL_PHASES.len();
 const CAN_PROMOTE: usize = VETERAN + 1;
 const CAN_HARVEST: usize = CAN_PROMOTE + 1;
 const CAN_BUILD: usize = CAN_HARVEST + 1;
-const CHANNELS: usize = CAN_BUILD + 1;
+pub const CHANNELS: usize = CAN_BUILD + 1;
 
 const GLOBAL_SCALARS: [&str; 9] = [
     "stars",
@@ -79,7 +79,7 @@ const GLOBAL_SCALARS: [&str; 9] = [
     "my_cities",
     "my_units",
 ];
-const GLOBALS: usize = GLOBAL_SCALARS.len() + ALL_TECHS.len();
+pub const GLOBALS: usize = GLOBAL_SCALARS.len() + ALL_TECHS.len();
 
 pub fn obs_spec(size: u8) -> ObsSpec {
     let mut channel_names = names(&["explored"]);
@@ -129,56 +129,58 @@ fn flag(b: bool) -> f32 {
 
 /// Channel-major `(C, H, W)`, length `channels * height * width`; overwrites all of `out`.
 pub fn encode_board(view: &PlayerView, out: &mut [f32]) {
+    encode_board_with_legal(view, &view.legal_actions(), out);
+}
+
+/// `encode_board` with `legal == view.legal_actions()` already in hand (`Env` caches it).
+pub fn encode_board_with_legal(view: &PlayerView, legal: &[Action], out: &mut [f32]) {
     let n = view.size() as usize;
     assert_eq!(out.len(), CHANNELS * n * n, "encode_board: buffer length");
     out.fill(0.0);
     let me = view.player();
     let mut set = |c: usize, p: Pos, x: f32| out[(c * n + p.row as usize) * n + p.col as usize] = x;
-    for row in 0..n as u8 {
-        for col in 0..n as u8 {
-            let p = Pos::new(row, col);
-            let Some(t) = view.tile(p) else {
-                continue;
-            };
-            set(EXPLORED, p, 1.0);
-            set(TERRAIN + t.terrain as usize, p, 1.0);
-            if let Some(r) = t.resource {
-                set(RESOURCE + r as usize, p, 1.0);
-            }
-            if let Some(i) = t.improvement {
-                set(IMPROVEMENT + i as usize, p, 1.0);
-            }
-            set(VILLAGE, p, flag(t.village));
-            if let Some(owner) = t.territory {
-                set(
-                    if owner == me {
-                        TERRITORY_MINE
-                    } else {
-                        TERRITORY_ENEMY
-                    },
-                    p,
-                    1.0,
-                );
-            }
-            if let Some(c) = t.city {
-                set(if c.owner == me { CITY_MINE } else { CITY_ENEMY }, p, 1.0);
-                set(CITY_LEVEL, p, c.level.min(10) as f32 / 10.0);
-                set(CITY_CAPITAL, p, flag(c.is_capital));
-            }
-            if let Some(u) = t.unit {
-                if u.owner == me {
-                    set(MY_UNIT + u.kind as usize, p, 1.0);
-                    set(PHASE + u.phase as usize, p, 1.0);
+    for p in all_tiles(view.size()) {
+        let Some(t) = view.tile(p) else {
+            continue;
+        };
+        set(EXPLORED, p, 1.0);
+        set(TERRAIN + t.terrain as usize, p, 1.0);
+        if let Some(r) = t.resource {
+            set(RESOURCE + r as usize, p, 1.0);
+        }
+        if let Some(i) = t.improvement {
+            set(IMPROVEMENT + i as usize, p, 1.0);
+        }
+        set(VILLAGE, p, flag(t.village));
+        if let Some(owner) = t.territory {
+            set(
+                if owner == me {
+                    TERRITORY_MINE
                 } else {
-                    set(ENEMY_UNIT + u.kind as usize, p, 1.0);
-                }
-                set(HEALTH, p, u.health as f32 / u.max_health as f32);
-                set(VETERAN, p, flag(u.veteran));
+                    TERRITORY_ENEMY
+                },
+                p,
+                1.0,
+            );
+        }
+        if let Some(c) = t.city {
+            set(if c.owner == me { CITY_MINE } else { CITY_ENEMY }, p, 1.0);
+            set(CITY_LEVEL, p, c.level.min(10) as f32 / 10.0);
+            set(CITY_CAPITAL, p, flag(c.is_capital));
+        }
+        if let Some(u) = t.unit {
+            if u.owner == me {
+                set(MY_UNIT + u.kind as usize, p, 1.0);
+                set(PHASE + u.phase as usize, p, 1.0);
+            } else {
+                set(ENEMY_UNIT + u.kind as usize, p, 1.0);
             }
+            set(HEALTH, p, u.health as f32 / u.max_health as f32);
+            set(VETERAN, p, flag(u.veteran));
         }
     }
     let units = view.my_units();
-    for a in view.legal_actions() {
+    for &a in legal {
         match a {
             Action::Promote { unit } => {
                 let u = units.iter().find(|u| u.id == unit).expect("own unit");

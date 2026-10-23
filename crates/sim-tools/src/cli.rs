@@ -2,11 +2,10 @@
 
 use std::io::Write;
 
-use bots::{bot_rng, make_bot, run_match, BotKind};
+use bots::{bot_policy, run_match, BotKind};
 use sim_core::map::MapParams;
 use sim_core::rng::Rng;
 use sim_core::state::{Config, Outcome, State};
-use sim_core::view::PlayerView;
 
 use crate::html::html_page;
 use crate::policy::random_action;
@@ -208,11 +207,8 @@ fn html(args: &[String]) -> Result<(), Fail> {
 /// A comma list of bot kinds.
 fn bot_list(list: &str) -> Result<Vec<BotKind>, Fail> {
     list.split(',')
-        .map(|name| match name {
-            "random" => Ok(BotKind::Random),
-            "rush" => Ok(BotKind::Rush),
-            "economy" => Ok(BotKind::Economy),
-            other => usage(&format!("unknown bot {other:?}")),
+        .map(|name| {
+            BotKind::from_name(name).map_or_else(|| usage(&format!("unknown bot {name:?}")), Ok)
         })
         .collect()
 }
@@ -224,17 +220,12 @@ fn record_bot_game(
     config: &Config,
     max_actions: usize,
 ) -> ReplayLog {
-    let players = [make_bot(kinds[0], 0.0), make_bot(kinds[1], 0.0)];
-    let mut rngs = [bot_rng(seed, 0), bot_rng(seed, 1)];
     record_game(
         seed,
         &MapParams::default(),
         config,
         max_actions,
-        &mut |s: &State| {
-            let cur = s.current as usize;
-            players[cur].choose(&PlayerView::new(s, s.current), &mut rngs[cur])
-        },
+        &mut bot_policy(seed, kinds, [0.0, 0.0]),
     )
 }
 
@@ -243,7 +234,7 @@ fn play(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     let mut kinds: Option<Vec<BotKind>> = None;
     let mut seed: Option<u64> = None;
     let mut path: Option<String> = None;
-    let mut turn_cap: u32 = 50;
+    let mut turn_cap = Config::default().turn_cap;
     let mut max_actions: usize = 5000;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -291,7 +282,7 @@ fn play(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
 fn tournament(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     let mut kinds: Option<Vec<BotKind>> = None;
     let mut games: u64 = 100;
-    let mut turn_cap: u32 = 50;
+    let mut turn_cap = Config::default().turn_cap;
     let mut seed: u64 = 0;
     let mut gate_min: Option<f64> = None;
     let mut save_dir: Option<String> = None;
@@ -356,8 +347,7 @@ fn tournament(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
                 .map_err(io_fail)?;
             }
             if let Some(min) = gate_min {
-                for (bot, rate) in [(x, m.win_rate_a()), (y, m.win_rate_b())] {
-                    let other = if bot == x { y } else { x };
+                for (bot, other, rate) in [(x, y, m.win_rate_a()), (y, x, m.win_rate_b())] {
                     let gated =
                         matches!(bot, BotKind::Rush | BotKind::Economy) && other == BotKind::Random;
                     if gated && rate < min {

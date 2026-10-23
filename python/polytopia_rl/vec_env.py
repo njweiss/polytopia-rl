@@ -16,6 +16,16 @@ import polytopia_sim
 TRAIN_SEED_LIMIT = 1_000_000_000  # training seeds are < this; evaluation seeds are >= it
 
 
+def agent_outcome(outcome: str | None, seat: int) -> str:
+    """`"win"`, `"loss"` or `"draw"` for `seat`, from `info()["outcome"]`."""
+    return {f"win_{seat}": "win", f"win_{1 - seat}": "loss"}.get(outcome, "draw")
+
+
+def env_kwargs_of(cfg) -> dict:
+    """The map and rule settings of a training config, as `Env` keyword arguments."""
+    return dict(size=cfg.size, turn_cap=cfg.turn_cap, full_observability=cfg.full_observability)
+
+
 @dataclass
 class VecState:
     board: np.ndarray  # (E, C, H, W) float32
@@ -125,18 +135,12 @@ class SyncVecEnv:
     def _episode_stat(self, i: int) -> EpisodeStat:
         info = self.envs[i].info()
         seat = info["agent_seat"]
-        if info["outcome"] == f"win_{seat}":
-            outcome = "win"
-        elif info["outcome"] == f"win_{1 - seat}":
-            outcome = "loss"
-        else:
-            outcome = "draw"
         return EpisodeStat(
             env_index=i,
             seed=self._seed[i],
             opponent=None if self.opponents is None else self.opponents[i],
             agent_seat=seat,
-            outcome=outcome,
+            outcome=agent_outcome(info["outcome"], seat),
             length=len(self._actions[i]),
             ret=self._ret[i],
         )
@@ -202,9 +206,7 @@ def make_vec_env(cfg, seed_base: int, seed_stride: int = 1) -> SyncVecEnv:
 
     def env_fn(opponent):
         return lambda: polytopia_sim.Env(
-            size=cfg.size,
-            turn_cap=cfg.turn_cap,
-            full_observability=cfg.full_observability,
+            **env_kwargs_of(cfg),
             opponent=opponent,
             opponent_epsilon=cfg.opponent_epsilon,
             agent_seat="seed_parity",

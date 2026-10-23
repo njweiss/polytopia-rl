@@ -4,7 +4,7 @@
 use crate::actions::{legal_actions, Action};
 use crate::data::{Tables, Tech, UnitType};
 use crate::economy::income;
-use crate::grid::Pos;
+use crate::grid::{all_tiles, Pos};
 use crate::map::{Resource, Terrain};
 use crate::movement::reachable_tiles;
 use crate::score::score;
@@ -91,11 +91,7 @@ impl<'a> PlayerView<'a> {
         }
         let t = self.state.tile(p);
         let techs = self.techs();
-        let resource = t.resource.filter(|r| match r {
-            Resource::Crop => techs.contains(Tech::Organization),
-            Resource::Metal => techs.contains(Tech::Climbing),
-            Resource::Fruit | Resource::Animal => true,
-        });
+        let resource = t.resource.filter(|&r| resource_visible(&techs, r));
         Some(VisibleTile {
             terrain: t.terrain,
             resource,
@@ -128,8 +124,7 @@ impl<'a> PlayerView<'a> {
 
     /// Ascending id.
     pub fn my_units(&self) -> Vec<&'a Unit> {
-        let state: &'a State = self.state;
-        state
+        self.state
             .units
             .iter()
             .filter(|u| u.owner == self.player)
@@ -138,8 +133,7 @@ impl<'a> PlayerView<'a> {
 
     /// Ascending id.
     pub fn my_cities(&self) -> Vec<&'a City> {
-        let state: &'a State = self.state;
-        state
+        self.state
             .cities
             .iter()
             .filter(|c| c.owner == self.player)
@@ -148,9 +142,7 @@ impl<'a> PlayerView<'a> {
 
     /// Every unit on an explored tile, row-major.
     pub fn visible_units(&self) -> Vec<UnitView> {
-        let n = self.state.size;
-        (0..n)
-            .flat_map(|r| (0..n).map(move |c| Pos::new(r, c)))
+        all_tiles(self.state.size)
             .filter_map(|p| self.tile(p).and_then(|t| t.unit))
             .collect()
     }
@@ -166,8 +158,7 @@ impl<'a> PlayerView<'a> {
     }
 
     pub fn tables(&self) -> &'a Tables {
-        let state: &'a State = self.state;
-        &state.tables
+        &self.state.tables
     }
 
     /// `legal_actions(state)` if it is this player's turn, else empty.
@@ -218,5 +209,14 @@ impl<'a> PlayerView<'a> {
             veteran: u.veteran,
             phase: u.phase,
         }
+    }
+}
+
+/// A crop needs Organization and a metal Climbing to be seen; other resources are always seen.
+pub fn resource_visible(techs: &TechSet, r: Resource) -> bool {
+    match r {
+        Resource::Crop => techs.contains(Tech::Organization),
+        Resource::Metal => techs.contains(Tech::Climbing),
+        Resource::Fruit | Resource::Animal => true,
     }
 }

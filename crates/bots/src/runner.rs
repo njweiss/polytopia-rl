@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use sim_core::actions::apply;
+use sim_core::actions::{apply, Action};
 use sim_core::map::MapParams;
 use sim_core::score::score;
 use sim_core::setup::new_game_from_seed;
@@ -37,6 +37,23 @@ pub struct GameResult {
     pub snapshots: Vec<Snapshot>,
 }
 
+/// Both seats' bots with their `bot_rng` streams: the current player's choice from its own view.
+pub fn bot_policy(
+    seed: u64,
+    bots: [BotKind; 2],
+    epsilons: [f32; 2],
+) -> impl FnMut(&State) -> Action {
+    let players = [
+        make_bot(bots[0], epsilons[0]),
+        make_bot(bots[1], epsilons[1]),
+    ];
+    let mut rngs = [bot_rng(seed, 0), bot_rng(seed, 1)];
+    move |s: &State| {
+        let cur = s.current as usize;
+        players[cur].choose(&PlayerView::new(s, s.current), &mut rngs[cur])
+    }
+}
+
 pub fn play_game(
     seed: u64,
     bots: [BotKind; 2],
@@ -44,11 +61,7 @@ pub fn play_game(
     map: &MapParams,
     config: &Config,
 ) -> GameResult {
-    let players = [
-        make_bot(bots[0], epsilons[0]),
-        make_bot(bots[1], epsilons[1]),
-    ];
-    let mut rngs = [bot_rng(seed, 0), bot_rng(seed, 1)];
+    let mut policy = bot_policy(seed, bots, epsilons);
     let mut state = new_game_from_seed(seed, map, config);
     let mut snapshots: Vec<Snapshot> = Vec::new();
     loop {
@@ -62,8 +75,7 @@ pub fn play_game(
         if state.is_terminal() {
             break;
         }
-        let cur = state.current as usize;
-        let action = players[cur].choose(&PlayerView::new(&state, state.current), &mut rngs[cur]);
+        let action = policy(&state);
         apply(&mut state, &action).expect("bots choose legal actions");
     }
     let outcome = state.outcome.expect("the loop ends on a terminal state");
@@ -154,14 +166,11 @@ impl MatchStats {
             checkpoints: Vec::new(),
         };
         let mut diff = 0.0;
-        let seats: Vec<(usize, usize)> = results
+        let seats: Vec<usize> = results
             .iter()
-            .map(|r| {
-                let a_seat = r.bots.iter().position(|&k| k == a).expect("a played");
-                (a_seat, 1 - a_seat)
-            })
+            .map(|r| r.bots.iter().position(|&k| k == a).expect("a played"))
             .collect();
-        for (r, &(a_seat, b_seat)) in results.iter().zip(&seats) {
+        for (r, &a_seat) in results.iter().zip(&seats) {
             m.games += 1;
             match r.outcome {
                 Outcome::Win(w) if w as usize == a_seat => {
@@ -174,29 +183,33 @@ impl MatchStats {
                 }
                 Outcome::Draw => m.draws += 1,
             }
-            diff += r.scores[a_seat] as f64 - r.scores[b_seat] as f64;
+            diff += r.scores[a_seat] as f64 - r.scores[1 - a_seat] as f64;
         }
         if m.games > 0 {
             m.mean_score_diff = diff / m.games as f64;
         }
         for turn in SNAPSHOT_TURNS {
-            let reached: Vec<(&Snapshot, usize, usize)> = results
+            let reached: Vec<(&Snapshot, usize)> = results
                 .iter()
                 .zip(&seats)
-                .filter_map(|(r, &(sa, sb))| {
+                .filter_map(|(r, &a_seat)| {
                     r.snapshots
                         .iter()
                         .find(|x| x.turn == turn)
-                        .map(|x| (x, sa, sb))
+                        .map(|x| (x, a_seat))
                 })
                 .collect();
             if reached.is_empty() {
                 continue;
             }
             let n = reached.len() as f64;
-            let means = |seat: fn(&(&Snapshot, usize, usize)) -> usize| {
+            let means = |seat: fn(usize) -> usize| {
                 let mean = |f: fn(&Snapshot, usize) -> u32| {
-                    reached.iter().map(|x| f(x.0, seat(x)) as f64).sum::<f64>() / n
+                    reached
+                        .iter()
+                        .map(|&(s, a_seat)| f(s, seat(a_seat)) as f64)
+                        .sum::<f64>()
+                        / n
                 };
                 PlayerMeans {
                     cities: mean(|s, i| s.cities[i]),
@@ -208,8 +221,8 @@ impl MatchStats {
             m.checkpoints.push(CheckpointStats {
                 turn,
                 games: reached.len() as u32,
-                a: means(|x| x.1),
-                b: means(|x| x.2),
+                a: means(|s| s),
+                b: means(|s| 1 - s),
             });
         }
         m

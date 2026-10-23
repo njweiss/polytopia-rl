@@ -2,7 +2,7 @@
 
 use sim_core::actions::Action;
 use sim_core::data::{Reward, SiteAction, Tech, UnitType};
-use sim_core::grid::Pos;
+use sim_core::grid::{all_tiles, Pos};
 use sim_core::rng::Rng;
 use sim_core::view::PlayerView;
 
@@ -77,9 +77,7 @@ fn train(view: &PlayerView, legal: &[Action]) -> Option<Action> {
 
 /// The nearest known village tile with no unit on it, ties row-major.
 fn village(view: &PlayerView, from: Pos) -> Option<Pos> {
-    let n = view.size();
-    let villages = (0..n)
-        .flat_map(|r| (0..n).map(move |c| Pos::new(r, c)))
+    let villages = all_tiles(view.size())
         .filter(|&q| view.tile(q).is_some_and(|t| t.village && t.unit.is_none()));
     nearest(from, villages)
 }

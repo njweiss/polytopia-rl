@@ -106,13 +106,11 @@ impl Episode {
 
 /// `phi_s` for both seats: `(me - opp) / potential_scale`, 0 when terminal.
 fn potentials(s: &State, r: &RewardConfig) -> [f32; 2] {
-    [0u8, 1].map(|seat| {
-        if s.is_terminal() {
-            0.0
-        } else {
-            (score(s, seat) as f32 - score(s, 1 - seat) as f32) / r.potential_scale
-        }
-    })
+    if s.is_terminal() {
+        return [0.0; 2];
+    }
+    let scores = [score(s, 0) as f32, score(s, 1) as f32];
+    [0, 1].map(|seat| (scores[seat] - scores[1 - seat]) / r.potential_scale)
 }
 
 impl Env {
@@ -139,15 +137,15 @@ impl Env {
             AgentSeat::SeedParity => (seed % 2) as PlayerId,
         };
         let state = new_game_from_seed(seed, &self.cfg.map, &self.cfg.config);
-        let legal = legal_actions(&state);
-        let masks = ActionMasks::new(&state, &legal);
+        // Filled by `refresh` once the opponent has moved.
+        let masks = ActionMasks::new(&state, &[]);
         self.episode = Some(Episode {
             seed,
             agent,
             state,
             opponent_rng: bot_rng(seed, 1 - agent),
             log: Vec::new(),
-            legal,
+            legal: Vec::new(),
             masks,
             agent_actions: 0,
             truncated: false,
