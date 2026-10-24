@@ -109,7 +109,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             full_observability: false,
-            turn_cap: 50,
+            turn_cap: 30,
             score_weights: ScoreWeights::default(),
         }
     }
