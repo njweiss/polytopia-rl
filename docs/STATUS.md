@@ -35,6 +35,16 @@ from this file. Update it at the end of every working session.
   with `pixi run python -c "import polytopia_sim as p; print(p.Env().spec()['obs_hash'])"`, which
   must print `d5f9b1033cfd55ca`. Rust-only `cargo test` is safe.
 
+## Roadmap (owner, 2026-10-24)
+
+1. **Close M11:** gate 11b, RL_REPORT write-up, merge `milestone-11` into `main`, decisions log.
+2. **M12 experiments:** a multi-seed harness (mean and spread per suite condition and Elo), then
+   seed-replicated experiments (11b reproducibility, shaping weight, `p_bot`). Cheap, profiled speed
+   wins that save experiment time are in scope.
+3. **M13 architecture and scaling:** network width/depth ladder measured with the M12 harness.
+4. **Game v2:** drafted after M13. The damage preview goes into v2, not into a separate v1
+   milestone (owner: it is unlikely to be a significant information source).
+
 ## Done
 
 | Milestone | Content | Result |
@@ -86,6 +96,7 @@ from this file. Update it at the end of every working session.
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | Roadmap set: M12 experiments, M13 architecture/scaling, then game v2 (with the damage preview). |
 | 2026-10-24 | WSL memory raised to 12 GB in config, pending a WSL restart after 11b. |
 | 2026-10-24 | Implementer status: 11b resumed at 1.0M with OMP_NUM_THREADS=1; 1M eval clean (rush_e0 0.96). Shared extension clobbered by a main build, restored. |
 | 2026-10-24 | Default turn cap 30 in sim-core (main); `docs/SPEC.md` synced to the Claude Doc rev 394. 11b at 1.0M steps. |
