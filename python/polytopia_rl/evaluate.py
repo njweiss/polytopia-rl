@@ -118,7 +118,7 @@ def net_policy(net, generator=None, device="cpu"):
             m[0, : xm.size] = xm
             return m
 
-        with torch.no_grad():
+        with torch.inference_mode():
             feats = net.trunk(torch.from_numpy(board)[None].to(device), torch.from_numpy(glob)[None].to(device))
             out = net.act(feats, masks_fn, generator, greedy=greedy, stats=False)
         return int(out.actors[0]), int(out.kinds[0]), int(out.args[0])

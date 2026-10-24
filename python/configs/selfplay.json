@@ -1,6 +1,9 @@
 {
   "selfplay": true,
   "total_steps": 20000000,
+  "num_envs": 128,
+  "num_steps": 32,
+  "lr": 0.0001,
   "opponents": ["economy", "rush"],
   "stages": [{"opponents": ["economy", "rush"]}],
   "snapshot_every": 1000000,

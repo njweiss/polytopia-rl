@@ -110,10 +110,10 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     num_updates = cfg.total_steps // batch
 
     # Self-play state: the pool, the dedicated opponent-draw stream, and the generator the snapshot
-    # opponents sample their actions with.
+    # opponents sample their actions with (on the model's device, so sampling needs no copy).
     pool = SnapshotPool(cfg.pool_max, cfg.p_latest) if cfg.selfplay else None
     opp_rng = np.random.default_rng([cfg.seed, 11])
-    opp_gen = torch.Generator().manual_seed(cfg.seed + 1)
+    opp_gen = torch.Generator(device=device).manual_seed(cfg.seed + 1)
 
     def make_policy(entry):
         snap = copy.deepcopy(net)  # no fresh init, so the global torch RNG is untouched

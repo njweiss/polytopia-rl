@@ -695,4 +695,14 @@ Append entries below. Format:
   and C for a later speed milestone with the larger structural options (Q29 R3, R4). The noisy
   measurements above do not support a firm estimate: A is somewhere between 0 and ~25% of the
   opponent call cost.
-- Owner answer:
+- Owner answer: A + B, plus Q29 R3 as `num_envs=128 num_steps=32` (batch stays 4,096), and
+  `lr=1e-4` for the 11b run, on 2026-10-24. C not now. The 20M run `runs/selfplay_lr1e-4` was
+  stopped at step 180k (no checkpoint) to restart with these.
+- Implemented: `categorical.masked_logits`/`sample` take `check` (default True); `act(stats=False)`
+  passes `check=False`. `net_batch_policy` and `evaluate.net_policy` run under
+  `torch.inference_mode`. The trainer's opponent generator is created on the model's device. Config
+  `python/configs/selfplay.json`: `num_envs 128`, `num_steps 32`, `lr 1e-4`. Checked on the GPU:
+  A changes 0 of 14,400 sampled action components (same CPU seed); the CUDA generator repeats for a
+  seed and after `get_state`/`set_state`. Rollout with the 3-snapshot smoke pool (idle GPU): 243 sps
+  (32 x 128, before A+B) -> 264 (32 x 128) -> 407 (128 x 32). Real trainer, 10 updates from the M10
+  checkpoint (pool of snap_0 only): 621 sps, against 307-374 for the stopped run at the same stage.
