@@ -16,9 +16,19 @@ from this file. Update it at the end of every working session.
   3M smoke run at `lr 3e-4` had ~0.235 in its first 250k steps).
 - Expected duration: ~11 h of training at 500 sps plus evals and the final round robin (~1.2 h). Not
   measured past 80k steps; the smoke run's throughput halved once the second snapshot joined the pool.
-- The checkout was switched to `main` after the run started. The run is safe (all its modules are
-  imported at startup), but a `--resume` must be launched from `milestone-11`; `main` lacks
-  `checkpoint.py`, `selfplay.py`, `suite.py` and the rest.
+- Resumed once: stopped at ~1.15M and resumed from the 1,003,520 checkpoint with
+  `OMP_NUM_THREADS=1` (owner's call; `milestone-11` `0c550ae` makes it the default, ~18-25% faster
+  rollout). Pre-resume logs in `runs/selfplay_seed1/pre_resume_backup/`. 1M eval (100 games):
+  economy_e0 1.00, rush_e0 0.96 (seat 0 0.98 / seat 1 0.94), rush_e20 0.99, no regression flag
+  (smoke run: rush_e0 0.79 at 1M).
+- The main checkout (`~/projects/polytopia_rl`) is on `milestone-11` and shared with the implementer
+  session. A `--resume` must be launched from `milestone-11`.
+- **Do not run `maturin develop`, `pixi run check`, `py_check.sh` or `scripts/*.sh` from `main` while
+  11b runs.** They replace the shared `.pixi` `polytopia_sim` with main's build (no `obs_hash`), which
+  breaks every M11 command (resume, suite, tournament). This happened on 2026-10-24 at 01:09 (the
+  orchestrator's gate run on `main`); the implementer rebuilt from `milestone-11` at ~01:15. Check
+  with `pixi run python -c "import polytopia_sim as p; print(p.Env().spec()['obs_hash'])"`, which
+  must print `d5f9b1033cfd55ca`. Rust-only `cargo test` is safe.
 
 ## Done
 
@@ -71,6 +81,7 @@ from this file. Update it at the end of every working session.
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | Implementer status: 11b resumed at 1.0M with OMP_NUM_THREADS=1; 1M eval clean (rush_e0 0.96). Shared extension clobbered by a main build, restored. |
 | 2026-10-24 | Default turn cap 30 in sim-core (main); `docs/SPEC.md` synced to the Claude Doc rev 394. 11b at 1.0M steps. |
 | 2026-10-24 | Spec merge applied to the Claude Doc (rev 346 -> 394); turn cap closed at 30. 11b at 434k steps, ~700 sps. |
 | 2026-10-24 | STATUS.md created by the orchestrator session. 11b run `runs/selfplay_seed1` in progress. |
