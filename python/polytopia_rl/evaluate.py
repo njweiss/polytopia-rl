@@ -120,7 +120,7 @@ def net_policy(net, generator=None, device="cpu"):
 
         with torch.no_grad():
             feats = net.trunk(torch.from_numpy(board)[None].to(device), torch.from_numpy(glob)[None].to(device))
-            out = net.act(feats, masks_fn, generator, greedy=greedy)
+            out = net.act(feats, masks_fn, generator, greedy=greedy, stats=False)
         return int(out.actors[0]), int(out.kinds[0]), int(out.args[0])
 
     return policy_fn

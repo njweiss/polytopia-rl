@@ -612,7 +612,7 @@ Append entries below. Format:
   commit).
 - Agent's pick and why: A, the most direct reading of the brief plus the smallest additions that
   make each listed test possible.
-- Owner answer:  A on 2026-10-23
+- Owner answer: A on 2026-10-23
 
 ## Q28: Self-play rollout throughput (the opponent rounds)
 
@@ -631,4 +631,38 @@ Append entries below. Format:
   batched mask fetch. C) cut 11b to fewer steps.
 - Agent's pick and why: A for now, B after profiling as CLAUDE.md asks. Nothing changed here; the
   metrics rows now also log `rollout_sps` and `update_sps` so the owner's runs show the split.
-- Owner answer:
+- Owner answer: A on 2026-10-23
+
+## Q29: Speed after the 3M smoke run (opponent calls, tournament, warm start)
+
+- Needed for: milestone 11 gates 11a step 4 (the round robin) and 11b (20M steps plus the final
+  tournament), "At the end" and "Notes for the implementer".
+- Ambiguity: none in the rules. The 3M smoke run (`runs/selfplay_smoke`) measured: rollout ~300 sps
+  with only snap_0 in the pool, ~175 sps from the 1M snapshot on. A profile of one 4,096-step rollout
+  with the 3-snapshot pool: 23 s, of which ~21 s is opponent policy calls (~20 calls per learner step,
+  mean batch 1.5 envs, ~7 ms fixed cost per call: kernel launches, device copies and three GPU syncs).
+  The Rust env calls take < 0.3 s and the Python slot loop < 0.2 s. `act` also computes `entropy` and
+  `log_prob` for opponents (~20% of policy time), which they do not use. Opponents on CPU: 39 sps;
+  128 envs: 285 sps. The final tournament plays one game at a time (net vs net ~5.8 s, net vs bot
+  ~1.2 s per game): ~1.6 h for the smoke pool, ~70 h for a 20M pool of ~21 snapshots. Separately, the
+  warm start's first updates had approx_kl ~0.2-0.38 (M10 ~0.05), and rush_e0 fell from ~0.97 (M10)
+  to 0.79 at 1M and 0.85 at 2M.
+- Options: R1) skip `entropy`/`log_prob` in opponent calls (flag on `act`; sampled actions
+  bit-identical). R2) batch the tournament and rating games across seeds inside `evaluate`'s
+  internals, so `evaluate` stays the one place that plays an evaluation game. R3) `num_envs` 128
+  (or 128 x `num_steps` 32 to keep the 4,096 batch). R4) interleave learner and opponent moves in the
+  rollout (restructures `SelfPlayVecEnv` and the buffer). R5) order: R1 and R2, then finish 11a, then
+  launch 11b. R6) note the warm-start KL and rush drop in RL_REPORT; if 11b repeats it, try a lower
+  `lr` or a warm-up (config only).
+- Agent's pick and why: R1 and R2 now (cheap; without R2 the 11b tournament is impractical), R3
+  after 11a with numbers, R4 deferred, R5 as listed, R6 as listed.
+- Owner answer: R1 yes, R2 yes, R3 later, R4 defer, R5 agreed, R6 yes, on 2026-10-23
+- Implemented (R1, R2): `PolicyNet.act(..., stats=False)` skips `log_prob`, `entropy` and `value`
+  (`logp`/`entropy`/`value` are None); `net_batch_policy` and `evaluate.net_policy` use it, the PPO
+  rollout does not. Checked on the smoke learner: 0 of 14,400 sampled action components differ with
+  the same generator seed; profile rollout 177 -> 215 sps. `Player.batch_fn(envs)` plus a lockstep
+  `play_pair` (all of a pair's games at once, one call per player per round); the batching lives in
+  `play_pair`, which already had its own game loop, not in `evaluate` as the R2 text said; `policy_fn`
+  players and bots play as before. Greedy net games are identical to the sequential ones (40 games
+  checked); 100 seeds: net vs net 5.8 -> 0.09 s/game, net vs rush 1.2 -> 0.02 s/game, so a 20M pool's
+  round robin is ~1.2 h instead of ~70 h.

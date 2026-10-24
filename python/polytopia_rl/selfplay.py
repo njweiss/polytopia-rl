@@ -93,7 +93,7 @@ def net_batch_policy(net, generator, greedy: bool = False, device: str = "cpu") 
             return m
 
         with torch.no_grad():
-            out = net.act(net.trunk(board, glob), masks_fn, generator, greedy=greedy)
+            out = net.act(net.trunk(board, glob), masks_fn, generator, greedy=greedy, stats=False)
         return list(zip(out.actors.tolist(), out.kinds.tolist(), out.args.tolist()))
 
     return policy

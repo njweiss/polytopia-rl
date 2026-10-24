@@ -36,9 +36,9 @@ class ActOut:
     actors: Tensor  # (B,) int64
     kinds: Tensor  # (B,) int64
     args: Tensor  # (B,) int64; 0 for kinds without an argument
-    logp: Tensor  # (B,)
-    entropy: Tensor  # (B,)
-    value: Tensor  # (B,)
+    logp: Tensor | None  # (B,); None from act(stats=False), as are entropy and value
+    entropy: Tensor | None  # (B,)
+    value: Tensor | None  # (B,)
     actor_mask: Tensor  # (B, 3N+1) bool, as fetched through masks_fn
     kind_mask: Tensor  # (B, 10) bool
     arg_mask: Tensor  # (B, N) bool
@@ -218,10 +218,13 @@ class PolicyNet(nn.Module):
         masks_fn: Callable,
         generator: torch.Generator,
         greedy: bool = False,
+        stats: bool = True,
     ) -> ActOut:
         """Sample actor, then kind, then argument. Masks are fetched lazily:
         `masks_fn("actor")`, `masks_fn("kind", actors)`, `masks_fn("arg", actors, kinds)`, with
-        `actors`/`kinds` as int64 numpy arrays; each returns a bool array (numpy or tensor)."""
+        `actors`/`kinds` as int64 numpy arrays; each returns a bool array (numpy or tensor).
+        `stats=False` (play only) leaves `logp`, `entropy` and `value` as None; the actions are the
+        same."""
         device = feats.g.device
 
         def fetch(*a):
@@ -230,20 +233,24 @@ class PolicyNet(nn.Module):
         actor_mask = fetch("actor")
         logits = self.actor_logits(feats)
         actors = categorical.sample(logits, actor_mask, generator, greedy)
-        logp = categorical.log_prob(logits, actor_mask, actors)
-        ent = categorical.entropy(logits, actor_mask)
+        if stats:
+            logp = categorical.log_prob(logits, actor_mask, actors)
+            ent = categorical.entropy(logits, actor_mask)
         actors_np = actors.cpu().numpy()
 
         kind_mask = fetch("kind", actors_np)
         logits = self.kind_logits(feats, actors)
         kinds = categorical.sample(logits, kind_mask, generator, greedy)
-        logp = logp + categorical.log_prob(logits, kind_mask, kinds)
-        ent = ent + categorical.entropy(logits, kind_mask)
+        if stats:
+            logp = logp + categorical.log_prob(logits, kind_mask, kinds)
+            ent = ent + categorical.entropy(logits, kind_mask)
 
         arg_mask = fetch("arg", actors_np, kinds.cpu().numpy())
         fired, safe = self._arg_stage(kinds, arg_mask)
         logits = self.arg_logits(feats, actors, kinds)
         args = torch.where(fired, categorical.sample(logits, safe, generator, greedy), 0)
+        if not stats:
+            return ActOut(actors, kinds, args, None, None, None, actor_mask, kind_mask, arg_mask)
         zero = torch.zeros_like(logp)
         logp = logp + torch.where(fired, categorical.log_prob(logits, safe, args), zero)
         ent = ent + torch.where(fired, categorical.entropy(logits, safe), zero)
