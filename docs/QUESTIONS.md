@@ -666,3 +666,33 @@ Append entries below. Format:
   players and bots play as before. Greedy net games are identical to the sequential ones (40 games
   checked); 100 seeds: net vs net 5.8 -> 0.09 s/game, net vs rush 1.2 -> 0.02 s/game, so a 20M pool's
   round robin is ~1.2 h instead of ~70 h.
+
+## Q30: Per-call cost of play-only policy calls (after Q29 R1)
+
+- Needed for: milestone 11 gate 11b throughput (the 20M run `runs/selfplay_lr1e-4`, started
+  2026-10-24 with `lr=1e-4`). Speed work outside the brief, so the owner decides.
+- Ambiguity: none in the rules. `torch.profiler` on `net_batch_policy` (smoke-run 1M snapshot,
+  batch 1, two-seat mid-game states): ~5.4 ms wall per call, of which GPU kernel time is only
+  ~0.3-0.7 ms. Per call: ~124 `cudaLaunchKernel` (~22 us each, ~2.7 ms), ~19
+  `cudaStreamSynchronize` (~1.1 ms) and ~27 `cudaMemcpyAsync` (~1 ms). The calls are bound by
+  kernel launches and host-device syncs, not by the network. The syncs come from the lazy mask fetch
+  (actors, then kinds, to the CPU), the mask validity check in `categorical.masked_logits`
+  (`bool(mask.any(-1).all())`, once per stage), sampling with a CPU generator (probabilities to the
+  CPU and the index back, once per stage) and `tolist`. Timing candidate fixes by monkeypatching,
+  while the 20M run shared the GPU (so noisy: baselines 5.4-8.4 ms for the same call):
+  skip the check -6% to +14%; plus `torch.inference_mode` -3% to +24%; plus a CUDA generator
+  +17% to +35%.
+- Options: A) result-identical changes, safe to swap into a running experiment by stopping and
+  `--resume`: skip the mask check on the play-only path (`act(stats=False)`; Rust masks always have
+  a legal option, and the training path keeps the check) and run play-only calls under
+  `torch.inference_mode`. B) sample opponents with a CUDA generator: removes three round trips per
+  call, but changes the opponents' random stream, so fresh runs only (still deterministic, not
+  identical to earlier runs). C) CUDA graphs or `torch.compile(mode="reduce-overhead")` for the
+  opponent forward: attacks the ~124 launches (the largest cost), but variable batch sizes need a
+  graph per size; a larger change, fresh runs only until shown identical. D) nothing now.
+- Agent's pick and why: A now (small, cannot change any result, and the 20M run can pick it up at
+  its 1M checkpoint through `--resume`), measured again on an idle GPU before claiming a number; B
+  and C for a later speed milestone with the larger structural options (Q29 R3, R4). The noisy
+  measurements above do not support a firm estimate: A is somewhere between 0 and ~25% of the
+  opponent call cost.
+- Owner answer:
