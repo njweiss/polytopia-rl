@@ -223,8 +223,8 @@ class PolicyNet(nn.Module):
         """Sample actor, then kind, then argument. Masks are fetched lazily:
         `masks_fn("actor")`, `masks_fn("kind", actors)`, `masks_fn("arg", actors, kinds)`, with
         `actors`/`kinds` as int64 numpy arrays; each returns a bool array (numpy or tensor).
-        `stats=False` (play only) leaves `logp`, `entropy` and `value` as None; the actions are the
-        same."""
+        `stats=False` (play only) leaves `logp`, `entropy` and `value` as None and skips the mask
+        check (env masks always have a legal option); the actions are the same."""
         device = feats.g.device
 
         def fetch(*a):
@@ -232,7 +232,7 @@ class PolicyNet(nn.Module):
 
         actor_mask = fetch("actor")
         logits = self.actor_logits(feats)
-        actors = categorical.sample(logits, actor_mask, generator, greedy)
+        actors = categorical.sample(logits, actor_mask, generator, greedy, check=stats)
         if stats:
             logp = categorical.log_prob(logits, actor_mask, actors)
             ent = categorical.entropy(logits, actor_mask)
@@ -240,7 +240,7 @@ class PolicyNet(nn.Module):
 
         kind_mask = fetch("kind", actors_np)
         logits = self.kind_logits(feats, actors)
-        kinds = categorical.sample(logits, kind_mask, generator, greedy)
+        kinds = categorical.sample(logits, kind_mask, generator, greedy, check=stats)
         if stats:
             logp = logp + categorical.log_prob(logits, kind_mask, kinds)
             ent = ent + categorical.entropy(logits, kind_mask)
@@ -248,7 +248,7 @@ class PolicyNet(nn.Module):
         arg_mask = fetch("arg", actors_np, kinds.cpu().numpy())
         fired, safe = self._arg_stage(kinds, arg_mask)
         logits = self.arg_logits(feats, actors, kinds)
-        args = torch.where(fired, categorical.sample(logits, safe, generator, greedy), 0)
+        args = torch.where(fired, categorical.sample(logits, safe, generator, greedy, check=stats), 0)
         if not stats:
             return ActOut(actors, kinds, args, None, None, None, actor_mask, kind_mask, arg_mask)
         zero = torch.zeros_like(logp)
