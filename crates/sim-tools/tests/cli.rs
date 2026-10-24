@@ -109,7 +109,7 @@ fn play_random_options_max_actions_and_full_observability() {
     ]);
     assert_eq!(r.code, 0, "err: {}", r.err);
     let log = read_log(&f);
-    let config = cfg(50, true);
+    let config = cfg(30, true);
     let (states, actions) =
         play_independent(3, &MapParams::default(), &config, 25, 3 ^ POLICY_SEED_XOR);
     assert_eq!(actions.len(), 25);
@@ -124,12 +124,12 @@ fn play_random_options_max_actions_and_full_observability() {
 }
 
 #[test]
-fn play_random_defaults_are_turn_cap_50_and_5000_actions() {
+fn play_random_defaults_are_turn_cap_30_and_5000_actions() {
     let f = TempFile::new("defaults.json");
     let r = run(&["play-random", "--seed", "12", "--out", &f.arg()]);
     assert_eq!(r.code, 0, "err: {}", r.err);
     let log = read_log(&f);
-    let config = cfg(50, false);
+    let config = cfg(30, false);
     assert_eq!(log.config, config);
     assert_eq!(log.map_params, MapParams::default());
     let (states, actions) = play_independent(

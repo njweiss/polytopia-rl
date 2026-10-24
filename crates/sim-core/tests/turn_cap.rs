@@ -185,18 +185,18 @@ fn end_turn_before_the_cap_is_unchanged() {
     assert_eq!(s, want);
     assert!(!s.is_terminal());
 
-    // The default cap is 50: turn 49 is the last one.
+    // The default cap is 30: turn 29 is the last one.
     let mut s = StateBuilder::new(5)
         .city_with(0, p(0, 0), |c| c.is_capital = true)
         .city_with(1, p(4, 4), |c| c.is_capital = true)
-        .turn(48)
+        .turn(28)
         .current(1)
         .build();
     end_turn(&mut s);
-    assert_eq!((s.turn, s.current, s.outcome), (49, 0, None));
+    assert_eq!((s.turn, s.current, s.outcome), (29, 0, None));
     end_turn(&mut s);
     end_turn(&mut s);
-    assert_eq!((s.turn, s.current), (50, 0));
+    assert_eq!((s.turn, s.current), (30, 0));
     assert!(s.is_terminal());
 }
 
