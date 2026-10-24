@@ -209,16 +209,185 @@ most of stage 2 without destabilizing, then fell with the LR.
   ~200-240 sps** against ~1,550 sps for M10 training. The opponent rounds dominate the rollout (see
   docs/QUESTIONS.md Q28). At this rate 20M steps take ~25 h.
 
-## Gate 11a (owner's machine): to fill in
+## Gate 11a (owner's machine, 2026-10-23/24)
 
-1. `pixi run scripts/suite.sh runs/curriculum_seed1/latest.pt` -> `runs/curriculum_seed1/suite_latest/suite.md`:
-   _paste the table_.
-2. `pixi run python -m polytopia_rl.losses --checkpoint runs/curriculum_seed1/latest.pt --opponent rush --count 5 --out runs/curriculum_seed1/losses_rush`
-   (with `PYTHONPATH=python`): _paste the summary_.
-3. `pixi run scripts/selfplay.sh python/configs/selfplay.json total_steps=3000000 --run-dir runs/selfplay_smoke`.
-4. `runs/selfplay_smoke/tournament.md` (or `scripts/tournament.sh runs/selfplay_smoke`): _paste_.
+Build hashes for every run below: obs `d5f9b1033cfd55ca`, rules `a8b52b91eae34503`. The M10
+checkpoint is an unstamped M10 file (it loads with a warning; the suite records the current build's
+hashes).
+
+### 1. Baseline suite: M10 `latest.pt` (step 20.0M)
+
+`pixi run scripts/suite.sh runs/curriculum_seed1/latest.pt` -> `runs/curriculum_seed1/suite_latest/`
+(200 seeds, 400 games per condition, 22 min).
+
+| condition | games | W-L-D | win rate | 95% CI | seat 0 | seat 1 | mean len | score diff | losses capital / score |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| random_e0 | 400 | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 | 1.000 | 74.4 | +1138.5 | 0.00 / 0.00 |
+| economy_e0 | 400 | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 | 1.000 | 70.0 | +903.4 | 0.00 / 0.00 |
+| rush_e0 | 400 | 391-9-0 | 0.978 | [0.958, 0.988] | 0.995 | 0.960 | 67.0 | +1223.0 | 1.00 / 0.00 |
+| economy_e20 | 400 | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 | 1.000 | 69.4 | +913.2 | 0.00 / 0.00 |
+| rush_e20 | 400 | 395-5-0 | 0.988 | [0.971, 0.995] | 0.990 | 0.985 | 68.3 | +1225.4 | 1.00 / 0.00 |
+| economy_fullobs | 400 | 398-2-0 | 0.995 | [0.982, 0.999] | 1.000 | 0.990 | 67.9 | +361.0 | 0.50 / 0.50 |
+| rush_fullobs | 400 | 386-14-0 | 0.965 | [0.942, 0.979] | 0.975 | 0.955 | 66.7 | +1043.5 | 0.93 / 0.07 |
+| rush_e0_sampled | 400 | 388-12-0 | 0.970 | [0.948, 0.983] | 0.980 | 0.960 | 69.9 | +1210.2 | 0.92 / 0.08 |
+
+This is the standing baseline for 11b. The `random_e0`, `economy_e0` and `rush_e0` rows match the
+10b gate for `latest.pt` exactly (same checkpoint, greedy), though on suite seeds rather than eval
+seeds.
+
+### 2. Loss review: M10 `latest.pt` against rush
+
+`PYTHONPATH=python pixi run python -m polytopia_rl.losses --checkpoint runs/curriculum_seed1/latest.pt --opponent rush --count 5 --out runs/curriculum_seed1/losses_rush`
+(replays in `runs/curriculum_seed1/losses_rush/`):
+
+| seed | seat | final turn | loss type | scores | first city lost |
+| --- | --- | --- | --- | --- | --- |
+| 1000000052 | 1 | 9 | capital_captured | 1380-1255 | 9 |
+| 1000000059 | 1 | 5 | capital_captured | 1330-960 | 5 |
+| 1000000069 | 0 | 11 | capital_captured | 1680-1690 | 11 |
+| 1000000102 | 1 | 6 | capital_captured | 1270-935 | 6 |
+| 1000000125 | 1 | 8 | capital_captured | 1305-705 | 8 |
+
+5 losses; share by seat: seat 0 0.20, seat 1 0.80.
+
+### 3. Self-play smoke run: 3M steps from M10 `latest.pt`
+
+`pixi run scripts/selfplay.sh python/configs/selfplay.json total_steps=3000000 --run-dir runs/selfplay_smoke`:
+732 updates, ~5 h including evals. The run stopped at step 2,998,272, just short of 3M, so there is
+no 3M snapshot or 3M in-training eval. The owner stopped the run during the final round robin
+(at the time ~1.6 h for this pool); the round robin was rerun after Q29 R2 (step 4).
+
+In-training suite subset (50 seeds, 100 games per condition) and ratings (`eval.jsonl`):
+
+| step | economy_e0 | rush_e0 | rush_e20 | regression flag |
+| --- | --- | --- | --- | --- |
+| 1.0M | 1.00 | 0.79 | 0.91 | true |
+| 2.0M | 0.97 | 0.85 | 0.88 | true |
+
+Rating at 2.0M (star graph): learner 921, snap_1003520 998, snap_0 852, rush 684, economy 193,
+random 0. The 2M learner scored 0.39 against the 1M snapshot.
+
+Training curves (`metrics.jsonl`, means per ~250k steps):
+
+| steps | rollout sps | train win rate | entropy | approx_kl | clipfrac | explained var |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0-0.25M | 279 | 0.66 | 0.70 | 0.235 | 0.29 | 0.81 |
+| 0.75-1.0M | 334 | 0.77 | 0.80 | 0.155 | 0.28 | 0.97 |
+| 1.25-1.5M | 162 | 0.42 | 0.84 | 0.103 | 0.25 | 0.90 |
+| 2.0-2.25M | 180 | 0.55 | 0.77 | 0.059 | 0.20 | 0.93 |
+| 2.75-3.0M | 187 | 0.63 | 0.71 | 0.005 | 0.04 | 0.94 |
+
+Suite on the final weights, `pixi run scripts/suite.sh runs/selfplay_smoke/ckpt_final.pt` ->
+`runs/selfplay_smoke/suite_ckpt_final/` (63 min, as games are about twice as long):
+
+| condition | games | W-L-D | win rate | 95% CI | seat 0 | seat 1 | mean len | score diff | losses capital / score |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| random_e0 | 400 | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 | 1.000 | 185.3 | +2345.6 | 0.00 / 0.00 |
+| economy_e0 | 400 | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 | 1.000 | 161.3 | +1826.0 | 0.00 / 0.00 |
+| rush_e0 | 400 | 347-53-0 | 0.868 | [0.831, 0.897] | 0.910 | 0.825 | 135.6 | +2017.2 | 1.00 / 0.00 |
+| economy_e20 | 400 | 396-4-0 | 0.990 | [0.975, 0.996] | 0.995 | 0.985 | 170.1 | +1804.7 | 0.75 / 0.25 |
+| rush_e20 | 400 | 371-29-0 | 0.927 | [0.898, 0.949] | 0.930 | 0.925 | 146.7 | +2181.6 | 1.00 / 0.00 |
+| economy_fullobs | 400 | 373-27-0 | 0.932 | [0.904, 0.953] | 0.940 | 0.925 | 228.1 | +1006.9 | 0.19 / 0.81 |
+| rush_fullobs | 400 | 267-133-0 | 0.667 | [0.620, 0.712] | 0.675 | 0.660 | 135.9 | +1499.0 | 1.00 / 0.00 |
+| rush_e0_sampled | 400 | 350-50-0 | 0.875 | [0.839, 0.904] | 0.895 | 0.855 | 139.5 | +2055.9 | 1.00 / 0.00 |
+
+`scripts/suite.sh --compare` (A = M10 baseline, B = smoke final):
+
+| condition | A | B | diff | z |
+| --- | --- | --- | --- | --- |
+| random_e0 | 1.000 | 1.000 | +0.000 | 0.00 |
+| economy_e0 | 1.000 | 1.000 | +0.000 | 0.00 |
+| rush_e0 | 0.978 | 0.868 | -0.110 | -5.82 (significant) |
+| economy_e20 | 1.000 | 0.990 | -0.010 | -2.01 (significant) |
+| rush_e20 | 0.988 | 0.927 | -0.060 | -4.21 (significant) |
+| economy_fullobs | 0.995 | 0.932 | -0.062 | -4.73 (significant) |
+| rush_fullobs | 0.965 | 0.667 | -0.297 | -10.86 (significant) |
+| rush_e0_sampled | 0.970 | 0.875 | -0.095 | -5.02 (significant) |
+
+### 4. Round robin of the smoke pool and the bots
+
+`pixi run scripts/tournament.sh runs/selfplay_smoke` (100 seeds, 200 games per pair, 1 min 37 s
+after Q29 R2) -> `runs/selfplay_smoke/tournament.md`:
+
+| player | Elo |
+| --- | --- |
+| snap_1003520 | 1296 |
+| snap_0 | 1171 |
+| snap_2002944 | 1167 |
+| rush | 812 |
+| economy | 531 |
+| random | 0 |
+
+Seat win rate: seat 0 0.524, seat 1 0.476.
+
+Score of row against column (wins + draws / 2, over games):
+
+| | random | economy | rush | snap_0 | snap_1003520 | snap_2002944 |
+| --- | --- | --- | --- | --- | --- | --- |
+| random |  | 0.00 | 0.04 | 0.00 | 0.00 | 0.00 |
+| economy | 1.00 |  | 0.17 | 0.00 | 0.01 | 0.00 |
+| rush | 0.95 | 0.83 |  | 0.01 | 0.12 | 0.20 |
+| snap_0 | 1.00 | 1.00 | 0.99 |  | 0.23 | 0.47 |
+| snap_1003520 | 1.00 | 0.99 | 0.88 | 0.77 |  | 0.65 |
+| snap_2002944 | 1.00 | 1.00 | 0.81 | 0.53 | 0.35 |  |
+
+The final weights (step 2,998,272) are not in the round robin: it covers pool snapshots only.
+
+### Gate 11a verdict
+
+**The pipeline passes, with one marginal ordering note.** Every step ran and wrote its outputs. The
+numbers agree with each other:
+
+- `random` is the lowest rated (0), as required.
+- Elo order agrees with the head-to-head scores for every pair but one: snap_0 is rated 4 Elo above
+  snap_2002944, while snap_2002944 won their match 0.53 (105-95 of 200, about 0.7 sd from 0.5, not
+  significant). The joint fit puts snap_0 ahead because it scores 0.99 against rush to
+  snap_2002944's 0.81.
+- The in-training rating at 2M and the round robin agree on the order of the three snapshots
+  (1M > snap_0 and 2M), and the suite, the in-training evals and the round robin all show the same
+  decline against rush.
+
+**No performance threshold applies at 11a, but self-play did not improve the agent in 3M steps.**
+Per the gate, this is reported and no rule or test was changed.
 
 ### What we learned
 
-_To write after the runs: how the agent loses to rush (seat, capture vs score, how early), noisy
-opponents and full observability, the Elo curve._
+- **How the M10 agent loses to rush.** Every loss in every rush condition is a capital capture
+  (the few "score" losses in `rush_fullobs` and `rush_e0_sampled` are 1 game each). They come
+  early: median turn 9-12.5, first city lost on turn 5-11 in the loss review. Seat 1 carries most of
+  them (8 of 9 in `rush_e0`, 4 of 5 in the review): rush moves first as seat 0 and reaches the
+  capital before the agent has defenders.
+- **Noisy opponents and full observability (M10).** Noise helps the agent slightly
+  (`rush_e20` 0.988 vs `rush_e0` 0.978; economy is 1.000 either way). Full observability costs
+  ~1 point against rush (0.965) and almost nothing against economy (0.995), even though M10 never
+  trained with it. Sampling instead of argmax costs ~1 point (0.970).
+- **Self-play from the M10 checkpoint traded bot robustness for strength against nets.** The 1M
+  snapshot beats snap_0 0.77 head to head and is the top-rated player, but every snapshot after the
+  warm start is worse against rush (0.99 -> 0.88 -> 0.81 in the round robin; 0.978 -> 0.868 for the
+  final weights in the suite). After 1M the learner also stopped improving against its own pool:
+  the 2M snapshot loses to the 1M one 0.35.
+- **The worst regression is under full observability against rush** (0.965 -> 0.667). M10 handled
+  the unseen condition almost as well as fog; the self-play weights do not.
+- **The self-play agent plays longer games and wins bigger.** Mean length roughly doubled
+  (67-74 -> 135-228 agent actions) and score margins grew (e.g. +1223 -> +2017 against rush). But
+  against economy with full observability 22 of its 27 losses are on score at the turn cap: it builds
+  a lead and then fails to finish. Against rush it still loses by capital capture around turn 8-10,
+  as M10 did, only five times as often.
+- **The Elo curve is not monotone:** snap_0 1171, 1M 1296, 2M 1167. With 20% bot games and half the
+  rest against the newest snapshot, the learner mostly chases its latest self.
+- **The warm start loosened the policy (Q29 R6).** In the first 250k steps approx_kl averaged 0.235
+  (M10's stage 2: ~0.05) with clipfrac 0.29, and entropy rose from 0.48 to ~0.8-0.9. Self-play starts
+  a fresh Adam at the full `lr` (3e-4) on a converged policy; rush_e0 had already fallen to 0.79 by
+  the 1M eval. The likely cause is that step size, though this is not tested. No change for now; if 11b repeats
+  it, the first thing to try is a lower `lr` or an LR warm-up (config only).
+- **Throughput.** Rollout ran at ~280-330 sps with snap_0 alone in the pool and ~160-190 sps
+  after the 1M snapshot joined; the PPO update is ~6% of the time. A profile put ~90% of the rollout
+  in opponent policy calls on batches of ~1.5 envs (Q29). Q29 R1 (skip opponent `log_prob` and
+  `entropy`) raised profiled rollout throughput from 177 to 215 sps. Q29 R2 (batched tournament and
+  rating games) cut a 100-seed pair from ~20 min to ~19 s for net vs net. The suite still plays one
+  game at a time (~1 h per checkpoint at the smoke agent's game length).
+
+**For 11b:** gate (ii) requires no suite condition more than 5 points below this baseline unless not
+significant. The 3M smoke weights would fail it in five conditions. Running the 20M config
+unchanged risks the same result; whether to change `lr`, `p_bot` or anything else first is the
+owner's decision.
