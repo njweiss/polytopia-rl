@@ -1,12 +1,18 @@
 # Polytopia Headless Sim: Spec v0.1
 
-Oct 20, 2026 · @Nicholas Weiss
+Oct 24, 2026 · @Nicholas Weiss
 
 ## Overview and goals
 
 This spec defines a deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia, built to train a PPO agent. The owner makes every rules decision. Agents implement against this document and its tests.
 
 **Success criteria.** A working agent that makes sensible decisions given the rules and state, and a solid understanding of why it succeeds or fails. The sim never has to interoperate with the real game.
+
+**Priorities, in order:**
+
+1. RL understanding
+2. Agentic coding workflow skill
+3. Optimization (a side product, not a goal)
 
 **Sources of truth:** the Polytopia wiki first, then the owner's play experience, then the Tribes framework as a cross-check. Exact outcome parity with the real game is not required.
 
@@ -37,11 +43,11 @@ v1 is one tribe (Imperius), 1v1, an 11x11 land-only map, four unit types, and a 
 | Other tribes | none yet | Needs per-tribe spawn modifiers |
 | Lighthouses | lighthouses | Corner tiles are plain land in v1, and the Explorer's lighthouse bonus is ignored |
 
-**Config values (not hard-coded):** turn cap, score weights, `max_city_level` (unset means no cap), map size, full-observability flag, auto-recover (off by default).
+**Config values (not hard-coded):** turn cap (30, see Termination), score weights, `max_city_level` (unset means no cap), map size, full-observability flag, auto-recover (off by default).
 
 ## Data tables
 
-All rules data lives in tables loaded at startup, not in code branches. Numbers below come from the owner's wiki extract; the Super Unit's skills and the Explorer's stats are still open.
+All rules data lives in tables loaded at startup, not in code branches. Numbers below come from the owner's wiki extract. They live in data/units.json, techs.json, site\_actions.json, rewards.json and rules.json, loaded through Tables. Every entry appears exactly once, and reward menus cover every level from 2 up exactly once (Q3).
 
 **Units**
 
@@ -84,10 +90,11 @@ Cost is `4 + (city count × tier)`, where city count is the player's current num
 | Farm | 5 | +2 population | Farming, on crop |
 | Mine | 5 | +2 population | Mining, on metal |
 
-Harvest animal and harvest fruit consume the animal and fruit on tile, respectively
-Lumber hut, farm, and mine are improvements and do not consume forest, crop, or mountain, respectively. Only one improvement can be placed on a tile at any given time
-Lumber hut can be placed on a tile with an animal
-Clear forest can be performed on a tile with a wild animal, but it forfeits the animal resource
+- Harvest animal and harvest fruit consume the animal or fruit. They need only the resource, so an animal under a lumber hut can still be hunted, and the hut stays (Q2).
+- Lumber hut, farm, and mine are improvements and do not consume anything: the forest stays forest, a farm keeps its crop, and a mine keeps its metal. A tile holds at most one improvement, and improvements never change or disappear in v1 (owner overrule of M4 D4, Q2).
+- Lumber hut needs a forest with no improvement. It can be built on a forest with an animal, which stays. The forest still stops movement and still gives the Archery defense bonus (D3).
+- Clear forest needs a forest with no improvement. It turns the tile into field with no resource, so an animal on it is forfeited.
+- A friendly unit on the tile does not block a tile action. An enemy unit does (D10).
 
 **Level-up rewards**
 
@@ -101,21 +108,21 @@ The choice is forced and happens the moment population crosses the threshold. It
 | 5 and up | Park, or Super Unit |
 
 - Going from level n to n+1 needs n+1 more population. Cumulative totals: level 2 at 2, level 3 at 5, level 4 at 9, level 5 at 14.
-- Border Growth can be taken once per city and claims only unclaimed tiles.
+- Border Growth can be taken once per city. It claims unowned tiles within radius 2, never village or city tiles, and is legal even when it claims nothing (D7).
 - Parks stack. There is no level cap.
+- Levels rise immediately: level goes up the moment the threshold is crossed, and the pending reward marks the open choice, so the menu depends only on the new level (D5).
 
 ## State definition
 
-The sim holds full ground truth. Each player's observation is a function of that state (see Observation). `apply(state, action)` is a pure function of state and action, so the RNG state is part of the game state.
-RNG is computed using pcg32
+The sim holds full ground truth. Each player's observation is a function of that state (see Observation). `apply(state, action)` is a pure function of state and action, so the RNG state is part of the game state. The RNG is pcg32 (M2 C1). An illegal action changes nothing (C12).
 
 | Scope | Fields |
 | --- | --- |
-| Global | turn number, current player, RNG state, config, winner (if any) |
+| Global | turn number (a round counter from 0, incremented when player 1 ends, Q1), current player, RNG state, config, winner (if any) |
 | Player | stars, researched techs, explored mask (monotonic, never shrinks), no stored score, since score is derived from state |
 | Tile | terrain (field, forest, mountain), resource, improvement, owning city id (written at most once), occupying unit id |
 | City | owner, tile, level, population, workshop flag, park count, wall flag, border-growth-used flag, pending reward, is-capital |
-| Unit | id, type, owner, position, health, max health, origin city (nullable), kills, veteran flag, promotion-available flag, phase, last move direction, last attack direction |
+| Unit | id, type, owner, position, health, max health, origin city (nullable), kills, veteran flag, promotion-available flag, phase, last direction (one value, see Movement) |
 
 **Unit phase****s**.
 
@@ -128,17 +135,17 @@ RNG is computed using pcg32
 
 - Phase only advances within a turn and resets to Fresh at the start of the owner's turn.
 - A melee unit that kills its target moves onto the vacated tile as part of the attack. That move does not use the Escape move.
-- Newly trained units start Done.
+- Newly trained units and a spawned Super Unit start Done (E6).
 - Capture and recover move a unit from Fresh straight to Done.
-- Escape also applies after a move-then-attack.
+- Escape also applies after a move-then-attack. After a kill-move the phase is Attacked, so a Rider can still use its Escape move (C11).
 
 **Ownership rules**
 
 - Tile ownership is by city, not by player. A city's owner can change on capture, and its tiles follow it.
 - A tile's owning city never changes once set.
-- City capture transfers all of the city's tiles, keeps its level and buildings, and orphans its units (origin city becomes null, and they never count toward capacity again).
-- Village capture creates a level 1 city. It claims the village tile and the neighbors within radius 1 that are unclaimed.
-- Unit capacity per city is `level + 1`, counting units whose origin is that city. A unit that captures a village or city migrates its origin to that city. Super Units never count.
+- City capture transfers all of the city's tiles, keeps its level, population and buildings, and orphans the previous owner's units from that city (origin city becomes null, and they never count toward capacity again).
+- Village capture creates a level 1 city. It claims the village tile and the neighbors within radius 1 that are unclaimed. The new city's id is the number of existing cities, so ids are dense and never reused (F1).
+- Unit capacity per city is `level + 1`, counting living units whose origin is that city (D8). A unit that captures a village or city migrates its origin to that city. Super Units never count.
 
 ## Combat and movement rules
 
@@ -157,10 +164,10 @@ Formulas are taken from the wiki. Arithmetic is `f32`, evaluated in exactly the 
 ```
 
 - `attackResult` is damage dealt to the defender. `defenseResult` is retaliation damage dealt to the attacker.
-- **Defense bonus:** 1 by default, 1.5 for forest (needs Archery), mountain (needs Climbing), or a city (needs Fortify), and 4 for a city wall (also needs Fortify). The Super Unit has no Fortify, so it never gets a city or wall bonus. The defender's techs decide whether the terrain bonus applies.
+- **Defense bonus:** 1 by default, 1.5 for forest (needs Archery), mountain (needs Climbing), or a city (needs Fortify), and 4 for a city wall (also needs Fortify). The Super Unit has no Fortify, so it never gets a city or wall bonus. The defender's techs decide whether the terrain bonus applies. The city bonus applies only in the defender's own city, and the wall bonus replaces it rather than multiplying it (C8).
 - **Retaliation** happens only if the defender survives and the attacker is within the defender's range. An Archer attacking from two tiles away takes no retaliation from a melee unit.
-- A kill by attack or by retaliation counts toward veteran promotion.
-- **Kill-move:** a melee attacker that kills moves onto the target's tile, unless the tile needs a tech the attacker's owner lacks (for example a mountain without Climbing). Ranged attackers never move on a kill.
+- A kill by attack or by retaliation counts toward veteran promotion, so both sides earn kills. Kills keep counting after promotion (C9).
+- **Kill-move:** a melee attacker that kills moves onto the target's tile, unless the tile needs a tech the attacker's owner lacks (for example a mountain without Climbing). Ranged attackers never move on a kill. Melee means range 1; an Archer may attack at distance 1 or 2 (C5).
 - **Veterans:** after 3 kills a unit becomes eligible. Promotion is an explicit action that raises max health by 5 and fully heals. It does not use the unit's turn and is legal in any phase. The Super Unit cannot be promoted.
 - The formula, including retaliation, was checked against five results from the wiki's combat calculator (table below). All five match under \`f32\` arithmetic with half-up rounding. Example 1 is an exact .5 tie (4.5 rounds up to 5), so it rules out round-half-to-even.
 
@@ -183,13 +190,14 @@ Formulas are taken from the wiki. Arithmetic is `f32`, evaluated in exactly the 
 
 Source: the wiki's Movement page. Roads are out of scope.
 
-- A unit reaches tiles within Chebyshev distance of its movement stat, subject to the rules below. Each step costs 1, cost rounds up, and fog tiles cannot be entered, so only tiles explored before movement can be entered.
+- A unit reaches tiles within Chebyshev distance of its movement stat, subject to the rules below. Each step costs 1, cost rounds up, and fog tiles cannot be entered. Every step of the path uses the explored mask from before the move (C2).
 - **Rough terrain:** a unit may move onto a forest or mountain tile but no further that turn. Mountains also need Climbing.
-- **Zone of Control:** a unit that arrives on a tile adjacent to an enemy unit cannot move further that turn. It can still attack with Dash. The effect ends when the enemy unit dies.
+- **Zone of Control:** a unit that arrives on a tile adjacent to an enemy unit cannot move further that turn. It can still attack with Dash. The effect ends when the enemy unit dies. Only enemy units exert it, it applies on arrival, and never to the start tile (C4). An enemy on an unexplored tile still exerts it, so the movement mask can hint at a hidden unit; accepted for now (Q11).
 - A unit that starts inside Zone of Control may leave it, and may even re-enter it.
-- One unit per tile. Units cannot enter occupied tiles.
+- One unit per tile. Units cannot enter occupied tiles. Unoccupied cities and villages can be entered, so a capture can follow on the next turn (C1).
 - Escape grants one move after an attack, with a full movement budget.
 - Units cannot pass through friendly units.
+- Last direction: one value per unit. A move (including a kill-move and an Escape move) sets it to the sign of the net displacement per axis; a ranged attack sets it toward the target. Recover, Promote and pushes leave it unchanged (C6).
 
 ### Forced unit spawn
 
@@ -206,6 +214,9 @@ A unit that is forcefully moved does not change its phase.
 - "Previously moved" means ever. A unit's last direction is never reset between turns, and a unit that has never moved has no direction.
 - Direction toward the center is the sign of the offset on each axis, so a unit on a diagonal is pushed diagonally.
 - Probe order: try the intended direction, then alternate counterclockwise and clockwise one neighbor at a time (45 degrees, 45, 90, 90, 135, 135, then 180).
+- The map center is (size - 1) / 2 on each axis, with integer division (E9).
+- With one last direction per unit, a ranged unit that has a last direction is caught by rule 1 or 2, so an enemy Archer that only ever attacked is pushed opposite to its attack direction. Rule 3 therefore never fires; a ranged unit with no direction falls to rule 4 (D11).
+- A pushed unit reveals fog for its owner at its new tile. It may be pushed onto an empty city or village tile (E8).
 
 ## Actions and legality
 
@@ -214,19 +225,17 @@ Every action has one actor kind. The sim exposes `legal_actions(state)` as struc
 | Actor | Action | Legal when | Effect |
 | --- | --- | --- | --- |
 | Unit | Move (destination tile) | Phase is Fresh, or Attacked with Escape. Destination is reachable under the movement rules. | Unit moves. Fresh goes to Moved. Attacked goes to Done. Explored mask updates. |
-| Unit | Attack (target tile) | Phase is Fresh, or Moved with Dash. An enemy unit is within the unit's range (Chebyshev). | Combat resolves. Phase becomes Attacked. |
-| Unit | Capture | Phase is Fresh. The unit stands on a village or an enemy city. | Village becomes a level 1 city, or the city changes owner. Phase becomes Done. |
+| Unit | Attack (target tile) | Phase is Fresh, or Moved with Dash. An enemy unit is within the unit's range (Chebyshev) on a tile the player has explored (C3). | Combat resolves. Phase becomes Attacked. |
+| Unit | Capture | Phase is Fresh. The unit stands on a village or an enemy city. Any unit type can capture (F4). | Village becomes a level 1 city, or the city changes owner. Phase becomes Done. |
 | Unit | Recover | Phase is Fresh. Legal at full health. | Heals 4 in friendly territory, 2 elsewhere. Phase becomes Done. |
 | Unit | Promote | Promotion is available and the unit is not already a veteran. Any phase. | Max health +5, full heal. Phase unchanged. |
 | City | Train (unit type) | The city belongs to the player. The city tile is empty. The unit is unlocked. Stars cover the cost. Supported units are below `level + 1`. | A new unit appears on the city tile in phase Done. |
 | City | Choose reward (option) | The city has a pending reward. | Applies the reward. May cascade into another level-up. |
-| Site (tile) | Harvest, lumber hut, clear forest, farm, mine | The tile is owned by the player's city. No enemy unit is on it (a friendly unit is fine). The tech is unlocked. The resource exists. Stars cover the cost. | Population goes to the **city that owns the tile**. Stars change per the tile action table. |
+| Site (tile) | Harvest, lumber hut, clear forest, farm, mine | The tile is owned by the player's city. No enemy unit is on it (a friendly unit is fine). The tech is unlocked. The tile meets the action's needs (see Tile actions). Stars cover the cost. | Population goes to the **city that owns the tile**. Stars change per the tile action table. |
 | Global | Research (tech) | Prerequisite is researched. Stars cover the cost. | Tech is added. |
 | Global | End turn | Always legal when no reward is pending. | Ends the player's turn. |
 
-**Forced rewards.** If any city has a pending reward, the only legal action is that city's Choose reward. Nothing else is legal until it resolves. When several cities are pending, resolve in ascending city id. With roads out of v1, only one city can have a pending reward at a time, so this rule matters only once roads return.
-
-TODO: Decide whether to add damage calculator action which gives preview of combat result (exists in real game)
+**Forced rewards.** If any city has a pending reward, the only legal action is that city's Choose reward. Nothing else is legal until it resolves, including unit actions, Promote and End turn (D9). When several cities are pending, resolve in ascending city id. With roads out of v1, only one city can have a pending reward at a time, so this rule matters only once roads return.
 
 **Capture notes**
 
@@ -243,9 +252,7 @@ TODO: Decide whether to add damage calculator action which gives preview of comb
 2. Reset every unit of that player to phase Fresh. Last-move memory is never reset.
 3. The player acts until they choose End turn.
 
-Income is added before units reset.
-
-Note: On turn 0, neither players get income. Only starting stars.
+Income is added before units reset. Neither player gets income on their first turn (turn 0), only the starting stars (D1). Player 0 always moves first; the turn counter starts at 0 and goes up by 1 when player 1 ends (Q1, C10).
 
 ### Income
 
@@ -279,17 +286,24 @@ Note: On turn 0, neither players get income. Only starting stars.
 
 Steps 2 and 3 treat candidates as tiles the explorer can stand on, as confirmed by the owner.
 
+- The visited set includes the starting tile, and the explorer reveals radius 1 at its start (E1).
+- Random draws happen only on a tie (more than one candidate), in the order given, so a seed always gives the same walk (E2).
+- Wandering prefers unvisited neighbors and falls back to any passable neighbor (E3).
+- Candidates exclude the current tile. Distance is BFS over passable tiles; forests, fog and occupied tiles do not block (E4).
+- All 15 moves are always taken, even when nothing is left to explore (E5).
+- Every visited tile is already revealed, so it is never a candidate and the 0.5 penalty never changes a choice. The rule is kept as written (Q4).
+
 ### Starting state
 
-- One capital city, one Warrior on the city tile, 5 stars, the Organization tech.
+- One capital city, one Warrior on the city tile, 5 stars, the Organization tech. One coin flip per game assigns the two capitals to the players (C10).
 - Visible tiles: everything within Chebyshev distance 2 of the capital.
 - Capital initial border radius is 1. Units see Chebyshev radius 1 by default. Units on a mountain see Chebyshev radius 2. Cities see every tile they own.
 
 ### Termination
 
-- A player wins by capturing the other player's capital.
-- Otherwise the game ends after N turns per player. The draft default is 50, and 30 to 40 is a candidate once bots exist.
-- At the cap, the higher score wins and equal scores draw.
+- A player wins by capturing the other player's capital. The game ends at once; nothing else happens (F3).
+- Otherwise the game ends when player 1 ends turn N - 1, so each player gets N turns. There is no income or unit reset after that. N is the turn cap, a config value of at least 1, set to 30 (open question 1, closed 2026-10-24) (F5).
+- At the cap, the higher score wins and only exactly equal scores draw. There is no other elimination rule: a player with no units and no stars can still end turns (F9).
 - Score is derived from ground-truth state using the formula in the Score section below.
 - Reaching the cap is a true termination, not a truncation, so the learner must not bootstrap through it.
 
@@ -312,6 +326,8 @@ Out of v1: monuments, temples, and ship upgrades.
 - **Starting score is 515 for each player:** capital 100, territory 9 tiles = 180, exploration 25 tiles = 125, Warrior 10, Organization 100. The wiki's own check, a level 1 city with 9 tiles of territory, gives 280, which matches the first two terms.
 - A captured city moves its city, tile, and park points to the new owner. Units of the captured city that lose their origin keep scoring for their owner.
 - Confirmed by the owner: units score while alive, partial population scores, and starting techs score. Both players' scores are public.
+- Score is a u32 derived on demand (F6). Surplus population is measured against the threshold of the city's current level (F7).
+- Exploration counts the explored mask, so under full observability both players score 605 for it on an 11x11 map (F8).
 - Test: the starting score above, and a scripted game where each term changes by exactly its weight.
 
 ## Map generation
@@ -320,14 +336,14 @@ v1 copies the Tribes framework's `LevelGenerator`, which the owner supplied. Its
 
 ### Pipeline
 
-All randomness comes from the game's own RNG. Java's `Random` is not replicated, so maps will not match Tribes seed for seed.
+All randomness comes from the game's own RNG. Java's `Random` is not replicated, so maps will not match Tribes seed for seed. On other map sizes, capitals use rows and columns 2 to size - 3; the smallest accepted size is 6, the first with two distinct capitals (Q16).
 
 1. Every tile starts as field.
 2. **Capital 1:** uniform over the 49 tiles with row and column both in 2 to 8, so at least 2 from the map edge.
 3. **Capital 2:** for each of those tiles, take the Chebyshev distance to the nearest existing capital. Pick uniformly among the tiles with the largest such distance.
 4. **Forest and mountain:** go through the non-capital tiles in row-major order. For each, draw `u` uniformly from 0 to 1. The tile becomes forest if `u` is below the forest probability, and mountain if `u` is above 1 minus the mountain probability. Otherwise it stays field.
-5. **Village map:** mountain tiles and map-edge tiles can never hold a village. Each capital tile is a city, its 8 neighbors (ring 1) are marked inner, and the 16 tiles at distance 2 (ring 2) are marked outer. For a tile that is inside two villages' rings, the stronger “inner” mark wins.
-6. **Villages:** repeatedly take the first tile in row-major order that is still unmarked. It becomes a village, and its ring 1 and ring 2 are marked inner and outer. Stop when no unmarked tile is left. Every tile placed this way becomes a village, and a village on a forest replaces the forest.
+5. **Village map:** mountain tiles and map-edge tiles can never hold a village. Each capital tile is a city, its 8 neighbors (ring 1) are marked inner, and the 16 tiles at distance 2 (ring 2) are marked outer. A tile inside two sites' rings takes the stronger inner mark, and marks never downgrade (C5).
+6. **Villages:** repeatedly take the first tile in row-major order that is still unmarked. It becomes a village, and its ring 1 and ring 2 are marked inner and outer. Stop when no unmarked tile is left. Every tile placed this way becomes a village, and a village on a forest replaces the forest. Capital and village tiles are field with no resource (C2).
 7. **Resources:** go through the tiles in row-major order. Village and city tiles get none. A resource can only appear on a tile marked inner or outer. A tile marked outer uses one third of the probability. Per terrain:
    - Field: roll fruit with probability `f × (1 - c / 2)`. If that fails, roll crop with probability `c × (1 - f / 2)`, where `f` and `c` are the fruit and crop probabilities.
    - Forest: roll animal.
@@ -348,7 +364,7 @@ Values come from `terrainProbs.json` in the Tribes repository, which the owner s
 | Animal and metal | 0.5 each |
 | Outer-ring factor | one third |
 
-Terrain shares come out near 36.1% forest, 14.5% mountain, and 49.4% field, against the wiki's 38, 14, and 48.
+Terrain shares measured on this pipeline (20,000 seeds) are 36.1% forest, 14.5% mountain, and 49.4% field, against the wiki's 38, 14, and 48. They fall below the raw probabilities because villages replace forests and the Imperius guarantee overwrites ring tiles with field (C4).
 
 **Resulting rates** (percent of tiles of that terrain)
 
@@ -380,7 +396,7 @@ These figures come from a simulation of this pipeline with the parameters above,
 
 - Reproducible from the seed, bit for bit.
 - Capitals are 2 or more from the edge, and every later capital is at maximum distance from the earlier ones.
-- Villages are at least 3 from any city or village, never on the map edge or on a mountain, and no valid unmarked tile remains.
+- Villages are at least 3 from any city or village, never on the map edge or on a mountain, and no eligible (non-edge, non-mountain) tile remains unmarked. The tests replay the greedy placement in full (C3).
 - Resources appear only within 2 tiles of a city or village, and the Imperius guarantee holds on every map.
 - Over many seeds, capital separation, village counts, and terrain shares match the figures above within tolerance.
 
@@ -392,19 +408,20 @@ These figures come from a simulation of this pipeline with the parameters above,
 
 - **Per-tile channels:** terrain, resource, improvement, explored flag, owning city's owner (mine, enemy, unowned), city and level, unit type and owner, health fraction, unit phase, veteran and promotion-available flags, and whether the tile can currently be harvested or built on.
 - **Tech-gated visibility:** crops need Organization and metal needs Climbing, so the observation depends on the explored mask **and** the player's techs.
-- **Unexplored tiles** are all zeros apart from the explored flag.
+- **Unexplored tiles** are all zeros apart from the explored flag. Enemy units show health but not phase (J2). A terminal observation is still valid, from the observer's side, with every mask false (J3).
 - **Global features:** stars, researched techs, income, turn number divided by the turn cap, and whether a reward is pending. The turn counter is required because the game ends by score at the cap. The turn counter starts at 0.
-- Unbounded values (level, population, stars) are normalized and clipped when encoded.
+- Unbounded values (level, population, stars) are normalized and clipped when encoded. The observation is fixed-size float32: a channels-first board plus a global vector, for a map size fixed per Env (J2, J9). The exact layout is in sim-env and pinned by obs\_hash.
 - Full observability is a config flag that sets the explored mask to all ones. The explored mask grows when a unit moves (radius 1, or radius 2 on a mountain) and whenever a city is founded, captured, or gains tiles, since cities see every tile they own.
-- Both players' total scores are public, so the observation includes the opponent's score and the score difference. The opponent's stars and techs are not visible, only the score.
+- Both players' total scores are public, so the observation includes the opponent's score and the score difference. The opponent's stars, techs and income are not visible, only the score (G4).
+- Planned, not built: the game's damage preview will be added as an observation feature, not an action. It partly reveals the defender's true defense bonus and so the enemy's techs, a deliberate exception to the hidden-tech rule. Adding it bumps obs\_hash.
 
 ### Action space
 
 One environment step is one game action, and End turn is a global action. The learner picks in stages.
 
-1. **Actor head:** logits over four slots per tile (unit, city, site) plus one global slot.
+1. **Actor head:** logits over three slots per tile (unit, city, site) plus one global slot. A unit and a city never share a slot (J6).
 2. **Action-type head:** conditioned on the actor, masked to legal types.
-3. **Target head:** per-tile logits for move and attack. Enum-valued actions (train, reward, research) use small separate heads, only one of which is active at a time. Site actions need no target, because the tile is the actor.
+3. **Target head:** per-tile logits for move and attack. Enum-valued actions (train, reward, research) use small separate heads, only one of which is active at a time. Site actions need no target, because the tile is the actor; an enum head picks the site action. Capture, Recover, Promote and End turn have no argument head (J7).
 
 - Masks at each stage come from `legal_actions`, and a pending reward restricts everything to that city.
 - The joint log-probability sums only the heads that fired. Entropy is approximated by summing conditional entropies along the sampled path.
@@ -412,11 +429,16 @@ One environment step is one game action, and End turn is a global action. The le
 
 ### Interface and training
 
-- Single-environment Rust sim exposed through PyO3, with vectorization on the Python side. Revisit only if profiling shows the interface is the bottleneck.
-- Algorithm: PPO with action masking, using an existing library. TODO: choose the library.
-- Opponents: scripted heuristic bots first, then self-play.
-- Rewards: shaped at first, ideally as a potential function on score difference so the optimal policy is unchanged, plus a terminal win or loss signal. TODO: finalize once the score formula exists.
-- Every episode seed is replayable. Evaluation plays each seed twice with sides swapped.
+- Single-environment Rust sim exposed through PyO3 (crates sim-env and sim-py), with vectorization on the Python side (a synchronous vector env). Revisit only if profiling shows the interface is the bottleneck (J8, K9). The Env runs in bot mode (the opponent's turns run inside step) or two-seat mode (the caller supplies every action).
+- Algorithm: hand-written CleanRL-style PPO in PyTorch with the conditional actor, type and argument masks, since library PPOs do not support them (K1, open question 2 closed). gamma 0.999 (K4). Entropy is the sum of conditional entropies along the sampled path (K8).
+- Opponents: scripted bots first, through a curriculum (random, then economy, then economy and rush); a stage advances on the training win rate (K7). Then self-play against a snapshot pool mixed with bots: 20% of episodes against a bot (economy or rush), otherwise a snapshot, the newest with probability 0.5 and a uniform pool entry otherwise. A snapshot every 1M steps, at most 40 in the pool. Snapshots sample their actions. The learner trains only on its own seat's transitions (L1 to L4).
+- Rewards: terminal\_weight × (+1 win, -1 loss, 0 draw) plus shaping\_weight × (gamma × phi' - phi), with phi = (my score - opponent score) / 1000 and a terminal potential of 0. In bot mode a step's reward spans the opponent's turn (J4). The Rust Env defaults to shaping\_weight 0; the training config uses 1.0 (K3). Shaping changed behavior in practice, so its weight is an experiment, not a settled default. Self-play recomputes the same formula in Python, pinned by a test against the Rust env (L11).
+- Every episode seed is replayable. Evaluation plays each seed twice with sides swapped; the learner's seat is seed parity (J10). Episodes truncate after 5,000 agent actions as a safety net, separate from the turn cap (J5).
+- Seed ranges never overlap: training below 1e9, evaluation and the suite in \[1e9, 1.5e9), ratings and tournaments from 2e9 (K6, M11).
+- The evaluation suite is the standing benchmark for every run: random, economy and rush at epsilon 0; economy and rush at epsilon 0.2; economy and rush under full observability; rush with sampled actions. 200 seeds, side-swapped. Adding a condition is a spec change (L6). Full observability is a diagnostic of distribution shift, not a target (L7).
+- Reports always show the win rate by seat. First-player advantage is measured, not corrected (L10).
+- Ratings are Bradley-Terry fits in Elo units from side-swapped matches. The random bot is anchored at 0, a draw counts half a win, and each pair that played gets one virtual 0.5-0.5 game as a prior (L5).
+- Checkpoints store obs\_hash (observation layout, action space and enum orders) and rules\_hash (the data tables plus a hand-bumped RULES\_VERSION for rule changes made in code). A checkpoint refuses to load against a different obs\_hash and warns on a different rules\_hash (L9).
 
 ## Invariants and test plan
 
@@ -458,6 +480,9 @@ Determinism and testing are day-one requirements. Agent-written code is accepted
 
 - A text renderer for the board, and a replay viewer driven by replay logs.
 - Heuristic bots serve as both baselines and sim test drivers.
+- Replay logs (version 1) store the seed, the actions and a state digest per step. The digest covers all state except the constant tables and identifies a state for verification; it is not a security hash (G1, G2).
+- Bots: Random, Rush and Economy. They see a fog-restricted PlayerView, never the full state, and are stateless functions of the view and their own RNG stream (H1). They judge fights with defense bonus 1.0, since enemy techs are hidden (H2). When no reachable tile gains vision, a unit heads for the nearest explored tile that does (Q10). Rush takes the Explorer at level 2 and the Super Unit at level 5; Economy takes neither (H5). The bot rules in docs/MILESTONE\_8.md are the bots' spec, so changing them is a spec change (H6).
+- Bot gate: Rush and Economy each beat Random in at least 80% of side-swapped games; a draw is not a win (H3). Rush beats Economy 84% of the time, outside the 25% to 75% target; accepted (Q13).
 
 ## Milestones and agent workflow
 
@@ -473,6 +498,8 @@ The sim is finished as a solid prototype before RL starts, which is the owner's 
 8. **Heuristic bots.** At least a rush bot and an economy bot. Gate: they play full games against each other, and the stats show both strategies matter.
 9. **Python interface.** PyO3 bindings, observation and mask encoders, benchmark of steps per second. Gate: a random agent runs thousands of games from Python.
 10. **RL.** PPO against the bots, then self-play. Flat-action baseline as a stretch experiment.
+
+Status as of 2026-10-24: milestones 1 to 10 are done. Milestone 10's PPO agent wins 100% against random and economy and 97.8% against rush (400 games each). Milestone 11, beyond this list, adds the evaluation suite, checkpoint hashes, Elo ratings and snapshot-pool self-play; it is in progress. Each milestone's brief is docs/MILESTONE\_N.md.
 
 **Working with agents**
 
@@ -495,9 +522,9 @@ The sim is finished as a solid prototype before RL starts, which is the owner's 
 | Action structure | Factored heads with four actor slots: unit, city, site, global. Flat baseline is a stretch. |
 | Unit state | Per-unit phase (Fresh, Moved, Attacked, Done) plus Dash and Escape as unit-type data |
 | Escape | Applies after move-then-attack, with a full movement budget |
-| Movement | No passing through friendly units. Zone of Control stops a unit only when it arrives next to an enemy. |
+| Movement | No passing through friendly units. Unoccupied cities and villages can be entered. Zone of Control comes from enemy units only and stops a unit only when it arrives next to one (C1, C4). |
 | Forced moves | A pushed unit keeps its phase. "Previously moved" means ever, and last direction is never reset. Toward-center uses the sign of the offset per axis. Probing alternates counterclockwise and clockwise. |
-| Last direction | One value per unit, set by moves, and by attacks for ranged units. Assumed: a push leaves it unchanged. |
+| Last direction | One value per unit, set by moves (including kill-moves and Escape), and by attacks for ranged units. Recover, Promote and pushes leave it unchanged (C6). |
 | Impassable (forced spawn) | A tile the pushed unit's owner cannot enter, or off the map |
 | Combat numerics | `f32`, half-up rounding, wiki formulas |
 | Recover | Explicit action, legal only from Fresh, legal at full health. No auto-recover by default. |
@@ -517,14 +544,28 @@ The sim is finished as a solid prototype before RL starts, which is the owner's 
 | Order of work | Finish the sim prototype before RL |
 | Score | Wiki formula with v1 terms only: units, territory, exploration, cities, parks, techs. See the Score section. Starting score is 515 per player. |
 | Map generator | Copy the Tribes LevelGenerator pipeline with water and ruins skipped. Farthest-point capitals, independent terrain per tile, row-major greedy villages. The wiki's domain system is not used. |
-| Seat assignment | Random each game, with side-swapped evaluation covering any asymmetry |
+| Seat assignment | One coin flip per game assigns the capitals; player 0 moves first. The RL env sets the learner's seat by seed parity, so evaluation over a seed range is side-swapped (C10, J10) |
 | Map validity | No checks beyond the pipeline, as in Tribes. A connectivity check is unnecessary on all-land maps, and Climbing is available to both players. |
 | Opponent information | Only the opponent's score is visible. Their stars and techs are hidden. |
 | Imperius resource multipliers | The Tribes JSON values (1 for fruit and animal), not the wiki's 2.0x fruit and 0.5x animals |
+| Turn counter | Starts at 0 and goes up when player 1 ends. Player 0 always moves first. One coin flip assigns the capitals (Q1, C10). |
+| Turn cap | 30, a config value. Each player gets 30 turns. Open question 1 closed on 2026-10-24. |
+| First-turn income | None on turn 0, only the starting stars (D1) |
+| Improvements | Lumber hut, farm and mine do not consume the resource, and a tile holds one improvement. Harvests consume the animal or fruit. Clear forest forfeits an animal (M4 D4 overruled, Q2). |
+| Levels | Rise the moment the threshold is crossed; the pending reward marks the open choice (D5) |
+| Border Growth | Radius 2, unowned tiles only, never village or city tiles, legal when it claims nothing, once per city (D7) |
+| Capture | Any unit type, only from Fresh. A captured city keeps level, population and buildings and orphans that city's units. Capital capture ends the game at once (F1 to F4). |
+| Hidden Zone of Control | An enemy on an unexplored tile still exerts Zone of Control, so the move mask can hint at it. Kept for now (Q11). |
+| Explorer details | Draws only on ties; all 15 moves always taken; the 0.5 penalty never changes a choice and is kept as written (E1 to E5, Q4) |
+| Minimum map size | 6 (Q16) |
+| Bots | Random, Rush, Economy on a fog-restricted view, stateless. Their brief rules are their spec. Rush beats Economy 84%, accepted (H1 to H6, Q10, Q13). |
+| RL algorithm | Hand-written CleanRL-style PPO with conditional masks. Open question 2 closed (K1). |
+| Reward | Terminal win/loss plus potential shaping on score difference / 1000, gamma 0.999, terminal potential 0. Env default shaping 0, training config 1.0; the weight is an experiment (J4, K3, K4). |
+| Self-play | Snapshot pool plus 20% bot games; newest snapshot half the time; snapshot every 1M steps, at most 40; snapshots sample; learner trains on its own seat only (L1 to L4) |
+| Evaluation | Fixed suite of 8 conditions, 200 side-swapped seeds, disjoint seed ranges, win rate by seat always, Elo with random at 0 (K6, L5 to L7, L10) |
+| Versioning | Checkpoints carry obs\_hash and rules\_hash. obs\_hash mismatch refuses to load; rules changes in code bump RULES\_VERSION by hand (L9). |
+| Damage preview | To be added later as an observation feature, not an action: a deliberate, documented exception to hidden techs, with an obs\_hash bump |
 
 ### Open questions
 
-| # | Question | Options or draft assumption |
-| --- | --- | --- |
-| 1 | Turn cap value | Tune with bots: 30, 40, or 50 |
-| 2 | RL library choice | PPO with masking: compare options |
+None open. Agents record new questions in docs/QUESTIONS.md; once the owner answers one, it is merged into this spec. Open question 1 (turn cap) closed at 30 on 2026-10-24; open question 2 (RL library) closed by milestone 10.
