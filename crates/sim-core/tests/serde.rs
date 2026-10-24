@@ -116,7 +116,7 @@ fn default_config_json_is_exact() {
     assert_eq!(
         to_json(&Config::default()),
         concat!(
-            r#"{"full_observability":false,"turn_cap":50,"score_weights":{"#,
+            r#"{"full_observability":false,"turn_cap":30,"score_weights":{"#,
             r#""unit_per_star":5,"super_unit":50,"territory_per_tile":20,"#,
             r#""exploration_per_tile":5,"city_base":100,"city_per_level":50,"#,
             r#""population_surplus":5,"park":250,"tech_per_tier":100}}"#
