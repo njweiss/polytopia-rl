@@ -270,7 +270,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                     is_best = best_score is None or score > best_score
                     best_score = score if is_best else best_score
             if cfg.selfplay and crossed(cfg.rating_every):
-                ratings = learner_ratings(net, pool, make_policy=lambda e: net_policy(_frozen(net, e), device=device), seeds=cfg.rating_seeds, env_kwargs=env_kwargs_of(cfg), device=device)
+                ratings = learner_ratings(net, pool, make_policy=lambda e: net_batch_policy(_frozen(net, e), torch.Generator(), greedy=True, device=device), seeds=cfg.rating_seeds, env_kwargs=env_kwargs_of(cfg), device=device)
                 efile.write(json.dumps({"type": "rating", "global_step": global_step, **ratings}) + "\n")
                 efile.flush()
 
@@ -319,8 +319,8 @@ def learner_ratings(net, pool, make_policy, seeds, env_kwargs, device) -> dict:
     k = len(pool.entries)
     picks = [0, k - 1] + [int(round(x)) for x in np.linspace(0, k - 1, 5)[1:4]]
     entries = [pool.entries[i] for i in dict.fromkeys(picks)]
-    players = [Player("learner", policy_fn=net_policy(net, device=device))]
-    players += [Player(e.name, policy_fn=make_policy(e)) for e in entries]
+    players = [Player("learner", batch_fn=net_batch_policy(net, torch.Generator(), greedy=True, device=device))]
+    players += [Player(e.name, batch_fn=make_policy(e)) for e in entries]
     players += [Player(b, bot=b) for b in BOTS]
     n = len(players)
     wins, games = np.zeros((n, n)), np.zeros((n, n))
@@ -354,7 +354,7 @@ def finish_selfplay(net, pool, cfg, spec, run_dir, device) -> None:
             rng_state=None,
             spec=spec,
         )
-        players.append(Player(e.name, policy_fn=net_policy(snap, device=device)))
+        players.append(Player(e.name, batch_fn=net_batch_policy(snap, torch.Generator(), greedy=True, device=device)))
     res = round_robin(players, cfg.tournament_seeds, env_kwargs_of(cfg))
     write_tournament(res, run_dir)
 
