@@ -84,6 +84,8 @@ from this file. Update it at the end of every working session.
 
 ## Next three actions
 
+0. Owner: review `docs/MILESTONE_12.md` (Clarifications M1-M6); pick the 12b experiments after 11b.
+
 1. Orchestrator: after the owner's review of the Claude Doc, re-export `docs/SPEC.md` if it changed, and
    turn answered QUESTIONS.md entries into a decisions log (after M11 merges, since QUESTIONS.md Q22-Q30
    live on `milestone-11`).
@@ -96,6 +98,7 @@ from this file. Update it at the end of every working session.
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | M12 brief drafted (infrastructure + speed; experiments chosen after 11b). Owner: 10M steps per run, seed-varied maps, Welch t across seeds. |
 | 2026-10-24 | Roadmap set: M12 experiments, M13 architecture/scaling, then game v2 (with the damage preview). |
 | 2026-10-24 | WSL memory raised to 12 GB in config, pending a WSL restart after 11b. |
 | 2026-10-24 | Implementer status: 11b resumed at 1.0M with OMP_NUM_THREADS=1; 1M eval clean (rush_e0 0.96). Shared extension clobbered by a main build, restored. |
