@@ -706,3 +706,10 @@ Append entries below. Format:
   seed and after `get_state`/`set_state`. Rollout with the 3-snapshot smoke pool (idle GPU): 243 sps
   (32 x 128, before A+B) -> 264 (32 x 128) -> 407 (128 x 32). Real trainer, 10 updates from the M10
   checkpoint (pool of snap_0 only): 621 sps, against 307-374 for the stopped run at the same stage.
+- Follow-up (2026-10-24, owner approved): the trainer kept 11 CPU worker threads spinning at
+  ~90-100% each (kernel time 68%, ~480k context switches/s) on tiny CPU tensor ops. With
+  `OMP_NUM_THREADS=1` the 128 x 32 rollout ran 315 -> 395 and 358 -> 421 sps (two alternating
+  tests, each beside the running trainer). `scripts/selfplay.sh` now defaults `OMP_NUM_THREADS` to 1
+  (an explicit value wins). Results do not change. The 11b run `runs/selfplay_seed1` was stopped at
+  ~1.15M and resumed from its 1M `latest.pt` with it; its `metrics.jsonl` and `train.log` were cut
+  back to step 1,003,520 before the resume (originals in `pre_resume_backup/`).
