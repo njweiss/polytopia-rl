@@ -21,6 +21,11 @@ from this file. Update it at the end of every working session.
   rollout). Pre-resume logs in `runs/selfplay_seed1/pre_resume_backup/`. 1M eval (100 games):
   economy_e0 1.00, rush_e0 0.96 (seat 0 0.98 / seat 1 0.94), rush_e20 0.99, no regression flag
   (smoke run: rush_e0 0.79 at 1M).
+- Memory: WSL has 7.9 GB today (swap nearly full earlier). The owner set 12 GB in `.wslconfig`; it takes
+  effect after `wsl --shutdown`, deferred until 11b finishes or crashes. If it crashes, restart WSL
+  first, then resume on `milestone-11`
+  (`pixi run scripts/selfplay.sh python/configs/selfplay.json --resume runs/selfplay_seed1/latest.pt
+  --run-dir runs/selfplay_seed1`; check the exact flags with the implementer).
 - The main checkout (`~/projects/polytopia_rl`) is on `milestone-11` and shared with the implementer
   session. A `--resume` must be launched from `milestone-11`.
 - **Do not run `maturin develop`, `pixi run check`, `py_check.sh` or `scripts/*.sh` from `main` while
@@ -81,6 +86,7 @@ from this file. Update it at the end of every working session.
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | WSL memory raised to 12 GB in config, pending a WSL restart after 11b. |
 | 2026-10-24 | Implementer status: 11b resumed at 1.0M with OMP_NUM_THREADS=1; 1M eval clean (rush_e0 0.96). Shared extension clobbered by a main build, restored. |
 | 2026-10-24 | Default turn cap 30 in sim-core (main); `docs/SPEC.md` synced to the Claude Doc rev 394. 11b at 1.0M steps. |
 | 2026-10-24 | Spec merge applied to the Claude Doc (rev 346 -> 394); turn cap closed at 30. 11b at 434k steps, ~700 sps. |
