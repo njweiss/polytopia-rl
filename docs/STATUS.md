@@ -5,8 +5,12 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
-**Milestone 11 is closed: gate 11b passed and `milestone-11` is merged into `main` (`540a214`,
-2026-10-24).** Next: milestone 12 (brief `docs/MILESTONE_12.md`), phase A when the owner says go.
+**Milestone 12, phase A done; phase B next.** Branch `milestone-12`: tests `8d866be` (76 new tests in
+`python/tests/rl/`, 31 mutants all caught, reviewed by the orchestrator), owner answers Q31-Q33 (A) in
+`a5a3cb6`. Waiting on the owner to approve the tests and start `/implement 12`.
+
+Milestone 11 is closed: gate 11b passed and `milestone-11` is merged into `main` (`540a214`,
+2026-10-24).
 `pixi run check` passes on the merged `main` (534 Rust tests, 26 + 188 Python). `.git/tests-lock` now
 points at `540a214` (M11's lock `03014c8` plus the owner-approved turn-cap test edits).
 
@@ -51,13 +55,14 @@ points at `540a214` (M11's lock `03014c8` plus the owner-approved turn-cap test 
 
 ## Waiting on the owner
 
-1. Say when to start M12 phase A (`/write-tests 12` in a fresh session, after reading the brief's
-   Clarifications M1-M6 and the 12b experiment table).
-2. Restart WSL (`wsl --shutdown`) for the 12 GB memory setting before the 12a concurrency measurement.
+1. Approve the M12 tests (`8d866be`) and start phase B: either your own session
+   (`claude --disallowedTools "Edit(crates/*/tests/**)" "Write(crates/*/tests/**)" "Edit(python/tests/rl/**)" "Write(python/tests/rl/**)"`,
+   then `/implement 12`), or ask the orchestrator to launch a background agent (guarded by the
+   check.sh test lock only).
 
 ## Open questions
 
-- `QUESTIONS.md`: none open.
+- `QUESTIONS.md`: Q31-Q33 answered (A, 2026-10-25); they stay there until M12 merges, then move to DECISIONS.md.
 - Spec open questions: none. Turn cap closed at 30 (owner, 2026-10-24); RL library closed by M10.
 - Spec merge: applied to the Claude Doc master spec
   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) on 2026-10-24. It covers
@@ -80,6 +85,7 @@ points at `540a214` (M11's lock `03014c8` plus the owner-approved turn-cap test 
 
 | Date | Change |
 | --- | --- |
+| 2026-10-25 | M12 phase A committed (8d866be) and reviewed; Q31-Q33 answered A. WSL restarted with 12 GB. |
 | 2026-10-24 | Q1-Q30 moved to `docs/DECISIONS.md`; QUESTIONS.md keeps only open items (next Q31). |
 | 2026-10-24 | M11 merged into main (540a214), gate green, test lock moved. 16M/18M suites run (see caveat 1). M12 brief final for phase A (840dc63). |
 | 2026-10-24 | 11b finished and passed (0.675 vs snap_0; worst suite drop -3.0 pp). Orchestrator caveats recorded. |
