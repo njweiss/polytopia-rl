@@ -88,8 +88,6 @@ def run_suite(policy_fn, conditions, seeds, env_kwargs, *, step=None, make_batch
 
     `make_batch_fn(greedy) -> batch_fn` (docs/MILESTONE_12): when given, each condition plays
     batched through `evaluate(..., batch_fn=make_batch_fn(condition.greedy))`."""
-    if make_batch_fn is not None:
-        raise NotImplementedError("milestone 12: batched suite")
     if SUITE_SEED_BASE + seeds > SUITE_SEED_LIMIT:
         raise ValueError(f"{seeds} suite seeds reach {SUITE_SEED_LIMIT}")
     spec = polytopia_sim.Env(size=env_kwargs.get("size", 11)).spec()
@@ -97,7 +95,8 @@ def run_suite(policy_fn, conditions, seeds, env_kwargs, *, step=None, make_batch
     out = {}
     for c in conditions:
         kw = {**env_kwargs, "full_observability": c.full_observability}
-        res = evaluate(policy_fn, c.opponent, seeds, kw, c.greedy, seed_base=SUITE_SEED_BASE, epsilon=c.epsilon)
+        batch_fn = make_batch_fn(c.greedy) if make_batch_fn is not None else None
+        res = evaluate(policy_fn, c.opponent, seeds, kw, c.greedy, seed_base=SUITE_SEED_BASE, epsilon=c.epsilon, batch_fn=batch_fn)
         per_game = [{**g, "loss_type": loss_type(g, turn_cap)} for g in res.per_game]
         cap = sum(g["loss_type"] == "capital_captured" for g in per_game)
         score = sum(g["loss_type"] == "score" for g in per_game)
@@ -165,8 +164,11 @@ def suite_from_json(text: str) -> SuiteResult:
 
 
 def main(argv: list[str] | None = None) -> None:
+    import torch
+
     from polytopia_rl.checkpoint import describe, load_net
     from polytopia_rl.evaluate import net_policy
+    from polytopia_rl.selfplay import net_batch_policy
     from polytopia_rl.train import resolve_device
     from polytopia_rl.vec_env import env_kwargs_of
 
@@ -192,7 +194,14 @@ def main(argv: list[str] | None = None) -> None:
     device = resolve_device("auto")
     net, ck = load_net(a.checkpoint, device, strict_obs=not a.allow_obs_mismatch)
     print(describe(a.checkpoint, ck), flush=True)
-    res = run_suite(net_policy(net, device=device), DEFAULT_SUITE, a.seeds, env_kwargs_of(ck.cfg), step=ck.global_step)
+    res = run_suite(
+        net_policy(net, device=device),
+        DEFAULT_SUITE,
+        a.seeds,
+        env_kwargs_of(ck.cfg),
+        step=ck.global_step,
+        make_batch_fn=lambda greedy: net_batch_policy(net, torch.Generator().manual_seed(0), greedy=greedy, device=device),
+    )
     md = suite_markdown(res)
     print(md, end="")
     if a.out:
