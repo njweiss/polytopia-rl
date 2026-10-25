@@ -10,7 +10,7 @@ use sim_core::state::{Config, Outcome, PlayerId, State};
 use sim_core::view::PlayerView;
 use sim_tools::replay::record_game;
 
-use crate::actions::{decode_action, ActionMasks, DecodeError, Factored};
+use crate::actions::{decode_action, encode_action, ActionMasks, DecodeError, Factored};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Opponent {
@@ -88,6 +88,8 @@ struct Episode {
     state: State,
     /// The opponent seat's `bot_rng`, one for the whole episode.
     opponent_rng: Rng,
+    /// `bot_rng(seed, seat)` per seat, advanced only by `Env::bot_action`.
+    bot_rngs: [Rng; 2],
     log: Vec<(PlayerId, Action)>,
     legal: Vec<Action>,
     masks: ActionMasks,
@@ -144,6 +146,7 @@ impl Env {
             agent,
             state,
             opponent_rng: bot_rng(seed, 1 - agent),
+            bot_rngs: [bot_rng(seed, 0), bot_rng(seed, 1)],
             log: Vec::new(),
             legal: Vec::new(),
             masks,
@@ -286,6 +289,22 @@ impl Env {
         let ep = self.check_running()?;
         let a = decode_action(&ep.state, f).map_err(EnvError::Decode)?;
         self.step(&a)
+    }
+
+    /// The action bot `kind` (epsilon 0) chooses for the player to move, from that player's
+    /// `PlayerView`, encoded against the current state. Each seat draws from its own rng stream
+    /// `bot_rng(seed, seat)`, created at `reset` and advanced only by this call, so driving a seat
+    /// with it reproduces that seat's moves in `bots::play_game`. `Finished` once the episode is
+    /// over. A test and tournament hook: the env's own opponent is not affected.
+    pub fn bot_action(&mut self, kind: BotKind) -> Result<Factored, EnvError> {
+        self.check_running()?;
+        let ep = self.ep_mut();
+        let me = ep.state.current;
+        let a = make_bot(kind, 0.0).choose(
+            &PlayerView::new(&ep.state, me),
+            &mut ep.bot_rngs[me as usize],
+        );
+        Ok(encode_action(&ep.state, &a))
     }
 
     /// Every applied action, the opponent's included, in order.

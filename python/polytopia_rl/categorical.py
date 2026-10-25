@@ -14,17 +14,18 @@ from torch import Tensor
 MASKED = -1e9
 
 
-def masked_logits(logits: Tensor, mask: Tensor) -> Tensor:
+def masked_logits(logits: Tensor, mask: Tensor, check: bool = True) -> Tensor:
     """`logits` where `mask`, a large negative constant elsewhere. Raises `ValueError` if a row of
-    `mask` has no true entry."""
-    if not bool(mask.any(dim=-1).all()):
+    `mask` has no true entry (`check=False` skips that test, and the GPU sync it costs)."""
+    if check and not bool(mask.any(dim=-1).all()):
         raise ValueError("a mask row has no valid option")
     return torch.where(mask, logits, torch.full_like(logits, MASKED))
 
 
-def sample(logits: Tensor, mask: Tensor, generator: torch.Generator, greedy: bool = False) -> Tensor:
-    """(B,) int64 indices: drawn from the masked softmax with `generator`, or its argmax if `greedy`."""
-    x = masked_logits(logits, mask)
+def sample(logits: Tensor, mask: Tensor, generator: torch.Generator, greedy: bool = False, check: bool = True) -> Tensor:
+    """(B,) int64 indices: drawn from the masked softmax with `generator`, or its argmax if `greedy`.
+    `check` as in `masked_logits`."""
+    x = masked_logits(logits, mask, check)
     if greedy:
         return x.argmax(dim=-1)
     # Sample on the generator's device (a CPU generator also serves a model on the GPU).
