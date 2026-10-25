@@ -5,8 +5,10 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
-**Milestone 11: gate 11b passed (2026-10-24, run `runs/selfplay_seed1`, 20M steps, ~18 h).** Waiting on
-the owner's review and the merge of `milestone-11` (head `eab02fb`) into `main`.
+**Milestone 11 is closed: gate 11b passed and `milestone-11` is merged into `main` (`540a214`,
+2026-10-24).** Next: milestone 12 (brief `docs/MILESTONE_12.md`), phase A when the owner says go.
+`pixi run check` passes on the merged `main` (534 Rust tests, 26 + 188 Python). `.git/tests-lock` now
+points at `540a214` (M11's lock `03014c8` plus the owner-approved turn-cap test edits).
 
 - (i) final vs snapshot 0: 135-65 of 200, 0.675 [0.607, 0.736] (seat 0 0.74, seat 1 0.61).
 - (ii) suite vs the M10 baseline: largest drop rush_e0 0.978 -> 0.948 (-3.0 pp, z -2.23); every other
@@ -14,8 +16,10 @@ the owner's review and the merge of `milestone-11` (head `eab02fb`) into `main`.
 - Orchestrator caveats (not in the report):
   1. Late checkpoints swing against rush. In-training rush_e0 (the first 50 suite seeds, 100 games):
      0.80, 0.91, 0.83, 0.92, 0.86, 0.94 at 14M-19M. The round robin (200 games, rating seeds) gives
-     0.875-0.975 for the 14M-19M snapshots. The final weights scored 0.95 on the same 50 seeds, so the
-     -3.0 pp in gate (ii) partly depends on where the run stopped. One run, one stop point.
+     0.875-0.975 for the 14M-19M snapshots. Full 400-game suites on earlier checkpoints (rush_e0 /
+     rush_fullobs / rush_e0_sampled): 16M 0.902 / 0.870 / 0.917 (gate (ii) would FAIL: -7.5, -9.5,
+     -5.2 pp), 18M 0.930 / 0.922 / 0.938 (passes, worst -4.7), final 0.948 / 0.940 / 0.945. So the late
+     trend is upward, and the pass holds from about 18M on; at 16M it would have failed. One run.
   2. The report credits the lower `lr` for fixing the warm-start collapse, but the same restart also
      changed the batch shape (32x128 -> 128x32, Q29 R3). The two are confounded.
   3. The in-training "learner" Elo is 921.278 at every rating step: in the star graph its rating is fixed
@@ -47,12 +51,9 @@ the owner's review and the merge of `milestone-11` (head `eab02fb`) into `main`.
 
 ## Waiting on the owner
 
-1. 11b finishes; then run the 11b gate: `scripts/suite.sh` on `runs/selfplay_seed1/ckpt_final.pt`,
-   `--compare` against `runs/curriculum_seed1/suite_latest/`, and the 200-seed head-to-head of the
-   final weights vs snapshot 0 (gate (i), >= 60%).
-2. Review the spec merge in the Claude Doc (applied 2026-10-24, doc rev 394; version history shows
-   every edit). `docs/SPEC.md` on `main` is an export of that revision; re-export after any edits.
-3. Merge `milestone-11` into `main` after 11b (or now, since 11a passed; owner's call).
+1. Say when to start M12 phase A (`/write-tests 12` in a fresh session, after reading the brief's
+   Clarifications M1-M6 and the 12b experiment table).
+2. Restart WSL (`wsl --shutdown`) for the 12 GB memory setting before the 12a concurrency measurement.
 
 ## Open questions
 
@@ -73,20 +74,17 @@ the owner's review and the merge of `milestone-11` (head `eab02fb`) into `main`.
 
 ## Next three actions
 
-0. Owner: review `docs/MILESTONE_12.md` (Clarifications M1-M6); pick the 12b experiments after 11b.
 
-1. Orchestrator: after the owner's review of the Claude Doc, re-export `docs/SPEC.md` if it changed, and
-   turn answered QUESTIONS.md entries into a decisions log (after M11 merges, since QUESTIONS.md Q22-Q30
-   live on `milestone-11`).
-2. Owner: let 11b run; check `runs/selfplay_seed1/eval.jsonl` at 1M/2M for `rush_e0` (the smoke run
-   was at 0.79 by 1M) and approx_kl.
-3. Orchestrator: review the 11b results against the gate when they are in, and update RL_REPORT
-   through an implementer session.
+1. Orchestrator: turn answered QUESTIONS.md entries (Q1-Q30, now all on `main`) into a decisions log,
+   leaving only open items; re-export `docs/SPEC.md` if the Claude Doc changed in review.
+2. Owner: start M12 (`/write-tests 12`, then `/implement 12` with the test-dir deny rules, then `/review 12`).
+3. Orchestrator: review the M12 phase A tests against the brief before phase B.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | M11 merged into main (540a214), gate green, test lock moved. 16M/18M suites run (see caveat 1). M12 brief final for phase A (840dc63). |
 | 2026-10-24 | 11b finished and passed (0.675 vs snap_0; worst suite drop -3.0 pp). Orchestrator caveats recorded. |
 | 2026-10-24 | M12 brief drafted (infrastructure + speed; experiments chosen after 11b). Owner: 10M steps per run, seed-varied maps, Welch t across seeds. |
 | 2026-10-24 | Roadmap set: M12 experiments, M13 architecture/scaling, then game v2 (with the damage preview). |
