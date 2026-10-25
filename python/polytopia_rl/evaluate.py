@@ -62,11 +62,17 @@ def _play(policy_fn, env, seat: int, greedy: bool, watch=None) -> dict:
     return {"seed": info["seed"], "seat": seat, "outcome": agent_outcome(info["outcome"], seat), "length": length, "score_diff": scores[seat] - scores[1 - seat], "turn": info["turn"]}
 
 
-def evaluate(policy_fn, opponent: str, seeds: int, env_kwargs: dict, greedy: bool, *, seed_base: int = EVAL_SEED_BASE, epsilon: float = 0.0) -> EvalResult:
+def evaluate(policy_fn, opponent: str, seeds: int, env_kwargs: dict, greedy: bool, *, seed_base: int = EVAL_SEED_BASE, epsilon: float = 0.0, batch_fn=None) -> EvalResult:
     """Play seeds `seed_base + j` for `j in range(seeds)`, each as seat 0 then seat 1, against
     `opponent` with `epsilon`. `env_kwargs` go to `polytopia_sim.Env` (opponent, epsilon and seat are
     set here). `policy_fn(env, greedy) -> (actor, kind, arg)`. `turn` in a game's dict is the final
-    `info()["turn"]`."""
+    `info()["turn"]`.
+
+    `batch_fn(envs) -> one (actor, kind, arg) per env` (greediness bound in; docs/MILESTONE_12
+    "Batched evaluation"): when given, `policy_fn` is ignored and all the games run together in
+    rounds, one `batch_fn` call per round over the live games in game order."""
+    if batch_fn is not None:
+        raise NotImplementedError("milestone 12: batched evaluate")
     kwargs = {k: v for k, v in env_kwargs.items() if k not in ("opponent", "opponent_epsilon", "agent_seat")}
     per_game = []
     for j in range(seeds):
