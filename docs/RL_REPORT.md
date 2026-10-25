@@ -554,8 +554,9 @@ is significant but under the limit. **PASS.**
   highest rated. The rise coincides with the LR decaying and the pool growing more varied; this
   single run cannot say which mattered.
 - **The final agent is stronger against the earlier networks, and almost as good against the
-  bots.** It beats M10 0.675 head to head. Against rush it is 2.5-3 points below M10 in every rush
-  condition (only rush_e0 significantly). It is at least as good as M10 everywhere else, including
+  bots.** It beats M10 0.675 head to head. Against rush it is 2.5-3 points below M10 at eps 0
+  (rush_e0, rush_fullobs, rush_e0_sampled; only rush_e0 significantly) and level at eps 0.2
+  (-0.5). Against economy and random it matches M10 within 0.5 points, including
   full observability against economy (1.000).
 - **How it loses to rush:** still capital captures only, early to mid game (median turn 9-11,
   range 5-25). The seat split is more even than M10's (rush_e0: 9 of 21 losses as seat 1, against 8
