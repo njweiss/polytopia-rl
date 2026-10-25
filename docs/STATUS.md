@@ -57,26 +57,22 @@ points at `540a214` (M11's lock `03014c8` plus the owner-approved turn-cap test 
 
 ## Open questions
 
-- `QUESTIONS.md`: Q1-Q30 all have owner answers. None open.
+- `QUESTIONS.md`: none open.
 - Spec open questions: none. Turn cap closed at 30 (owner, 2026-10-24); RL library closed by M10.
 - Spec merge: applied to the Claude Doc master spec
-  (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) on 2026-10-24, awaiting owner review. It covers
+  (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) on 2026-10-24. It covers
   M2 C1-C5, M3 C1-C12, M4 D1-D11 (D4 overrule), M5 E1-E9, M6 F1-F9, M7 G1/G2/G4, M8 H1-H6,
   M9 J2-J10, M10 K1-K9, M11 L1-L11 and the rule-level Q answers (Q1-Q4, Q10, Q11, Q13, Q16).
   Implementation-only answers (APIs, formats, pins) stay in the briefs and QUESTIONS.md.
   `docs/SPEC.md` on `main` is synced to the doc (rev 394).
-- `sim_core::Config::default().turn_cap` changed 50 -> 30 on `main` (owner, 2026-10-24): test commit
-  `f37fb61` (4 expected values in 3 locked test files), code commit `5e4f114`. `milestone-11` does not
-  have it yet; it arrives when M11 merges into `main` (or merge `main` into `milestone-11` first).
-- The test lock `.git/tests-lock` points at the M11 test commit `03014c8`, so `./scripts/check.sh`
-  fails on `main` by design. On `main` the gate was run step by step (fmt, clippy, 520 Rust tests,
-  26 + 106 Python tests, all passing).
+- `sim_core::Config::default().turn_cap` is 30 since `5e4f114` (test commit `f37fb61`, owner-approved).
+- Answered questions Q1-Q30 are in `docs/DECISIONS.md`; `docs/QUESTIONS.md` holds only open ones
+  (next number Q31).
 
 ## Next three actions
 
 
-1. Orchestrator: turn answered QUESTIONS.md entries (Q1-Q30, now all on `main`) into a decisions log,
-   leaving only open items; re-export `docs/SPEC.md` if the Claude Doc changed in review.
+1. Orchestrator: re-export `docs/SPEC.md` if the Claude Doc changed in the owner's review.
 2. Owner: start M12 (`/write-tests 12`, then `/implement 12` with the test-dir deny rules, then `/review 12`).
 3. Orchestrator: review the M12 phase A tests against the brief before phase B.
 
@@ -84,6 +80,7 @@ points at `540a214` (M11's lock `03014c8` plus the owner-approved turn-cap test 
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | Q1-Q30 moved to `docs/DECISIONS.md`; QUESTIONS.md keeps only open items (next Q31). |
 | 2026-10-24 | M11 merged into main (540a214), gate green, test lock moved. 16M/18M suites run (see caveat 1). M12 brief final for phase A (840dc63). |
 | 2026-10-24 | 11b finished and passed (0.675 vs snap_0; worst suite drop -3.0 pp). Orchestrator caveats recorded. |
 | 2026-10-24 | M12 brief drafted (infrastructure + speed; experiments chosen after 11b). Owner: 10M steps per run, seed-varied maps, Welch t across seeds. |
