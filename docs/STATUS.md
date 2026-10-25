@@ -5,35 +5,24 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
-**Milestone 11, gate 11b (the 20M self-play run), running on the owner's machine.**
+**Milestone 11: gate 11b passed (2026-10-24, run `runs/selfplay_seed1`, 20M steps, ~18 h).** Waiting on
+the owner's review and the merge of `milestone-11` (head `eab02fb`) into `main`.
 
-- Branch: all M11 work is on `milestone-11` (head `c943c80`, not merged). `main` is at `e5ab483`
-  (M10 merged) and has none of the M11 code, brief or report.
-- Run: `runs/selfplay_seed1`, started 2026-10-24 00:42 with
-  `pixi run scripts/selfplay.sh python/configs/selfplay.json` (log `runs/selfplay_seed1.out`). Config:
-  20M steps, `num_envs 128`, `num_steps 32`, `lr 1e-4`, warm start from
-  `runs/curriculum_seed1/latest.pt`. First 80k steps: ~500-660 sps overall, approx_kl ~0.06-0.08 (the
-  3M smoke run at `lr 3e-4` had ~0.235 in its first 250k steps).
-- Expected duration: ~11 h of training at 500 sps plus evals and the final round robin (~1.2 h). Not
-  measured past 80k steps; the smoke run's throughput halved once the second snapshot joined the pool.
-- Resumed once: stopped at ~1.15M and resumed from the 1,003,520 checkpoint with
-  `OMP_NUM_THREADS=1` (owner's call; `milestone-11` `0c550ae` makes it the default, ~18-25% faster
-  rollout). Pre-resume logs in `runs/selfplay_seed1/pre_resume_backup/`. 1M eval (100 games):
-  economy_e0 1.00, rush_e0 0.96 (seat 0 0.98 / seat 1 0.94), rush_e20 0.99, no regression flag
-  (smoke run: rush_e0 0.79 at 1M).
-- Memory: WSL has 7.9 GB today (swap nearly full earlier). The owner set 12 GB in `.wslconfig`; it takes
-  effect after `wsl --shutdown`, deferred until 11b finishes or crashes. If it crashes, restart WSL
-  first, then resume on `milestone-11`
-  (`pixi run scripts/selfplay.sh python/configs/selfplay.json --resume runs/selfplay_seed1/latest.pt
-  --run-dir runs/selfplay_seed1`; check the exact flags with the implementer).
-- The main checkout (`~/projects/polytopia_rl`) is on `milestone-11` and shared with the implementer
-  session. A `--resume` must be launched from `milestone-11`.
-- **Do not run `maturin develop`, `pixi run check`, `py_check.sh` or `scripts/*.sh` from `main` while
-  11b runs.** They replace the shared `.pixi` `polytopia_sim` with main's build (no `obs_hash`), which
-  breaks every M11 command (resume, suite, tournament). This happened on 2026-10-24 at 01:09 (the
-  orchestrator's gate run on `main`); the implementer rebuilt from `milestone-11` at ~01:15. Check
-  with `pixi run python -c "import polytopia_sim as p; print(p.Env().spec()['obs_hash'])"`, which
-  must print `d5f9b1033cfd55ca`. Rust-only `cargo test` is safe.
+- (i) final vs snapshot 0: 135-65 of 200, 0.675 [0.607, 0.736] (seat 0 0.74, seat 1 0.61).
+- (ii) suite vs the M10 baseline: largest drop rush_e0 0.978 -> 0.948 (-3.0 pp, z -2.23); every other
+  condition within 2.5 pp. Report: `docs/RL_REPORT.md` on `milestone-11`.
+- Orchestrator caveats (not in the report):
+  1. Late checkpoints swing against rush. In-training rush_e0 (the first 50 suite seeds, 100 games):
+     0.80, 0.91, 0.83, 0.92, 0.86, 0.94 at 14M-19M. The round robin (200 games, rating seeds) gives
+     0.875-0.975 for the 14M-19M snapshots. The final weights scored 0.95 on the same 50 seeds, so the
+     -3.0 pp in gate (ii) partly depends on where the run stopped. One run, one stop point.
+  2. The report credits the lower `lr` for fixing the warm-start collapse, but the same restart also
+     changed the batch shape (32x128 -> 128x32, Q29 R3). The two are confounded.
+  3. The in-training "learner" Elo is 921.278 at every rating step: in the star graph its rating is fixed
+     by its 100-0 record against `random` plus the prior (400 log10(100.5/0.5)). Only the gap
+     learner - snapshot_0 is informative there. The final round robin is unaffected.
+- Elo of the pool (round robin): snap_0 1138, low point snap_3M 981, then rising from 10M to snap_19M
+  1383; the last five snapshots are the top five.
 
 ## Roadmap (owner, 2026-10-24)
 
@@ -98,6 +87,7 @@ from this file. Update it at the end of every working session.
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | 11b finished and passed (0.675 vs snap_0; worst suite drop -3.0 pp). Orchestrator caveats recorded. |
 | 2026-10-24 | M12 brief drafted (infrastructure + speed; experiments chosen after 11b). Owner: 10M steps per run, seed-varied maps, Welch t across seeds. |
 | 2026-10-24 | Roadmap set: M12 experiments, M13 architecture/scaling, then game v2 (with the damage preview). |
 | 2026-10-24 | WSL memory raised to 12 GB in config, pending a WSL restart after 11b. |
