@@ -10,7 +10,7 @@ cmd="$1"
 shift
 parallel=()
 if [ "$cmd" = "run" ]; then
-  parallel=(--parallel 1)  # default from the 12a concurrency measurement (docs/RL_REPORT.md)
+  parallel=(--parallel 3)  # default from the 12a concurrency measurement (docs/RL_REPORT.md, Milestone 12)
   for arg in "$@"; do
     case "$arg" in --parallel|--parallel=*) parallel=() ;; esac
   done
