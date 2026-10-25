@@ -465,3 +465,251 @@ Append entries below. Format:
   Triton, which compiles a C helper at run time against `cuda.h` (without it, `train_update` on
   CUDA fails with `cuda.h: No such file or directory`). Measured on the RTX 4060 (default config):
   ~1,550 sps vs ~255 sps on CPU.
+
+## Q22: The exact bytes behind `obs_hash` and `rules_hash`
+
+- Needed for: milestone 11, "Public API" (`obs_hash`, `rules_hash`) and L9 (`RULES_VERSION` is part
+  of `rules_hash`); the tests pin a golden canonical string for `size = 3`.
+- Ambiguity: the brief lists the ingredients but not the separators, whether lists are delimited,
+  how numbers are written, or where `RULES_VERSION` goes in the rules bytes.
+- Options: A) one flat list of items joined with `\n` (no section markers, no trailing newline):
+  `size`, channel names, global names, the 10 action-type names, `arg_len` per action type in
+  decimal, unit types, rewards, techs, site actions. Rules bytes: for each embedded file in file-name
+  order, its bare name (`units.json`), `\0`, its contents; then `RULES_VERSION`, `\0`, the version in
+  decimal. B) the same with a header line per section (`[channels]`, ...), which rules out an item
+  moving across a section boundary without a hash change. C) `RULES_VERSION` first instead of last.
+- Agent's pick and why: A, the literal reading of "each item joined with `\n`". The section-boundary
+  case of B cannot happen without also changing a name. Test hooks (public, in `sim_env::hash`):
+  `hex64(u64) -> String`, `obs_canonical(size) -> String`, `embedded_data_files()`,
+  `rules_canonical(files, version) -> Vec<u8>`. The Python test assumes `RULES_VERSION == 1`; bumping
+  it means updating that constant in `python/tests/rl/sp_helpers.py` and the Rust test.
+- Owner answer: A on 2026-10-23
+
+## Q23: A hook to play the Rust bots' moves from Python (`Env.bot_action`)
+
+- Needed for: milestone 11 "Tests" 3 ("a policy that plays the Rust bot's exact choices (through
+  `step_legal` lookup)") and 7 ("a scripted policy equal to the Rust economy bot (via the two-seat
+  path)"), and the tournament's bot-vs-bot games.
+- Ambiguity: nothing in the current API lets Python ask what a bot would play, so neither test can be
+  written; the brief does not name the mechanism.
+- Options: A) `sim_env::env::Env::bot_action(&mut self, kind: BotKind) -> Result<Factored,
+  EnvError>`, exposed as `Env.bot_action(name) -> (actor, kind, arg)`: the move bot `name` (epsilon
+  0) picks for the player to move from that player's `PlayerView`, with one rng stream per seat
+  (`bot_rng(seed, seat)`, created at `reset`, advanced only by this call), so driving a seat with it
+  reproduces `bots::play_game`. `Finished` (Python `RuntimeError`) once over, `ValueError` for an
+  unknown name. The env's own opponent is unaffected. B) return an index into `legal_actions()`
+  plus a new `step_legal` binding; C) expose `legal_actions` as JSON and match in Python.
+- Agent's pick and why: A. One call, no new action encoding in Python, and it works with
+  `step_factored`, which every policy already uses. It reads only the mover's own view, so it does not
+  cheat. Tested in `crates/sim-env/tests/bot_action.rs` against `bots::bot_policy`.
+- Owner answer: A on 2026-10-23
+
+## Q24: Loss review definitions
+
+- Needed for: milestone 11 "Loss review" (`collect_losses`, `LossRecord`).
+- Ambiguity: which seeds, greedy or not, the record fields, how to tell a capital capture from a
+  score loss, and what "the turn the first city was lost" means when the agent only observes at its
+  own decisions.
+- Options and the tests' choices: seeds are the suite seeds `SUITE_SEED_BASE + j`, `j <
+  seeds`, seat 0 then seat 1, greedy, epsilon 0, stopping at `limit` losses. `LossRecord(seed, seat,
+  final_turn, loss_type, scores, first_city_lost_turn, path)`, `scores` seat-indexed from `info()`.
+  `loss_type` is `capital_captured` when the game ended before the turn cap (`info()["turn"] <
+  turn_cap`), else `score`. `first_city_lost_turn` is `info()["turn"]` at the first agent
+  observation (a decision or the final observation) where a tile that showed `city.mine` at its
+  previous observation no longer does, or None. Alternative: the exact turn of the capturing move,
+  which needs the opponent's moves decoded in Python (not possible with the current API). Note: for a
+  seat-0 agent, a city lost during the opponent's turn `t` is first seen at turn `t + 1`, except when
+  it ends the game.
+- Agent's pick and why: as above; observation-based, so it uses only what a policy may see. The
+  scripted test agent never holds a second city, so the tests check only "capital capture: equals
+  the final turn" and "score loss: None".
+- Owner answer:  As above on 2026-10-23
+
+## Q25: Pool thinning and the snapshot draw
+
+- Needed for: milestone 11 "Self-play" (snapshots, opponent per episode), L4.
+- Ambiguity: "when full, thin by dropping every second entry except the first and the newest" does
+  not say whether thinning happens before or after the new entry is added, nor whether "uniformly
+  drawn entry of the whole pool" includes the newest.
+- Options: A) `add` appends, then while `len > pool_max` keep positions 0, 2, 4, ... and the newest
+  (pool_max 4, adding steps 0..4 gives `[0, 2, 4]`). B) thin a full pool before appending (gives
+  `[0, 2, 3, 4]`). The uniform draw includes the newest (so it has probability `p_latest + (1 -
+  p_latest) / K`).
+- Agent's pick and why: A, and the newest included in the uniform draw ("the whole pool"). The tests
+  pin both. Also fixed by the tests: `SnapshotPool(pool_max=40, p_latest=0.5)`, `Entry(step, state,
+  name="snap_{step}")`, and `selfplay.draw_opponent(pool, rng, p_bot)` (bot with probability `p_bot`,
+  uniform over `BOT_OPPONENTS = ("economy", "rush")`, else `pool.sample(rng)`).
+- Owner answer:  A on 2026-10-23
+
+## Q26: Truncation and the final observation in two-seat slots
+
+- Needed for: milestone 11 "Tests" 7 ("an opponent that is mid-turn at the learner's truncation is
+  handled") and "Execution".
+- Ambiguity: a two-seat `Env` counts both seats' actions towards `max_agent_actions`, so it can
+  truncate on an opponent move; and in two-seat mode `observation()` is the mover's (or the last
+  actor's) view, so after the opponent's move the learner's view of the final state is not available.
+- Options: A) a slot ends whenever its env reports `terminated` or `truncated` on any sub-step (the
+  learner's or the opponent's); the episode is then truncated for the learner, and the final
+  observation is defined (and tested) only when the learner's own action ended the episode.
+  B) count learner actions in Python and truncate only after a complete opponent turn (needs the
+  two-seat env's own limit raised). C) add `observation(seat)` to `Env`.
+- Agent's pick and why: A, no new API; truncation in two-seat slots is rare at the 5000-action
+  default, and a terminated episode does not bootstrap. The tests also fix: the learner's reward
+  equals the M9 formula exactly in float32 (`tw * t + sw * (gamma * phi' - phi)`), and opponent calls
+  are batched so that, in a step where no episode ends, each snapshot gets exactly one call per round.
+  A truncation inside the opponent's opening moves right after a reset is not tested.
+- Owner answer:  A on 2026-10-23
+
+## Q27: Details the milestone 11 tests assume
+
+- Needed for: milestone 11, "Public API" (several types are named but not specified), "Rules".
+- Ambiguity and the choices the tests fix (stubs in `python/polytopia_rl/` document each):
+  1. `checkpoint`: `SpecWarning(UserWarning)` raised via `warnings.warn` for every non-strict
+     mismatch and for a file without `spec`; `Checkpoint(model, optimizer, cfg, global_step, stage,
+     seed_index, rng_state, spec, extra)` with `model`/`optimizer` state dicts and `cfg` a
+     `PPOConfig`; `save_checkpoint` takes the module and optimizer; the file keeps `model`,
+     `optimizer`, `config` (JSON), `global_step`, `stage` and adds `spec`, so `train.load_policy`
+     still reads it.
+  2. `suite`: `SUITE_SEED_LIMIT = 1_500_000_000` (a range reaching it raises `ValueError`);
+     `run_suite(..., *, step=None)`; `SuiteResult(conditions: dict name -> ConditionResult,
+     obs_hash, rules_hash, step)` with the hashes of the running build; `ConditionResult` holds
+     `evaluate`'s fields plus `loss_capital_share`, `loss_score_share` (0 without losses) and a
+     per-game `loss_type`; `Comparison(name, win_rate_a, win_rate_b, diff = b - a, z, significant)`,
+     z with the pooled proportion, 0 when the pooled sd is 0; `compare` covers the conditions in
+     both, in `a`'s order. The suite CLI's `--out DIR` writes `suite.json` (with `obs_hash`,
+     `step`) and `suite.md`; `--compare` prints one line per condition. `python/configs/suite.json`
+     has `"seeds": 200`.
+  3. `tournament`: `Player(name, bot=None, policy_fn=None, greedy=True)`; `PairResult(a, b, games,
+     a_wins, b_wins, draws, seat_wins, per_game)`, per-game dicts `{seed, a_seat, winner: "a" |
+     "b" | None, length}`; `TournamentResult(players, wins (decisive), draws, games, seat_win_rate
+     (share of all games won by each seat), ratings)`, anchored at the player named `random` (else
+     player 0); `tournament_markdown`; `tournament.json` holds the same fields (matrices as lists,
+     `seat_win_rate` keyed `"0"`/`"1"`).
+  4. `selfplay`: `SelfPlayVecEnv(env_fn, num_envs, seed_base, seed_stride=1, *, pool, make_policy,
+     rng, p_bot=0.2, reward)`: `env_fn(opponent)` builds an env (`"none"` for two-seat),
+     `make_policy(entry)` returns a batch policy `policy(envs) -> actions`, `rng` is the dedicated
+     NumPy generator, `reward` the four M9 weights; `envs[i]` is slot `i`'s current env;
+     `EpisodeStat.opponent` is the bot name or `snap_{step}` (this is the per-episode opponent log).
+     `net_batch_policy(net, generator, greedy=False, device="cpu")` makes one `trunk` call per
+     batch. `regression(win_rates, floor)`: any rate `< floor`.
+  5. Self-play trainer (`train.run(cfg, run_dir, resume=None, init_checkpoint=None)`, CLI
+     `--init-checkpoint`), switched on by the config key `selfplay`. New `PPOConfig` keys and
+     defaults: `selfplay=False`, `snapshot_every=1_000_000`, `pool_max=40`, `p_bot=0.2`,
+     `p_latest=0.5`, `opponent_greedy=False`, `rating_every=2_000_000`, `rating_seeds=50`,
+     `regression_floor=0.9`, `tournament_seeds=100`; the suite subset uses `eval_seeds`. A snapshot
+     is added each time `global_step` crosses a multiple of `snapshot_every` (so also at the last
+     update when it lands on one). `eval.jsonl` rows carry `"type": "suite"` (`suite: {name:
+     {win_rate, ...}}`, `regression`) or `"type": "rating"` (`rating: {learner, snapshot_0}`);
+     metrics rows add `pool_size`. Checkpoints `ckpt_{step}.pt` and `latest.pt` at every evaluation
+     as in milestone 10, plus `ckpt_final.pt`; `pool/snap_{step}.pt` are checkpoints whose
+     `global_step` is the snapshot's step; `train.log` is written. Resume restores the pool, the
+     opponent RNG and sampling generator, and the env state exactly.
+  6. CLIs that take a checkpoint print its `obs_hash`, `rules_hash` and step on the first line.
+     `losses` CLI: `--checkpoint`, `--opponent`, `--count`, `--out`.
+  7. Changed milestone 10 test: `CKPT_KEYS` in `test_train.py` gains `spec` (the brief's "Changes
+     to earlier tests"). No other earlier test changes.
+- Options: A) as listed. B) the owner changes any item (the matching tests change in a new phase A
+  commit).
+- Agent's pick and why: A, the most direct reading of the brief plus the smallest additions that
+  make each listed test possible.
+- Owner answer: A on 2026-10-23
+
+## Q28: Self-play rollout throughput (the opponent rounds)
+
+- Needed for: milestone 11 gate 11b (20M self-play steps), "Execution" and "Notes for the
+  implementer" (batch the opponents' forward passes).
+- Ambiguity: none in the rules; the implementation follows "Execution" exactly. But measured on the
+  RTX 4060 (size 11, 32 envs, 2-update smoke run from the M10 `latest.pt`), self-play runs at
+  ~200-240 sps overall (rollout ~220-280 sps, update ~1,600-2,500 sps), against ~1,550 sps for the M10
+  bot-mode training. A cProfile of one 4,096-step rollout: 13.1 s, of which 11.5 s is 1,369 opponent
+  batch-policy calls (~10 rounds per learner step, ~8 ms each, mostly small-batch launch overhead).
+  The rounds wait for the longest opponent turn among the slots whose learner just ended its turn. At
+  this rate 20M steps take ~25 h, not the "several hours" the brief expects.
+- Options: A) accept it (11b is an overnight-plus run). B) a later speed milestone: e.g. step the
+  learner's and the opponents' moves of all slots in one forward pass per snapshot (slots that wait
+  on an opponent are not stepped by the learner meanwhile), or more envs per batch, or the M10 note's
+  batched mask fetch. C) cut 11b to fewer steps.
+- Agent's pick and why: A for now, B after profiling as CLAUDE.md asks. Nothing changed here; the
+  metrics rows now also log `rollout_sps` and `update_sps` so the owner's runs show the split.
+- Owner answer: A on 2026-10-23
+
+## Q29: Speed after the 3M smoke run (opponent calls, tournament, warm start)
+
+- Needed for: milestone 11 gates 11a step 4 (the round robin) and 11b (20M steps plus the final
+  tournament), "At the end" and "Notes for the implementer".
+- Ambiguity: none in the rules. The 3M smoke run (`runs/selfplay_smoke`) measured: rollout ~300 sps
+  with only snap_0 in the pool, ~175 sps from the 1M snapshot on. A profile of one 4,096-step rollout
+  with the 3-snapshot pool: 23 s, of which ~21 s is opponent policy calls (~20 calls per learner step,
+  mean batch 1.5 envs, ~7 ms fixed cost per call: kernel launches, device copies and three GPU syncs).
+  The Rust env calls take < 0.3 s and the Python slot loop < 0.2 s. `act` also computes `entropy` and
+  `log_prob` for opponents (~20% of policy time), which they do not use. Opponents on CPU: 39 sps;
+  128 envs: 285 sps. The final tournament plays one game at a time (net vs net ~5.8 s, net vs bot
+  ~1.2 s per game): ~1.6 h for the smoke pool, ~70 h for a 20M pool of ~21 snapshots. Separately, the
+  warm start's first updates had approx_kl ~0.2-0.38 (M10 ~0.05), and rush_e0 fell from ~0.97 (M10)
+  to 0.79 at 1M and 0.85 at 2M.
+- Options: R1) skip `entropy`/`log_prob` in opponent calls (flag on `act`; sampled actions
+  bit-identical). R2) batch the tournament and rating games across seeds inside `evaluate`'s
+  internals, so `evaluate` stays the one place that plays an evaluation game. R3) `num_envs` 128
+  (or 128 x `num_steps` 32 to keep the 4,096 batch). R4) interleave learner and opponent moves in the
+  rollout (restructures `SelfPlayVecEnv` and the buffer). R5) order: R1 and R2, then finish 11a, then
+  launch 11b. R6) note the warm-start KL and rush drop in RL_REPORT; if 11b repeats it, try a lower
+  `lr` or a warm-up (config only).
+- Agent's pick and why: R1 and R2 now (cheap; without R2 the 11b tournament is impractical), R3
+  after 11a with numbers, R4 deferred, R5 as listed, R6 as listed.
+- Owner answer: R1 yes, R2 yes, R3 later, R4 defer, R5 agreed, R6 yes, on 2026-10-23
+- Implemented (R1, R2): `PolicyNet.act(..., stats=False)` skips `log_prob`, `entropy` and `value`
+  (`logp`/`entropy`/`value` are None); `net_batch_policy` and `evaluate.net_policy` use it, the PPO
+  rollout does not. Checked on the smoke learner: 0 of 14,400 sampled action components differ with
+  the same generator seed; profile rollout 177 -> 215 sps. `Player.batch_fn(envs)` plus a lockstep
+  `play_pair` (all of a pair's games at once, one call per player per round); the batching lives in
+  `play_pair`, which already had its own game loop, not in `evaluate` as the R2 text said; `policy_fn`
+  players and bots play as before. Greedy net games are identical to the sequential ones (40 games
+  checked); 100 seeds: net vs net 5.8 -> 0.09 s/game, net vs rush 1.2 -> 0.02 s/game, so a 20M pool's
+  round robin is ~1.2 h instead of ~70 h.
+
+## Q30: Per-call cost of play-only policy calls (after Q29 R1)
+
+- Needed for: milestone 11 gate 11b throughput (the 20M run `runs/selfplay_lr1e-4`, started
+  2026-10-24 with `lr=1e-4`). Speed work outside the brief, so the owner decides.
+- Ambiguity: none in the rules. `torch.profiler` on `net_batch_policy` (smoke-run 1M snapshot,
+  batch 1, two-seat mid-game states): ~5.4 ms wall per call, of which GPU kernel time is only
+  ~0.3-0.7 ms. Per call: ~124 `cudaLaunchKernel` (~22 us each, ~2.7 ms), ~19
+  `cudaStreamSynchronize` (~1.1 ms) and ~27 `cudaMemcpyAsync` (~1 ms). The calls are bound by
+  kernel launches and host-device syncs, not by the network. The syncs come from the lazy mask fetch
+  (actors, then kinds, to the CPU), the mask validity check in `categorical.masked_logits`
+  (`bool(mask.any(-1).all())`, once per stage), sampling with a CPU generator (probabilities to the
+  CPU and the index back, once per stage) and `tolist`. Timing candidate fixes by monkeypatching,
+  while the 20M run shared the GPU (so noisy: baselines 5.4-8.4 ms for the same call):
+  skip the check -6% to +14%; plus `torch.inference_mode` -3% to +24%; plus a CUDA generator
+  +17% to +35%.
+- Options: A) result-identical changes, safe to swap into a running experiment by stopping and
+  `--resume`: skip the mask check on the play-only path (`act(stats=False)`; Rust masks always have
+  a legal option, and the training path keeps the check) and run play-only calls under
+  `torch.inference_mode`. B) sample opponents with a CUDA generator: removes three round trips per
+  call, but changes the opponents' random stream, so fresh runs only (still deterministic, not
+  identical to earlier runs). C) CUDA graphs or `torch.compile(mode="reduce-overhead")` for the
+  opponent forward: attacks the ~124 launches (the largest cost), but variable batch sizes need a
+  graph per size; a larger change, fresh runs only until shown identical. D) nothing now.
+- Agent's pick and why: A now (small, cannot change any result, and the 20M run can pick it up at
+  its 1M checkpoint through `--resume`), measured again on an idle GPU before claiming a number; B
+  and C for a later speed milestone with the larger structural options (Q29 R3, R4). The noisy
+  measurements above do not support a firm estimate: A is somewhere between 0 and ~25% of the
+  opponent call cost.
+- Owner answer: A + B, plus Q29 R3 as `num_envs=128 num_steps=32` (batch stays 4,096), and
+  `lr=1e-4` for the 11b run, on 2026-10-24. C not now. The 20M run `runs/selfplay_lr1e-4` was
+  stopped at step 180k (no checkpoint) to restart with these.
+- Implemented: `categorical.masked_logits`/`sample` take `check` (default True); `act(stats=False)`
+  passes `check=False`. `net_batch_policy` and `evaluate.net_policy` run under
+  `torch.inference_mode`. The trainer's opponent generator is created on the model's device. Config
+  `python/configs/selfplay.json`: `num_envs 128`, `num_steps 32`, `lr 1e-4`. Checked on the GPU:
+  A changes 0 of 14,400 sampled action components (same CPU seed); the CUDA generator repeats for a
+  seed and after `get_state`/`set_state`. Rollout with the 3-snapshot smoke pool (idle GPU): 243 sps
+  (32 x 128, before A+B) -> 264 (32 x 128) -> 407 (128 x 32). Real trainer, 10 updates from the M10
+  checkpoint (pool of snap_0 only): 621 sps, against 307-374 for the stopped run at the same stage.
+- Follow-up (2026-10-24, owner approved): the trainer kept 11 CPU worker threads spinning at
+  ~90-100% each (kernel time 68%, ~480k context switches/s) on tiny CPU tensor ops. With
+  `OMP_NUM_THREADS=1` the 128 x 32 rollout ran 315 -> 395 and 358 -> 421 sps (two alternating
+  tests, each beside the running trainer). `scripts/selfplay.sh` now defaults `OMP_NUM_THREADS` to 1
+  (an explicit value wins). Results do not change. The 11b run `runs/selfplay_seed1` was stopped at
+  ~1.15M and resumed from its 1M `latest.pt` with it; its `metrics.jsonl` and `train.log` were cut
+  back to step 1,003,520 before the resume (originals in `pre_resume_backup/`).
