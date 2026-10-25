@@ -80,11 +80,16 @@ class Comparison:
     significant: bool  # |z| > 1.96
 
 
-def run_suite(policy_fn, conditions, seeds, env_kwargs, *, step=None) -> SuiteResult:
+def run_suite(policy_fn, conditions, seeds, env_kwargs, *, step=None, make_batch_fn=None) -> SuiteResult:
     """Each condition plays seeds `SUITE_SEED_BASE + j` for `j in range(seeds)`, each seed as seat 0
     then seat 1, against the condition's opponent with its epsilon and full observability, calling
     `policy_fn(env, condition.greedy)`. `env_kwargs` give the map and turn cap. A seed range that
-    reaches `SUITE_SEED_LIMIT` raises `ValueError`."""
+    reaches `SUITE_SEED_LIMIT` raises `ValueError`.
+
+    `make_batch_fn(greedy) -> batch_fn` (docs/MILESTONE_12): when given, each condition plays
+    batched through `evaluate(..., batch_fn=make_batch_fn(condition.greedy))`."""
+    if make_batch_fn is not None:
+        raise NotImplementedError("milestone 12: batched suite")
     if SUITE_SEED_BASE + seeds > SUITE_SEED_LIMIT:
         raise ValueError(f"{seeds} suite seeds reach {SUITE_SEED_LIMIT}")
     spec = polytopia_sim.Env(size=env_kwargs.get("size", 11)).spec()

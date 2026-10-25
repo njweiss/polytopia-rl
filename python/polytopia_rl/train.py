@@ -39,6 +39,15 @@ from polytopia_rl.tournament import BOTS, Player, anchor_of, play_pair, round_ro
 from polytopia_rl.vec_env import make_vec_env
 
 
+TRAIN_SEEDS_PER_RUN = 10_000_000  # run seed s trains on map seeds [train_seed_base(s), train_seed_base(s + 1))
+
+
+def train_seed_base(seed: int) -> int:
+    """`(seed - 1) * TRAIN_SEEDS_PER_RUN`; `ValueError` unless `1 <= seed <= 100` (docs/MILESTONE_12
+    "Seed-varied training maps")."""
+    raise NotImplementedError("milestone 12: train_seed_base")
+
+
 def resolve_device(device: str) -> str:
     if device == "auto":
         return "cuda" if torch.cuda.is_available() else "cpu"
