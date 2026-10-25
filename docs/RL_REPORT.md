@@ -391,3 +391,190 @@ Per the gate, this is reported and no rule or test was changed.
 significant. The 3M smoke weights would fail it in five conditions. Running the 20M config
 unchanged risks the same result; whether to change `lr`, `p_bot` or anything else first is the
 owner's decision.
+
+# Milestone 11b: 20M-step self-play run and gate
+
+Run on the owner's machine (RTX 4060, WSL2) on 2026-10-24: `pixi run scripts/selfplay.sh
+python/configs/selfplay.json`, run dir `runs/selfplay_seed1/`, warm start from
+`runs/curriculum_seed1/latest.pt`. Build hashes: obs `d5f9b1033cfd55ca`, rules `a8b52b91eae34503`.
+
+## Changes from the 11a smoke run
+
+Every change is from the owner's answers to Q29 and Q30 (docs/QUESTIONS.md):
+
+- **`lr` 1e-4** (was 3e-4). The smoke run's warm start had approx_kl ~0.2-0.38 and rush_e0 fell to
+  0.79 by 1M (Q29 R6).
+- **`num_envs` 128, `num_steps` 32** (was 32 x 128): the same 4,096-step batch, minibatches and
+  update count, with larger opponent batches (Q29 R3).
+- **Speed only, no change to results:** opponents skip `log_prob`/`entropy`/`value` (Q29 R1).
+  Play-only calls skip the mask check and run under `torch.inference_mode` (Q30 A).
+  `scripts/selfplay.sh` defaults `OMP_NUM_THREADS=1` (Q30 follow-up).
+- **Changes the opponents' random stream:** opponents sample with a generator on the GPU (Q30 B).
+- **Batched tournament and rating games** (Q29 R2): the same games, about 60x faster.
+
+**Run history.** A first attempt (`runs/selfplay_lr1e-4`, the old 32 x 128 layout) was stopped at
+180k steps to add the speed work. This run was then stopped at ~1.15M and resumed from its 1M
+`latest.pt` with `OMP_NUM_THREADS=1`. `metrics.jsonl` and `train.log` were cut back to step
+1,003,520 first; the originals are in `pre_resume_backup/`. On the GPU the resume is not
+bit-identical (cuDNN), but the configuration and code are the same.
+
+## Training
+
+4,882 updates, 18.1 h of rollout and update time (evals, ratings and the final round robin not
+included). Means per phase from `metrics.jsonl`:
+
+| steps | sps | pool | approx_kl | entropy | train win rate | episode len | explained var |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0-1M | 656 | 1 | 0.073 | 0.64 | 0.70 | 199 | 0.88 |
+| 1-2M | 528 | 2 | 0.068 | 0.64 | 0.61 | 227 | 0.91 |
+| 2-5M | 391 | 5 | 0.061 | 0.67 | 0.59 | 224 | 0.90 |
+| 5-10M | 305 | 10 | 0.041 | 0.83 | 0.62 | 201 | 0.89 |
+| 10-15M | 291 | 15 | 0.018 | 0.93 | 0.65 | 195 | 0.90 |
+| 15-20M | 259 | 20 | 0.004 | 1.04 | 0.68 | 199 | 0.91 |
+
+Throughput falls as the pool grows, because each snapshot is a separate group of opponent calls
+(Q30). Entropy rose steadily, from 0.5 at the warm start to ~1.05. KL fell with the LR.
+
+### In-training monitoring (`eval.jsonl`, 50 seeds = 100 games per condition)
+
+| step (M) | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| economy_e0 | 1.00 | 0.98 | 0.94 | 1.00 | 0.99 | 0.99 | 0.99 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| rush_e0 | 0.96 | 0.93 | 0.77 | 0.87 | 0.83 | 0.75 | 0.88 | 0.85 | 0.82 | 0.89 | 0.89 | 0.87 | 0.86 | 0.80 | 0.91 | 0.83 | 0.92 | 0.86 | 0.94 |
+| rush_e20 | 0.99 | 0.98 | 0.93 | 0.90 | 0.92 | 0.91 | 0.96 | 0.97 | 0.95 | 0.91 | 0.96 | 0.92 | 0.96 | 0.89 | 0.92 | 0.96 | 0.96 | 0.96 | 1.00 |
+
+The regression flag (any rate below 0.90) was set from 3M to 14M and at 16M and 18M; it was clear
+at 1M, 2M, 15M, 17M and 19M.
+
+The learner's score in the rating rows (100 games per opponent):
+
+| step (M) | 2 | 4 | 6 | 8 | 10 | 12 | 14 | 16 | 18 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| vs snap_0 | 0.68 | 0.51 | 0.46 | 0.56 | 0.61 | 0.60 | 0.60 | 0.62 | 0.70 |
+| vs rush | 0.96 | 0.87 | 0.86 | 0.86 | 0.83 | 0.90 | 0.89 | 0.90 | 0.96 |
+
+The learner's own rating in these rows is always 921. The star graph links it to `random` by a
+1.0 score and nothing else, so only the opponents' ratings relative to it carry information.
+
+## Final round robin (`tournament.md`, 100 seeds = 200 games per pair)
+
+20 snapshots plus the three bots, 253 pairs. Bots: rush 801, economy 461, random 0. Seat 0 won
+54.3% of games.
+
+| snapshot | Elo | vs snap_0 | vs rush | vs economy |
+| --- | --- | --- | --- | --- |
+| 0.0M (M10) | 1138 | — | 0.99 | 1.00 |
+| 1.0M | 1129 | 0.71 | 0.93 | 1.00 |
+| 2.0M | 1112 | 0.69 | 0.95 | 0.98 |
+| 3.0M | 981 | 0.42 | 0.83 | 0.91 |
+| 4.0M | 1122 | 0.56 | 0.86 | 0.98 |
+| 5.0M | 1101 | 0.49 | 0.88 | 0.99 |
+| 6.0M | 1088 | 0.47 | 0.82 | 0.99 |
+| 7.0M | 1153 | 0.50 | 0.85 | 0.99 |
+| 8.0M | 1180 | 0.52 | 0.87 | 1.00 |
+| 9.0M | 1177 | 0.52 | 0.81 | 0.99 |
+| 10.0M | 1196 | 0.62 | 0.85 | 0.99 |
+| 11.0M | 1219 | 0.58 | 0.90 | 1.00 |
+| 12.0M | 1237 | 0.57 | 0.88 | 1.00 |
+| 13.0M | 1219 | 0.56 | 0.90 | 1.00 |
+| 14.0M | 1227 | 0.61 | 0.88 | 0.99 |
+| 15.0M | 1294 | 0.67 | 0.92 | 1.00 |
+| 16.0M | 1293 | 0.63 | 0.90 | 0.99 |
+| 17.0M | 1346 | 0.70 | 0.95 | 1.00 |
+| 18.0M | 1346 | 0.70 | 0.97 | 1.00 |
+| 19.0M | 1383 | 0.68 | 0.94 | 1.00 |
+
+**Consistency.** `random` is the lowest rated. In 13 of the 253 pairs the higher-rated player
+scored below 0.5. Most of those scores are 0.43-0.475, within noise for 200 games. The two clear
+ones are snap_0 against the 1M (0.285) and 2M (0.315) snapshots. snap_0 is rated above both
+because it beats the bots and the later snapshots more often, but it loses to these two head to
+head. The final weights (step 19,996,672) are not in the round robin, which covers pool snapshots
+only.
+
+## Gate 11b
+
+**(i) Final weights against snapshot 0, 200 side-swapped games (greedy, seeds >= 2e9):** 135-65-0,
+score **0.675**, Wilson 95% [0.607, 0.736]. As seat 0 the final weights win 0.74; as seat 1, 0.61.
+**PASS** (>= 0.60).
+
+**(ii) Suite on `ckpt_final.pt` against the 11a baseline** (`runs/selfplay_seed1/suite_ckpt_final/`,
+200 seeds, 400 games per condition):
+
+| condition | games | W-L-D | win rate | 95% CI | seat 0 | seat 1 | mean len | score diff | losses capital / score |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| random_e0 | 400 | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 | 1.000 | 97.6 | +1592.8 | 0.00 / 0.00 |
+| economy_e0 | 400 | 399-1-0 | 0.998 | [0.986, 1.000] | 1.000 | 0.995 | 84.6 | +1271.1 | 1.00 / 0.00 |
+| rush_e0 | 400 | 379-21-0 | 0.948 | [0.921, 0.965] | 0.940 | 0.955 | 116.1 | +1774.0 | 1.00 / 0.00 |
+| economy_e20 | 400 | 399-1-0 | 0.998 | [0.986, 1.000] | 1.000 | 0.995 | 84.8 | +1288.0 | 1.00 / 0.00 |
+| rush_e20 | 400 | 393-7-0 | 0.983 | [0.964, 0.991] | 0.985 | 0.980 | 123.3 | +1834.2 | 1.00 / 0.00 |
+| economy_fullobs | 400 | 400-0-0 | 1.000 | [0.990, 1.000] | 1.000 | 1.000 | 78.5 | +716.9 | 0.00 / 0.00 |
+| rush_fullobs | 400 | 376-24-0 | 0.940 | [0.912, 0.959] | 0.960 | 0.920 | 111.5 | +1556.6 | 1.00 / 0.00 |
+| rush_e0_sampled | 400 | 378-22-0 | 0.945 | [0.918, 0.963] | 0.960 | 0.930 | 115.8 | +1735.2 | 1.00 / 0.00 |
+
+`scripts/suite.sh --compare` (A = M10 baseline, B = 11b final):
+
+| condition | A | B | diff | z |
+| --- | --- | --- | --- | --- |
+| random_e0 | 1.000 | 1.000 | +0.000 | 0.00 |
+| economy_e0 | 1.000 | 0.998 | -0.002 | -1.00 |
+| rush_e0 | 0.978 | 0.948 | -0.030 | -2.23 (significant) |
+| economy_e20 | 1.000 | 0.998 | -0.002 | -1.00 |
+| rush_e20 | 0.988 | 0.983 | -0.005 | -0.58 |
+| economy_fullobs | 0.995 | 1.000 | +0.005 | +1.42 |
+| rush_fullobs | 0.965 | 0.940 | -0.025 | -1.66 |
+| rush_e0_sampled | 0.970 | 0.945 | -0.025 | -1.75 |
+
+No condition falls more than 5 points below the baseline. The largest drop, rush_e0 at -3.0 points,
+is significant but under the limit. **PASS.**
+
+**11b passes both criteria.**
+
+### Loss review: final weights against rush
+
+`python -m polytopia_rl.losses --checkpoint runs/selfplay_seed1/ckpt_final.pt --opponent rush --count 5 --out runs/selfplay_seed1/losses_rush`:
+
+| seed | seat | final turn | loss type | scores | first city lost |
+| --- | --- | --- | --- | --- | --- |
+| 1000000008 | 1 | 11 | capital_captured | 1690-710 | 5 |
+| 1000000011 | 1 | 8 | capital_captured | 1560-1005 | 8 |
+| 1000000020 | 0 | 14 | capital_captured | 1535-1745 | 14 |
+| 1000000028 | 0 | 17 | capital_captured | 870-2100 | 7 |
+| 1000000043 | 1 | 16 | capital_captured | 1435-1945 | 5 |
+
+5 losses; share by seat: seat 0 0.40, seat 1 0.60.
+
+## What we learned
+
+- **The lower LR fixed the warm-start collapse.** At 1M, rush_e0 was 0.96 (smoke run at lr 3e-4:
+  0.79) and KL averaged 0.07 instead of ~0.2. Q29 R6 was right about the cause.
+- **Self-play first drifted, then improved.** From 2M to ~9M the snapshots got worse against rush
+  (round robin 0.81-0.88) and were no better than snap_0 head to head (0.42-0.56). The 3M snapshot
+  is the weakest player in the pool (981). From ~10M on, Elo climbs steadily (1196 -> 1383) and
+  results against rush recover (0.92-0.97 for 15-19M). The last five snapshots are the five
+  highest rated. The rise coincides with the LR decaying and the pool growing more varied; this
+  single run cannot say which mattered.
+- **The final agent is stronger against the earlier networks, and almost as good against the
+  bots.** It beats M10 0.675 head to head. Against rush it is 2.5-3 points below M10 in every rush
+  condition (only rush_e0 significantly). It is at least as good as M10 everywhere else, including
+  full observability against economy (1.000).
+- **How it loses to rush:** still capital captures only, early to mid game (median turn 9-11,
+  range 5-25). The seat split is more even than M10's (rush_e0: 9 of 21 losses as seat 1, against 8
+  of 9 for M10). Rush can still take the capital in the opening; self-play did not teach a better
+  defence.
+- **Full observability no longer hurts much** (rush_fullobs 0.940, against 0.667 for the smoke
+  run's final weights).
+- **Games are longer and margins larger than M10's** (mean length 78-123 against 67-74, score
+  margins about +300-550 higher). Unlike the smoke run, it still finishes games: no losses by score
+  at the turn cap in any condition.
+- **Entropy rose throughout** (0.5 -> 1.05). The policy became more stochastic, yet greedy play got
+  stronger. Sampled play (`rush_e0_sampled` 0.945) is about the same as greedy (0.948).
+- **Seat 0 is favoured:** 54.3% of the round robin's decisive games, and the final weights win 0.74
+  as seat 0 against snap_0 but 0.61 as seat 1.
+- **Throughput:** 656 sps with one snapshot, down to ~260 sps with 20 (18.1 h of training). The
+  remaining cost is per-snapshot opponent calls on small batches. The deferred options are
+  interleaved rollouts (Q29 R4) and CUDA graphs (Q30 C).
+
+**For the owner's next-step decision** (the brief lists combat preview, a capacity experiment, the
+turn cap, and game v2): the bots are close to solved, apart from early rush capital captures.
+Self-play adds strength against networks, but only after a long drift. Any next self-play run
+inherits ~18 h of training per 20M steps unless the R4/C speed work is done first.
