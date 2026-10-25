@@ -7,7 +7,7 @@ from this file. Update it at the end of every working session.
 
 **Milestone 12, phase A done; phase B next.** Branch `milestone-12`: tests `8d866be` (76 new tests in
 `python/tests/rl/`, 31 mutants all caught, reviewed by the orchestrator), owner answers Q31-Q33 (A) in
-`a5a3cb6`. Waiting on the owner to approve the tests and start `/implement 12`.
+`a5a3cb6`. Tests approved by the owner (2026-10-25). Next: `/implement 12`.
 
 Milestone 11 is closed: gate 11b passed and `milestone-11` is merged into `main` (`540a214`,
 2026-10-24).
@@ -55,7 +55,7 @@ points at `540a214` (M11's lock `03014c8` plus the owner-approved turn-cap test 
 
 ## Waiting on the owner
 
-1. Approve the M12 tests (`8d866be`) and start phase B: either your own session
+1. Start phase B (tests `8d866be` approved 2026-10-25): either your own session
    (`claude --disallowedTools "Edit(crates/*/tests/**)" "Write(crates/*/tests/**)" "Edit(python/tests/rl/**)" "Write(python/tests/rl/**)"`,
    then `/implement 12`), or ask the orchestrator to launch a background agent (guarded by the
    check.sh test lock only).
