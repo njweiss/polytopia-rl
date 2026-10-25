@@ -29,7 +29,7 @@ say so in your final report. The owner answers; the answer goes back into the sp
 
 ## Definition of done
 `./scripts/check.sh` exits 0 (fmt, clippy `-D warnings`, all tests). Run it as `pixi run check`
-so the Python tests run too: pixi is the owner-approved Python environment manager (QUESTIONS.md
+so the Python tests run too: pixi is the owner-approved Python environment manager (DECISIONS.md
 Q17). Then report: what you
 built, anything you deferred or were unsure about (with QUESTIONS.md entry numbers), and the
 exact test output summary. Do not claim done without running it.
