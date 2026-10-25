@@ -14,7 +14,7 @@ experiments themselves are chosen after the 11b result (12b).
    seeds, not across pooled games.
 3. Cut the evaluation time per checkpoint (batched suite) and measure whether running several trainers at
    once raises total throughput.
-4. 12b: run the owner's experiments (chosen after 11b).
+4. 12b: run the owner's experiments (see "Experiments (12b)").
 
 ## Decisions already made (owner)
 
@@ -22,7 +22,13 @@ experiments themselves are chosen after the 11b result (12b).
 - **Training maps vary with the run seed** (seed 1 keeps today's maps exactly).
 - **Statistics:** a per-seed table always, plus Welch's t-test across seeds. Pooling games across seeds
   is not used for arm comparisons (it ignores seed-to-seed variance).
-- **Which experiments:** decided after the 11b result. The harness must not assume a particular one.
+- **Experiments (12b):** one experiment, three arms by three seeds, listed in "Experiments (12b)"
+  (owner, 2026-10-24, after 11b). The harness must not assume this particular experiment.
+- **Each run is scored on its last 3 checkpoints, not only the final weights.** In 11b the late
+  checkpoints swung between 0.80 and 0.94 against rush on the same 50 seeds, so one stop point is noisy.
+- **Learning rate:** the LR anneals linearly over `total_steps`, so a 10M run decays twice as fast as
+  11b's 20M run. Every arm of an experiment uses the same `total_steps`, so arms compare fairly, but a
+  10M base arm is not a replica of 11b.
 - Cheap, profiled speed wins that save experiment time are in scope. Larger structural speed work (Q29 R4
   interleaved rollout, Q30 C CUDA graphs) is not.
 - No new dependencies: numpy, torch and matplotlib (already in the env) only. No scipy.
@@ -32,10 +38,14 @@ experiments themselves are chosen after the 11b result (12b).
 1. **Speed (12a, first):** a batched `evaluate` path used by the suite and the in-training evaluations; a
    concurrency measurement of 1, 2 and 3 trainers running at once.
 2. **Seed-varied training maps** in `train.py`.
-3. **`polytopia_rl/experiment.py`:** the spec format, the `run` launcher (subprocesses, resume, final
-   suite, final round robin) and the `report` aggregation.
-4. **`polytopia_rl/stats.py`:** Welch's t-test with the Student t distribution, written with numpy/math.
-5. `scripts/experiment.sh`, a smoke spec `python/experiments/smoke.json`, and an RL_REPORT section.
+3. **In-training rating fix:** each `eval.jsonl` rating row gains `gap_snapshot_0` (learner minus
+   snapshot 0). In M11's star graph the learner's own rating is fixed by its record against `random`
+   (921.28 at every step of 11b), so only the gap carries information.
+4. **`polytopia_rl/experiment.py`:** the spec format, the `run` launcher (subprocesses, resume, the
+   evaluation of the last checkpoints, the final round robin) and the `report` aggregation.
+5. **`polytopia_rl/stats.py`:** Welch's t-test with the Student t distribution, written with numpy/math.
+6. `scripts/experiment.sh`, the smoke spec `python/experiments/smoke.json`, the 12b spec
+   `python/experiments/selfplay12b.json`, and an RL_REPORT section.
 
 ## Out of scope (do not build)
 
@@ -67,7 +77,8 @@ def welch(a: Sequence[float], b: Sequence[float], alpha: float = 0.05) -> Welch
 def t_sf(t: float, df: float) -> float    # P(T > t) for Student t with df degrees of freedom (df may be non-integer)
 
 # polytopia_rl.experiment
-@dataclass class Spec: name, base_config, seeds, arms, total_steps, init_checkpoint, primary, suite_seeds, tournament_seeds
+@dataclass class Spec: name, base_config, seeds, arms, total_steps, init_checkpoint, primary, suite_seeds, tournament_seeds, eval_checkpoints, h2h_seeds
+def eval_checkpoints(run_dir, k) -> list[str]   # the last k distinct steps among ckpt_{step}.pt, oldest first
 def load_spec(path) -> Spec
 def run_dir(spec, arm, seed) -> str       # runs/exp/{name}/{arm}/seed{seed}
 def run(spec, parallel=1) -> None
@@ -89,11 +100,14 @@ Spec file (`python/experiments/{name}.json`):
   "arms": {"base": {}, "pbot40": {"p_bot": 0.4}},
   "primary": ["rush_e0"],
   "suite_seeds": 200,
-  "tournament_seeds": 100
+  "tournament_seeds": 100,
+  "eval_checkpoints": 3,
+  "h2h_seeds": 100
 }
 ```
 
-`init_checkpoint` is optional (null: train from scratch). `arms` maps an arm name to config overrides
+`init_checkpoint` is optional (null: train from scratch; then there is no head-to-head and no
+`elo_vs_init`). `eval_checkpoints` defaults to 3 and `h2h_seeds` to 100. `arms` maps an arm name to config overrides
 (the `key=value` overrides of `train.main`, as JSON values). `seed` and `total_steps` are set by the
 launcher and may not appear in an arm. Unknown keys raise `ValueError`.
 
@@ -127,27 +141,35 @@ launcher and may not appear in an arm. Unknown keys raise `ValueError`.
 - A run with `ckpt_final.pt` is done and skipped. A run with `latest.pt` but no `ckpt_final.pt` is
   resumed with `--resume DIR/latest.pt`. A run with neither starts fresh. So `run` can be repeated after a
   crash and only redoes the unfinished work.
-- After a run finishes, its final weights get the suite (`suite_seeds`, all `DEFAULT_SUITE` conditions,
-  batched) into `DIR/suite_final/`. When every run is done, one round robin is played among all final
-  weights, the bots, and the init checkpoint (if any) as `init`, with `tournament_seeds` seeds per pair, to
-  `runs/exp/{name}/tournament.json` and `.md`.
+- After a run finishes, each of its `eval_checkpoints(DIR, k)` checkpoints gets the suite (`suite_seeds`,
+  all `DEFAULT_SUITE` conditions, batched) into `DIR/suite_{step}/`, and, when there is an init
+  checkpoint, a head-to-head against it (`play_pair`, `h2h_seeds` seeds, so `2 * h2h_seeds` games) into
+  `DIR/h2h_{step}.json`. A run's value for a metric is the mean over its evaluated checkpoints.
+- When every run is done, one round robin is played among all final weights, the bots, and the init
+  checkpoint (if any) as `init`, with `tournament_seeds` seeds per pair, to
+  `runs/exp/{name}/tournament.json` and `.md`. It is reported but not tested across arms (exploratory).
 - A failed subprocess is reported with its exit code and log path; the other runs continue. `run` exits
   non-zero if any run failed.
 
 ### Report
 
-`report` reads every `suite_final/suite.json`, the experiment tournament and each run's `eval.jsonl`, and
-writes `report.md` and `report.json`:
+`report` reads every run's `suite_{step}/suite.json` and `h2h_{step}.json`, the experiment tournament and
+each run's `eval.jsonl`, and writes `report.md` and `report.json`. A run's value is the mean over its
+evaluated checkpoints; the per-checkpoint values are shown too.
 
-1. A table per suite condition: one row per arm with each seed's win rate, the mean, the sample standard
-   deviation (`ddof=1`) and min to max.
-2. Elo per final policy from the experiment round robin, and per arm the mean and the sd over seeds.
-3. For each pair of arms (spec order, the first arm as `a`), a Welch comparison per condition and for
-   Elo. Only the `primary` conditions and Elo carry the `significant` flag; the rest are reported as
-   exploratory (t and p shown, no flag). The report states the number of comparisons made.
-4. Learning curves: for each in-training suite-subset condition, the win rate against the step for each
+1. A table per suite condition: one row per arm with each seed's value, the mean, the sample standard
+   deviation (`ddof=1`) and min to max, and a second table with every checkpoint's value.
+2. `elo_vs_init`: per run, `400 * log10(s / (1 - s))` of the head-to-head score `s` against the init
+   checkpoint (wins plus half the draws, over games), with `s` clipped to `[0.5 / n, 1 - 0.5 / n]` for
+   `n` games, averaged over the evaluated checkpoints; per arm the mean and the sd over seeds.
+3. Elo per final policy from the experiment round robin (exploratory).
+4. For each pair of arms (spec order, the first arm as `a`), a Welch comparison per suite condition and
+   for `elo_vs_init`. Only the conditions named in `primary` carry the `significant` flag (`primary` may
+   name `elo_vs_init`); the rest are reported as exploratory (t and p shown, no flag). The report states
+   the number of flagged comparisons.
+5. Learning curves: for each in-training suite-subset condition, the win rate against the step for each
    arm, as the mean over seeds with a min to max band (`report_curves.png`, matplotlib).
-5. Each run's obs and rules hashes. `report` refuses to mix runs with different `obs_hash` values.
+6. Each run's obs and rules hashes. `report` refuses to mix runs with different `obs_hash` values.
 
 ### Welch's t-test
 
@@ -169,9 +191,10 @@ memory forbids it.
 ## Clarifications (owner: confirm or overrule)
 
 - **M1:** each run seed owns 10M training map seeds; run seeds 1 to 100.
-- **M2:** arms are compared on final weights only (the suite at the end and the round robin). The
-  learning curves are shown but not tested.
-- **M3:** only the spec's `primary` conditions and Elo get a significance flag, named before the run, so
+- **M2:** arms are compared on the mean over each run's last 3 checkpoints (the suite and the
+  head-to-head against the init checkpoint). The round robin and the learning curves are shown but not
+  tested.
+- **M3:** only the spec's `primary` metrics get a significance flag, named before the run, so
   eight conditions times several arm pairs do not produce false positives by chance. The other numbers
   are exploratory.
 - **M4:** self-play arms warm-start from the same M10 checkpoint, so the spread measures self-play
@@ -210,16 +233,35 @@ memory forbids it.
 5. **Spec:** loading, defaults, unknown keys, `seed`/`total_steps` in an arm rejected, `run_dir` layout.
 6. **Launcher (tiny, CPU, the M10/M11 fake-env style or a tiny real config):** the commands built per
    (arm, seed) (exact argv, `command.txt`); skip/resume/fresh by the files present; `--parallel` never
-   exceeds K (mock subprocess); a failing run does not stop the others and `run` exits non-zero; the final
-   suite and the round robin are written.
-7. **Report:** on synthetic run directories (hand-written `suite.json`, `eval.jsonl`, tournament): the
-   per-seed tables, mean and sd, the flags only on primary conditions and Elo, the comparison count,
-   refusing mixed `obs_hash`, and the curves PNG exists.
+   exceeds K (mock subprocess); a failing run does not stop the others and `run` exits non-zero;
+   `eval_checkpoints` picks the last k distinct steps (and fewer when a run has fewer); the per-checkpoint
+   suites, head-to-heads and the round robin are written.
+7. **Report:** on synthetic run directories (hand-written `suite.json`, `h2h_{step}.json`, `eval.jsonl`,
+   tournament): the per-checkpoint means, the per-seed tables, mean and sd, `elo_vs_init` with its
+   clipping, the flags only on `primary` metrics, the comparison count, refusing mixed `obs_hash`, and
+   the curves PNG exists.
+8. **Rating gap:** a rating row's `gap_snapshot_0` equals `learner - snapshot_0` on a mocked rating.
 
 Mutants to aim for: batched path stepping a finished game, or reordering `per_game`; the seed base
 ignoring the seed or off by one run; overlap check missing; Welch with pooled variance (Student's t) or
-`ddof=0`; `t_sf` one-sided where two-sided is required; flags on non-primary conditions; resume restarting
-a finished run; `--parallel` ignored.
+`ddof=0`; `t_sf` one-sided where two-sided is required; flags on non-primary metrics; only the final
+checkpoint evaluated; the per-run mean taken over games pooled across checkpoints of different runs;
+`elo_vs_init` without clipping (infinite at 100%); resume restarting a finished run; `--parallel` ignored.
+
+## Experiments (12b)
+
+`python/experiments/selfplay12b.json`: base config `python/configs/selfplay.json` (the 11b config), init
+checkpoint `runs/curriculum_seed1/latest.pt`, seeds 1 to 3, `total_steps` 10M, primary metrics
+`rush_e0` and `elo_vs_init`.
+
+| arm | overrides | question |
+| --- | --- | --- |
+| `base` | none | How much do runs of the 11b config differ by seed alone? (the spread of this arm) |
+| `pbot40` | `p_bot: 0.4` | Does more bot play prevent the drift against rush that 11b showed from 2M to 9M? |
+| `ent003` | `ent_coef: 0.003` | Entropy rose from 0.5 to 1.15 over 11b while KL fell to 0. Does a smaller entropy bonus give a stronger, sharper policy? |
+
+Nine runs. At 11b's ~300-650 sps each run takes about 6-8 h alone; the concurrency measurement sets
+how many run at once.
 
 ## Gate
 
@@ -230,8 +272,8 @@ measurement table; (3) `scripts/experiment.sh run python/experiments/smoke.json`
 `total_steps=200000` (2 arms x 2 seeds), then `report`, end to end, with the report pasted in RL_REPORT.
 No performance threshold.
 
-**12b (owner):** the experiments chosen after 11b, each 3 seeds x 10M steps unless the spec says
-otherwise, reported with `report`. The owner reads the per-seed tables before the significance flags.
+**12b (owner):** `scripts/experiment.sh run python/experiments/selfplay12b.json`, then `report`, pasted
+into RL_REPORT with a short "what we learned". The owner reads the per-seed tables before the significance flags.
 
 ## Notes for the implementer
 
