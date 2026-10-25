@@ -579,3 +579,127 @@ is significant but under the limit. **PASS.**
 turn cap, and game v2): the bots are close to solved, apart from early rush capital captures.
 Self-play adds strength against networks, but only after a long drift. Any next self-play run
 inherits ~18 h of training per 20M steps unless the R4/C speed work is done first.
+
+# Milestone 12a: multi-seed experiment tools and gate
+
+Run on the owner's machine (RTX 4060 8 GB, WSL2 with 12 GB, 12 threads) on 2026-10-25, code at commit
+`69412b6` (branch `milestone-12`). Build hashes: obs `d5f9b1033cfd55ca`, rules `a8b52b91eae34503`.
+`pixi run check` passed first (Rust 534 tests, Python 26 + 264).
+
+New: the batched `evaluate` path (used by the suite CLI, `scripts/suite.sh` and the in-training
+suite subset), map seeds that vary with the run seed (`train_seed_base`), `gap_snapshot_0` in the
+rating rows, `polytopia_rl.stats` (Welch's t-test) and `polytopia_rl.experiment` with
+`scripts/experiment.sh run|report SPEC`.
+
+## 1. Batched suite on the M10 `latest.pt`
+
+`pixi run scripts/suite.sh runs/curriculum_seed1/latest.pt --out runs/curriculum_seed1/suite_latest_batched`
+(200 seeds, 400 games per condition): **28 s, against 22 min** for the sequential M11 baseline
+(`runs/curriculum_seed1/suite_latest/`), about 48x faster.
+
+| condition | W-L-D baseline | W-L-D batched | games with a different outcome | games that differ at all | mean len (base / batched) |
+| --- | --- | --- | --- | --- | --- |
+| random_e0 | 400-0-0 | 400-0-0 | 0 | 8 | 74.36 / 74.12 |
+| economy_e0 | 400-0-0 | 400-0-0 | 0 | 3 | 70.00 / 70.11 |
+| rush_e0 | 391-9-0 | 391-9-0 | 0 | 4 | 67.04 / 67.07 |
+| economy_e20 | 400-0-0 | 400-0-0 | 0 | 4 | 69.41 / 69.45 |
+| rush_e20 | 395-5-0 | 395-5-0 | 0 | 6 | 68.26 / 68.18 |
+| economy_fullobs | 398-2-0 | 398-2-0 | 0 | 7 | 67.88 / 67.83 |
+| rush_fullobs | 386-14-0 | 386-14-0 | 0 | 9 | 66.68 / 66.83 |
+| rush_e0_sampled | 388-12-0 | 391-9-0 | 21 | 383 | 69.92 / 70.86 |
+
+**Greedy rows: the same W-L-D and the same outcome in all 2,800 games, but not game for game
+identical.** 41 games (1.5%) differ in length and score diff, so `mean_length` and
+`mean_score_diff` move slightly. The cause is TF32 convolutions on the GPU (PyTorch's default
+`cudnn.allow_tf32 = True`). Their rounding depends on the batch size, so a near-tie argmax can flip.
+Checked on 50 seeds of random_e0 and economy_e0 (`runs/gate12a/diag*.py`):
+
+| device / setting | sequential vs M11 baseline | batched vs sequential |
+| --- | --- | --- |
+| GPU, TF32 on (default) | identical | 1 of 200 games differ |
+| GPU, TF32 off | 3 of 200 differ | identical |
+| CPU | 3 of 200 differ | identical |
+
+So the batched path itself plays the same games (the CPU tests check this exactly). On the GPU,
+exact identity needs TF32 off, which would also move the baseline. This is **docs/QUESTIONS.md Q34**
+(owner decision; nothing changed in the code). `rush_e0_sampled` is equal in distribution only, as
+the brief expects (M6): 0.978 against 0.970.
+
+## 2. Concurrency measurement
+
+1, 2 and 3 copies of the 11b config (`python/configs/selfplay.json`) started together from the M10
+checkpoint, seeds 1 to N, `OMP_NUM_THREADS=1`, 36 updates each (`total_steps=147456`,
+`tournament_seeds=1` so the end-of-run round robin does not overlap the others' measured updates);
+script `runs/concurrency/measure.sh`. Total sps is the sum over trainers of each trainer's mean `sps`
+over updates 5 to 30. Peak RSS is from `/usr/bin/time -v`. GPU memory is the peak whole-device use
+from `nvidia-smi` (1,831 MiB idle; WSL does not report memory per process).
+
+| trainers | total sps | sps per trainer | peak RSS per trainer (GiB) | peak GPU memory MiB |
+| --- | --- | --- | --- | --- |
+| 1 | 804 | 804 | 1.95 | 2344 (513 above idle) |
+| 2 | 1264 | 648, 616 | 1.94, 1.94 | 2865 (1034 above idle) |
+| 3 | **1570** | 511, 526, 532 | 1.96, 1.95, 1.94 | 3386 (1555 above idle) |
+
+Three trainers give 1.95x the throughput of one. Memory allows it: each trainer is about 2 GiB RSS
+and 0.5 GiB of GPU memory. During the smoke experiment below (3 trainers plus the launcher
+evaluating) the whole machine peaked at 8.5 GiB used of 11.7 and 3.4 GiB GPU. **`scripts/experiment.sh`
+defaults to `--parallel 3`.** The pool grows during a real run, and so does RSS (11b's RSS late in
+the run was not measured), so watch memory in the first 12b hours.
+These are warm-start rates with a pool of 1. 11b's rate fell to ~260 sps at 20 snapshots, so a
+10M run with 3 at once will be slower per run than this table suggests.
+
+## 3. Smoke experiment
+
+`pixi run scripts/experiment.sh run python/experiments/smoke.json` (default `--parallel 3`), then
+`report`. Spec: arms `base` and `pbot40` (`p_bot` 0.4), seeds 1 and 2, `total_steps` 200,000 (Q32
+A; 48 updates = 196,608 steps), primary `rush_e0`. Both arms also set `eval_every` and
+`snapshot_every` 65,536, `rating_every` 131,072 and `rating_seeds` 10, so that 200k steps give three
+checkpoints, in-training suite rows, a pool and one rating row. Evaluation sizes, kept small for the
+smoke: `suite_seeds` 50, `h2h_seeds` 50, `tournament_seeds` 20 (12b uses 200 / 100 / 100).
+
+**Wall time 22 min** for the whole run: three trainers together finished at about 9 min (training
+420-450 sps each, plus each run's own in-training evaluations and its 100-seed pool round robin). The
+fourth started at about 11 min and finished at 18 min (556 sps). Each run's evaluation (3 checkpoints
+x suite + head-to-head) took 2 to 5 min, and the 8-player round robin 1.5 min. `report` took 3 s.
+Seed 2's runs trained on maps from 10,000,000 (`seed_base` in `ckpt_final.pt`), seed 1's from 0.
+`command.txt` holds the command and the git commit. A repeated `run` launches nothing (tested).
+
+Report (`runs/exp/smoke/report.md`; per-checkpoint tables omitted here):
+
+| metric | base seed 1 | base seed 2 | base mean (sd) | pbot40 seed 1 | pbot40 seed 2 | pbot40 mean (sd) |
+| --- | --- | --- | --- | --- | --- | --- |
+| random_e0 | 1.000 | 1.000 | 1.000 (0.000) | 1.000 | 0.997 | 0.998 (0.002) |
+| economy_e0 | 1.000 | 1.000 | 1.000 (0.000) | 0.990 | 0.997 | 0.993 (0.005) |
+| rush_e0 | 0.970 | 0.990 | 0.980 (0.014) | 0.973 | 0.980 | 0.977 (0.005) |
+| economy_e20 | 1.000 | 1.000 | 1.000 (0.000) | 1.000 | 0.993 | 0.997 (0.005) |
+| rush_e20 | 0.990 | 0.993 | 0.992 (0.002) | 0.990 | 0.990 | 0.990 (0.000) |
+| economy_fullobs | 0.993 | 0.997 | 0.995 (0.002) | 1.000 | 0.993 | 0.997 (0.005) |
+| rush_fullobs | 0.963 | 0.947 | 0.955 (0.012) | 0.950 | 0.963 | 0.957 (0.009) |
+| rush_e0_sampled | 0.973 | 0.973 | 0.973 (0.000) | 0.937 | 0.970 | 0.953 (0.024) |
+| elo_vs_init | -26.7 | 7.0 | -9.9 (23.8) | 4.6 | 30.4 | 17.5 (18.2) |
+
+Welch, pbot40 minus base (2 seeds per arm, so df is about 1-2 and only huge effects could show):
+
+| metric | diff | t | df | p | flag |
+| --- | --- | --- | --- | --- | --- |
+| rush_e0 (primary) | -0.003 | -0.32 | 1.2 | 0.797 | not detected |
+| rush_e0_sampled | -0.020 | -1.20 | 1.0 | 0.442 | exploratory |
+| elo_vs_init | +27.4 | +1.29 | 1.9 | 0.333 | exploratory |
+| economy_e0 | -0.007 | -2.00 | 1.0 | 0.295 | exploratory |
+
+1 flagged comparison (the primary one). The other conditions differ by at most 0.003 (p >= 0.5).
+
+Round robin of the final weights (20 seeds = 40 games per pair, exploratory): base_seed2 1129,
+pbot40_seed2 1126, base_seed1 1119, init 1093, pbot40_seed1 1080, rush 566, economy 405, random 0.
+
+The rating row in base/seed1's `eval.jsonl` at 131,072: learner 645.1, snapshot_0 611.9,
+`gap_snapshot_0` +33.2.
+
+**Smoke verdict:** the harness works end to end: launch with 3 at once and refill, per-checkpoint
+suites and head-to-heads, the round robin, the report, the curves (`report_curves.png`) and the
+hashes. 200k steps is far too short to separate the arms, as expected. Each run's own end-of-run pool
+round robin (`tournament_seeds` 100 in the base config) costs a few minutes per run. It is unchanged
+here, since the 11b config may not change.
+
+**For 12b:** `pixi run scripts/experiment.sh run python/experiments/selfplay12b.json` (9 runs, 3 at
+once), then `report`.
