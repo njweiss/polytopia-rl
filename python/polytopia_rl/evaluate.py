@@ -57,9 +57,30 @@ def _play(policy_fn, env, seat: int, greedy: bool, watch=None) -> dict:
             watch(env)
         if terminated or truncated:
             break
+    return _game_result(env, seat, length)
+
+
+def _game_result(env, seat: int, length: int) -> dict:
     info = env.info()
     scores = info["scores"]
     return {"seed": info["seed"], "seat": seat, "outcome": agent_outcome(info["outcome"], seat), "length": length, "score_diff": scores[seat] - scores[1 - seat], "turn": info["turn"]}
+
+
+def _play_batched(batch_fn, envs: list, seats: list) -> list:
+    """All the games together in rounds: each round, one `batch_fn` call over the live games in game
+    order, then one step of each; a game leaves when it terminates or truncates."""
+    length = [0] * len(envs)
+    live = list(range(len(envs)))
+    while live:
+        actions = batch_fn([envs[g] for g in live])
+        still = []
+        for g, (actor, kind, arg) in zip(live, actions):
+            _, _, terminated, truncated = envs[g].step_factored(actor, kind, arg)
+            length[g] += 1
+            if not (terminated or truncated):
+                still.append(g)
+        live = still
+    return [_game_result(env, seat, n) for env, seat, n in zip(envs, seats, length)]
 
 
 def evaluate(policy_fn, opponent: str, seeds: int, env_kwargs: dict, greedy: bool, *, seed_base: int = EVAL_SEED_BASE, epsilon: float = 0.0, batch_fn=None) -> EvalResult:
@@ -71,16 +92,19 @@ def evaluate(policy_fn, opponent: str, seeds: int, env_kwargs: dict, greedy: boo
     `batch_fn(envs) -> one (actor, kind, arg) per env` (greediness bound in; docs/MILESTONE_12
     "Batched evaluation"): when given, `policy_fn` is ignored and all the games run together in
     rounds, one `batch_fn` call per round over the live games in game order."""
-    if batch_fn is not None:
-        raise NotImplementedError("milestone 12: batched evaluate")
     kwargs = {k: v for k, v in env_kwargs.items() if k not in ("opponent", "opponent_epsilon", "agent_seat")}
-    per_game = []
-    for j in range(seeds):
-        for seat in (0, 1):
-            # Same seed, same map; only the side changes.
-            env = polytopia_sim.Env(**kwargs, opponent=opponent, opponent_epsilon=epsilon, agent_seat=seat)
-            env.reset(seed_base + j)
-            per_game.append(_play(policy_fn, env, seat, greedy))
+
+    def make_env(j, seat):
+        # Same seed, same map; only the side changes.
+        env = polytopia_sim.Env(**kwargs, opponent=opponent, opponent_epsilon=epsilon, agent_seat=seat)
+        env.reset(seed_base + j)
+        return env
+
+    if batch_fn is not None:
+        games = [(j, seat) for j in range(seeds) for seat in (0, 1)]
+        per_game = _play_batched(batch_fn, [make_env(j, seat) for j, seat in games], [seat for _, seat in games])
+    else:
+        per_game = [_play(policy_fn, make_env(j, seat), seat, greedy) for j in range(seeds) for seat in (0, 1)]
     games = len(per_game)
     wins = sum(g["outcome"] == "win" for g in per_game)
     losses = sum(g["outcome"] == "loss" for g in per_game)

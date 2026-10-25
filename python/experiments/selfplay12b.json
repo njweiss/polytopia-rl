@@ -1,0 +1,13 @@
+{
+  "name": "selfplay12b",
+  "base_config": "python/configs/selfplay.json",
+  "init_checkpoint": "runs/curriculum_seed1/latest.pt",
+  "seeds": [1, 2, 3],
+  "total_steps": 10000000,
+  "arms": {"base": {}, "pbot40": {"p_bot": 0.4}, "ent003": {"ent_coef": 0.003}},
+  "primary": ["rush_e0", "elo_vs_init"],
+  "suite_seeds": 200,
+  "tournament_seeds": 100,
+  "eval_checkpoints": 3,
+  "h2h_seeds": 100
+}

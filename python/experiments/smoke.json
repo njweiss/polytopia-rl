@@ -1,0 +1,16 @@
+{
+  "name": "smoke",
+  "base_config": "python/configs/selfplay.json",
+  "init_checkpoint": "runs/curriculum_seed1/latest.pt",
+  "seeds": [1, 2],
+  "total_steps": 200000,
+  "arms": {
+    "base": {"eval_every": 65536, "snapshot_every": 65536, "rating_every": 131072, "rating_seeds": 10},
+    "pbot40": {"p_bot": 0.4, "eval_every": 65536, "snapshot_every": 65536, "rating_every": 131072, "rating_seeds": 10}
+  },
+  "primary": ["rush_e0"],
+  "suite_seeds": 50,
+  "tournament_seeds": 20,
+  "eval_checkpoints": 3,
+  "h2h_seeds": 50
+}

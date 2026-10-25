@@ -45,7 +45,16 @@ TRAIN_SEEDS_PER_RUN = 10_000_000  # run seed s trains on map seeds [train_seed_b
 def train_seed_base(seed: int) -> int:
     """`(seed - 1) * TRAIN_SEEDS_PER_RUN`; `ValueError` unless `1 <= seed <= 100` (docs/MILESTONE_12
     "Seed-varied training maps")."""
-    raise NotImplementedError("milestone 12: train_seed_base")
+    if not 1 <= seed <= 100:
+        raise ValueError(f"run seed {seed} is outside 1..100")
+    return (seed - 1) * TRAIN_SEEDS_PER_RUN
+
+
+def _check_run_seeds(vec, limit: int) -> None:
+    """Raise once an episode in progress uses a map seed of the next run seed's range."""
+    seeds = vec.state_dict()["seeds"]
+    if max(seeds) >= limit:
+        raise ValueError(f"training seed {max(seeds)} reaches the next run seed's range (>= {limit})")
 
 
 def resolve_device(device: str) -> str:
@@ -147,7 +156,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             net.load_state_dict(ck.model)
         if cfg.selfplay:
             pool.add(net.state_dict(), 0)
-        vec = new_vec(0)
+        vec = new_vec(train_seed_base(cfg.seed))
         vec.reset_all()
     else:
         ck = load_checkpoint(resume, spec=spec)
@@ -167,6 +176,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
         vec = new_vec(ck.seed_index["seed_base"])
         vec.load_state_dict(ck.seed_index)
         _set_rng_state(ck.rng_state, gen)
+    seed_limit = train_seed_base(cfg.seed) + TRAIN_SEEDS_PER_RUN  # no overlap with the next run seed
+    _check_run_seeds(vec, seed_limit)
     buffer = RolloutBuffer(cfg.num_steps, cfg.num_envs, spec, device=device)
 
     def save(names: list[str]) -> None:
@@ -208,6 +219,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
 
             t0 = time.perf_counter()
             stats = collect_rollout(net, vec, buffer, gen)
+            _check_run_seeds(vec, seed_limit)
             t1 = time.perf_counter()
             m = train_update(net, optimizer, buffer, cfg, gen)
             t2 = time.perf_counter()
@@ -254,7 +266,14 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             if evaluated and cfg.selfplay:
                 # The suite subset for the current weights; the regression flag does not stop the run.
                 subset = [c for c in DEFAULT_SUITE if c.name in SELFPLAY_SUBSET]
-                res = run_suite(net_policy(net, device=device), subset, cfg.eval_seeds, env_kwargs_of(cfg), step=global_step)
+                res = run_suite(
+                    net_policy(net, device=device),
+                    subset,
+                    cfg.eval_seeds,
+                    env_kwargs_of(cfg),
+                    step=global_step,
+                    make_batch_fn=lambda greedy: net_batch_policy(net, torch.Generator().manual_seed(0), greedy=greedy, device=device),
+                )
                 rates = {name: r.win_rate for name, r in res.conditions.items()}
                 erow = {
                     "type": "suite",
@@ -339,8 +358,10 @@ def learner_ratings(net, pool, make_policy, seeds, env_kwargs, device) -> dict:
         games[0, j] = games[j, 0] = r.games
     names = [p.name for p in players]
     ratings = fit_ratings(wins, games, anchor=anchor_of(names))
+    learner, snapshot_0 = float(ratings[0]), float(ratings[names.index(pool.entries[0].name)])
     return {
-        "rating": {"learner": float(ratings[0]), "snapshot_0": float(ratings[names.index(pool.entries[0].name)])},
+        "rating": {"learner": learner, "snapshot_0": snapshot_0},
+        "gap_snapshot_0": learner - snapshot_0,
         "players": {name: float(r) for name, r in zip(names, ratings)},
         "learner_score": {names[j]: wins[0, j] / games[0, j] for j in range(1, n)},
     }
