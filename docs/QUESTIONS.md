@@ -52,3 +52,11 @@ Append entries below. Format:
   B: other choices (the tests change in a new phase A commit).
 - Agent's pick and why: A: each is the plain reading of the brief or the existing code's convention. No earlier test needed a change: none pins absolute training seeds for `seed != 1`.
 - Owner answer: A on 2026-10-25
+
+## Q34: Batched greedy evaluation on the GPU is not game-for-game identical (TF32 convolutions)
+
+- Needed for: milestone 12, "Batched evaluation" ("Greedy batched results equal the sequential results game for game") and gate 12a (1) ("greedy rows identical to the M11 baseline").
+- Ambiguity: on this machine (RTX 4060) the batched suite on the M10 `latest.pt` gives the same W-L-D and the same outcome in every one of the 2,800 greedy games, but 41 games (3 to 9 of 400 per condition) differ in length and score diff, so `mean_length` and `mean_score_diff` differ slightly (e.g. random_e0 74.36 vs 74.12). Cause, from `runs/gate12a/diag*.py` (50 seeds, random_e0 and economy_e0): PyTorch's default `torch.backends.cudnn.allow_tf32 = True` runs the convolutions in TF32, whose rounding depends on the batch size, so a near-tie argmax can flip. With TF32 on (the default, and how the M11 baseline was made) sequential reproduces the baseline exactly but batched differs in 1 of 200 games. With TF32 off, batched equals sequential exactly, but both differ from the baseline in 3 of 200 games, matching the CPU. On the CPU, batched equals sequential exactly; the phase A tests check exactly this.
+- Options: A: accept as is (the tests check identity on the CPU; on the GPU the greedy W-L-D and outcomes match and a few game lengths differ through TF32 numerics); record this in RL_REPORT. B: set `torch.backends.cudnn.allow_tf32 = False` for evaluation (or globally), so batched equals sequential on the GPU too. The M11 baseline and the earlier suites would then need to be rerun under the new numerics, and training numerics change if the setting is global. C: something else.
+- Agent's pick and why: A for now. It is the only option that needs no code beyond the brief and no new baselines, and no outcome changed. B is a small change if the owner wants exact GPU identity from now on (evaluation only, so training is unaffected). Nothing changed in the code for this.
+- Owner answer:
