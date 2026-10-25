@@ -1,6 +1,7 @@
 # Open questions from agents
 
-Only open questions live here. Once the owner answers one, it moves to `docs/DECISIONS.md` as one
+Only open questions live here, plus the answered ones of the milestone in progress (the implementer
+needs their full text). At the end of each milestone, answered entries move to `docs/DECISIONS.md` as one
 line (Q1-Q30 are there; their full text is in `git show 540a214:docs/QUESTIONS.md`). Number new
 entries from **Q31**.
 
@@ -27,7 +28,7 @@ Append entries below. Format:
   6. The rating row's `gap_snapshot_0` is a top-level key of the row, next to `rating`.
   B: another layout (the tests change in a new phase A commit).
 - Agent's pick and why: A. It reuses the existing JSON forms (`PairResult`, `write_tournament`, `suite_to_json`) and keeps the report machine-readable; `None` makes "no flag" explicit rather than a `False` that reads like a negative result.
-- Owner answer:
+- Owner answer: A on 2026-10-25
 
 ## Q32: `total_steps` of the smoke spec
 
@@ -35,7 +36,7 @@ Append entries below. Format:
 - Ambiguity: the gate runs `scripts/experiment.sh run python/experiments/smoke.json` "with `total_steps=200000`", but the CLI (`run SPEC [--parallel K] [--only ARM]`) has no override, and the brief's example `smoke.json` shows `10000000`.
 - Options: A: `smoke.json` itself has `"total_steps": 200000` / B: the CLI gains a `total_steps=N` override / C: the example's 10M, edited by hand for the gate.
 - Agent's pick and why: A (no new CLI surface; a smoke spec is for smoke runs). The tests pin only the smoke spec's name, base config, init checkpoint, seeds [1, 2], two arms and valid primary metrics, so any option passes them.
-- Owner answer:
+- Owner answer: A on 2026-10-25
 
 ## Q33: Launcher and trainer details the M12 tests assume
 
@@ -50,4 +51,4 @@ Append entries below. Format:
   6. Not tested: `--only ARM`, the CLI's default `--parallel`, whether a run that was already done is re-evaluated, the round robin after a failed run, `df` in the zero-variance case, the git commit in `command.txt`, the curves beyond the PNG existing.
   B: other choices (the tests change in a new phase A commit).
 - Agent's pick and why: A: each is the plain reading of the brief or the existing code's convention. No earlier test needed a change: none pins absolute training seeds for `seed != 1`.
-- Owner answer:
+- Owner answer: A on 2026-10-25
