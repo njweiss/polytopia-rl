@@ -47,30 +47,28 @@ and "Milestone 12b"; experiment data in `runs/exp/selfplay12b/`.
 
 ## Waiting on the owner
 
-1. Adopt `p_bot` 0.4 as the self-play default (orchestrator recommends yes: consistent direction, no
-   cost; not significant).
-2. Pick the next step. Orchestrator's recommendation: one more experiment before M13, the LR schedule
-   (for example LR decayed over 10M vs over 20M, or a warm-up), with `pbot40` as the base; the
-   alternative is 5 seeds of `base` vs `pbot40`. Then the deferred speed work (Q30 C CUDA graphs, Q29 R4
-   interleaved rollout) before or with M13, since the scaling runs multiply the compute.
+1. Read `docs/MILESTONE_12c.md` (LR schedule experiment: arms `decay10`, `decay20`, `const`; clarifications
+   N1-N3, mainly whether to reuse 12b's `pbot40` runs as `decay10`), then say go for phase A.
 
 ## Open questions
 
 - `QUESTIONS.md`: none open (next number Q35). Q1-Q34 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (rev 394).
-- `.git/tests-lock` points at `8d866be` (M12's test commit).
+- `.git/tests-lock` points at `6a8b487` (the owner-approved `p_bot` 0.4 test update).
+- Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
-1. Owner: decide items 1 and 2 above.
-2. Orchestrator: write the next brief (an experiment spec, or M13 / a speed milestone) from that decision.
+1. Owner: review the 12c brief; then `/write-tests 12c` and `/implement 12c` (small; may run back to back).
+2. Orchestrator: after 12c, draft the speed milestone (Q30 C CUDA graphs, Q29 R4) and M13.
 3. Orchestrator: re-export `docs/SPEC.md` if the Claude Doc changes.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-10-27 | `p_bot` 0.4 adopted (tests `6a8b487`, config `4c6740f`, gate green). M12c brief (LR schedule experiment) drafted. |
 | 2026-10-27 | 12b done and reported (RL_REPORT "Milestone 12b"); M12 closed; Q31-Q34 moved to DECISIONS.md. |
 | 2026-10-25 | M12 phase A committed (8d866be) and reviewed; Q31-Q33 answered A. WSL restarted with 12 GB. |
 | 2026-10-24 | Q1-Q30 moved to `docs/DECISIONS.md`; QUESTIONS.md keeps only open items (next Q31). |
