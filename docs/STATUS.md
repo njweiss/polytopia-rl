@@ -5,10 +5,14 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
-**Milestone 12 is closed (2026-10-26); the next step is the owner's decision.** `milestone-12` is merged
-into `main` (fast-forward, then `9e5fd5d` Q34 answer). Results: `docs/RL_REPORT.md` "Milestone 12a"
-and "Milestone 12b"; experiment data in `runs/exp/selfplay12b/`.
+**Milestone 12c (LR schedule experiment): code merged into `main` (`7af81d4`, 2026-10-27); experiment
+12c-b ready for the owner to launch.** Tests `4a374e7` (15 tests, 8 mutants caught), implementation
+`7af81d4`, `pixi run check` green (279 Python RL tests). `runs/exp/selfplay12c/decay10/seed1..3` are
+hard links of 12b's `pbot40` runs (N1), so the launcher trains only `decay20` and `const` (6 runs,
+~20 h). Launch in tmux or with nohup:
+`pixi run scripts/experiment.sh run python/experiments/selfplay12c.json`, then `report`.
 
+Milestone 12 (closed 2026-10-26):
 - **12a:** batched suite 22 min -> 28 s (greedy W-L-D identical; Q34 TF32 length differences accepted);
   3 trainers at once give 1,570 sps total against 804 for one (`--parallel 3` default); smoke
   experiment ran end to end.
@@ -47,27 +51,27 @@ and "Milestone 12b"; experiment data in `runs/exp/selfplay12b/`.
 
 ## Waiting on the owner
 
-1. Read `docs/MILESTONE_12c.md` (LR schedule experiment: arms `decay10`, `decay20`, `const`; clarifications
-   N1-N3, mainly whether to reuse 12b's `pbot40` runs as `decay10`), then say go for phase A.
+1. Launch 12c-b (command above) and run `report` when it finishes.
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q35). Q1-Q34 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q36). Q1-Q35 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (rev 394).
-- `.git/tests-lock` points at `6a8b487` (the owner-approved `p_bot` 0.4 test update).
+- `.git/tests-lock` points at `4a374e7` (M12c's test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
-1. Owner: review the 12c brief; then `/write-tests 12c` and `/implement 12c` (small; may run back to back).
-2. Orchestrator: after 12c, draft the speed milestone (Q30 C CUDA graphs, Q29 R4) and M13.
+1. Owner: launch 12c-b; orchestrator reviews the report and writes the RL_REPORT section.
+2. Orchestrator: draft the speed milestone (Q30 C CUDA graphs, Q29 R4) and M13 (schedule and run length from 12c).
 3. Orchestrator: re-export `docs/SPEC.md` if the Claude Doc changes.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-10-27 | M12c tests and implementation merged (7af81d4); Q35 answered A; 12b pbot40 runs linked as 12c decay10. |
 | 2026-10-27 | `p_bot` 0.4 adopted (tests `6a8b487`, config `4c6740f`, gate green). M12c brief (LR schedule experiment) drafted. |
 | 2026-10-27 | 12b done and reported (RL_REPORT "Milestone 12b"); M12 closed; Q31-Q34 moved to DECISIONS.md. |
 | 2026-10-25 | M12 phase A committed (8d866be) and reviewed; Q31-Q33 answered A. WSL restarted with 12 GB. |

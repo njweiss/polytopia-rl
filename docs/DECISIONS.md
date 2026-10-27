@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) and `7542ffa` for Q31-Q34.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 and `7af81d4` for Q35.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -41,3 +41,4 @@ spec section, or the brief when the answer is an implementation detail.
 | Q32 | 2026-10-25 | `total_steps` of the smoke spec | `smoke.json` holds 200000 itself | M12 brief |
 | Q33 | 2026-10-25 | Launcher and trainer details | Overlap check raises `ValueError`; `Popen` launcher; `run` exits non-zero after the others finish; `make_batch_fn` once per condition | M12 brief |
 | Q34 | 2026-10-25 | Batched greedy GPU evaluation is not game-for-game identical (TF32) | Accept: W-L-D and outcomes match; a few game lengths differ through TF32 numerics; documented in RL_REPORT | RL_REPORT (12a) |
+| Q35 | 2026-10-27 | Scope of the `lr_anneal_steps < total_steps` check | Raise regardless of `anneal_lr`; checked in `PPOConfig.from_json` (so also after `load_config` overrides) | M12c brief; `config.py` |
