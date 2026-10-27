@@ -703,3 +703,82 @@ here, since the 11b config may not change.
 
 **For 12b:** `pixi run scripts/experiment.sh run python/experiments/selfplay12b.json` (9 runs, 3 at
 once), then `report`.
+
+# Milestone 12b: self-play experiment (`selfplay12b`)
+
+`pixi run scripts/experiment.sh run python/experiments/selfplay12b.json` (code `9e5fd5d`, build obs
+`d5f9b1033cfd55ca`, rules `a8b52b91eae34503`), then `report`: `runs/exp/selfplay12b/report.md`,
+`report.json`, `report_curves.png`, `tournament.md`. Three arms by three seeds, 10M steps each, warm
+start from the M10 `latest.pt`, 3 trainers at once. Wall time about 36 h (2026-10-25 to 10-26): `base`
+about 14.5 h including one interruption (the three `base` runs resumed from `latest.pt`), `pbot40`
+about 9.5 h, `ent003` about 10.5 h. Per-trainer speed fell from ~550 sps (pool of 2) to ~180-250 sps
+(pool of 10).
+
+| arm | overrides | question |
+| --- | --- | --- |
+| `base` | none (the 11b config) | how far apart are seeds of one config? |
+| `pbot40` | `p_bot: 0.4` | does more bot play prevent the drift against rush? |
+| `ent003` | `ent_coef: 0.003` | does a smaller entropy bonus give a stronger policy? |
+
+Each run's value is the mean over its checkpoints at 8.0M, 9.0M and 10.0M (400-game suite each;
+`elo_vs_init` from 200 head-to-head games against the M10 checkpoint each). Seed `k` of every arm
+trains on the same maps from the same starting weights, so arms can also be compared seed by seed.
+
+## Primary metrics
+
+| arm | rush_e0 (seeds 1, 2, 3) | mean | sd | elo_vs_init (seeds 1, 2, 3) | mean | sd |
+| --- | --- | --- | --- | --- | --- | --- |
+| base | 0.958, 0.935, 0.848 | 0.913 | 0.058 | 192, 142, 208 | 181 | 34 |
+| pbot40 | 0.966, 0.936, 0.925 | 0.942 | 0.021 | 207, 113, 184 | 168 | 49 |
+| ent003 | 0.893, 0.877, 0.882 | 0.884 | 0.008 | 182, 210, 177 | 190 | 18 |
+
+Welch comparisons on the primary metrics (6 flagged):
+
+| a | b | metric | diff | t | df | p | flag |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| base | pbot40 | rush_e0 | +0.029 | +0.81 | 2.5 | 0.488 | not detected |
+| base | pbot40 | elo_vs_init | -12.8 | -0.37 | 3.6 | 0.731 | not detected |
+| base | ent003 | rush_e0 | -0.029 | -0.87 | 2.1 | 0.473 | not detected |
+| base | ent003 | elo_vs_init | +8.9 | +0.40 | 3.0 | 0.718 | not detected |
+| pbot40 | ent003 | rush_e0 | -0.058 | -4.49 | 2.5 | 0.029 | significant |
+| pbot40 | ent003 | elo_vs_init | +21.7 | +0.72 | 2.5 | 0.531 | not detected |
+
+## Other rush conditions (exploratory, arm means)
+
+| arm | rush_e20 | rush_fullobs | rush_e0_sampled |
+| --- | --- | --- | --- |
+| base | 0.962 | 0.870 | 0.909 |
+| pbot40 | 0.976 | 0.910 | 0.956 |
+| ent003 | 0.952 | 0.834 | 0.881 |
+
+`random_e0`, `economy_e0`, `economy_e20` and `economy_fullobs` are 0.983-1.000 for every run. Round
+robin of the final weights (exploratory): `pbot40` seeds 1st, 3rd and 4th (1372, 1315, 1307), `base`
+2nd, 5th and 7th, `ent003` 6th, 8th and 9th (1241-1269); `init` 1112, `rush` 792.
+
+## What we learned
+
+- **Seed variance is as large as the effects we are after.** One config (`base`) scored 0.848 to
+  0.958 against rush. Seed 3 is weak at all three of its checkpoints (0.82-0.87), so it is a weaker run,
+  not a bad stopping point. Single-run results against rush (M10, 11b) are one draw from a spread of
+  roughly +-5 points.
+- **The one significant result is weak.** Six flagged tests at alpha 0.05 give about a 26% chance of at
+  least one false positive if nothing is real; with a Bonferroni correction (0.05 / 6 = 0.0083) none
+  passes. Neither variant is detected against `base`.
+- **`pbot40` probably helps against bots, at no cost against networks** (consistent direction, not
+  significant). Seed by seed it beats `base` on rush_e0 every time (+0.8, +0.1, +7.7 points), it is
+  ahead on all four rush conditions (+1.4 to +4.6), its learning curve skips the 2-4M dip against rush
+  that the other arms show, its `elo_vs_init` is within noise of `base`, and it ranks highest in the
+  round robin. Bot games are also cheaper (its batch took ~9.5 h against ~10.5 h for `ent003`). A
+  plausible mechanism, not tested: snapshots drift together away from defending fast rushes, and bot
+  games keep that pressure on.
+- **A smaller entropy bonus hurts against rush.** All three `ent003` seeds sit below the `base` mean on
+  every rush condition with a small spread; strength against the M10 checkpoint is unchanged. Less
+  exploration narrows play to what beats the current pool. Keep `ent_coef` 0.01.
+- **The learning-rate schedule may matter more than either knob (hypothesis).** `base` seed 1 is the
+  11b config on 11b's training maps, except that 10M steps decay the LR twice as fast. On the same
+  rating seeds it scores 0.80 against the M10 checkpoint (`elo_vs_init` 241 at 10M) where the 11b final
+  weights scored 0.675, and rush_e0 0.960 against 0.948. 11b also improved only after its LR had fallen
+  below half. One run against one run; worth a direct test.
+- **Report quirks:** when both arms have zero spread (e.g. economy_e20, 0.997 for every `base` seed and
+  1.000 for every `pbot40` seed), Welch gives p = 0; those rows are exploratory and meaningless. The
+  curves use a 0-1 axis, which hides the differences against rush.
