@@ -27,4 +27,4 @@ Append entries below. Format:
   `total_steps=500` loads), and every check case has `anneal_lr` true. I would raise regardless of
   `anneal_lr` (the brief's rule has no condition) and check in `from_json`, so tests building configs
   directly stay free to construct anything.
-- Owner answer:
+- Owner answer: A (the agent's pick: raise regardless of `anneal_lr`; check in `from_json`) on 2026-10-27

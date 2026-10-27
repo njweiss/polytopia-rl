@@ -76,7 +76,7 @@ Cost: six runs, 3 at a time, about 20 h at 12b's speed.
 ## Clarifications (owner: confirm or overrule)
 
 - **N1:** reuse 12b's `pbot40` runs as `decay10` (saves ~10 h). Retraining them is the alternative;
-  the result would differ only by GPU nondeterminism.
+  the result would differ only by GPU nondeterminism. - Confirmed (owner, 2026-10-27): reuse.
 - **N2:** constant LR is tested at 1e-4 (11b's starting LR), not at a lower value; a lower constant LR
   would be a separate question (LR size rather than schedule).
 - **N3:** 3 seeds as in 12b. A dose series with three ordered arms is easier to read than one pair:
