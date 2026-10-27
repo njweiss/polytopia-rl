@@ -133,11 +133,11 @@ boundary, as today).
 
 - **S1:** the default becomes `"interleaved"`. Runs before M13 (11b, 12b, 12c) used the lockstep path;
   `rollout: "lockstep"` reproduces them as before. Their results stay comparable in distribution, since
-  the per-slot game is unchanged.
+  the per-slot game is unchanged. - Confirmed (owner, 2026-10-27)
 - **S2:** slots that finished their `T` transitions idle until the slowest slot finishes. The barrier
-  moves from every step to the end of each rollout (once per 32 steps), which is the trade.
+  moves from every step to the end of each rollout (once per 32 steps), which is the trade. - Confirmed (owner, 2026-10-27)
 - **S3:** stacking snapshots (`torch.func`) and CUDA graphs wait for the re-profile, because the profile
-  shows the barrier, not the per-snapshot split, as the main cost.
+  shows the barrier, not the per-snapshot split, as the main cost. - Confirmed (owner, 2026-10-27)
 
 ## Changes to earlier tests
 
