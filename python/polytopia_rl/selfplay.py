@@ -23,6 +23,18 @@ BOT_OPPONENTS = ("economy", "rush")
 
 
 @dataclass
+class Transition:
+    """A learner transition completed during `SelfPlayVecEnv.tick` (docs/MILESTONE_13 "Ticks")."""
+
+    slot: int
+    reward: float  # the M9 formula over the learner's action and everything up to its next move or the episode end
+    terminated: bool
+    truncated: bool
+    final_board: np.ndarray | None  # as VecStep: the final observation when the episode ended
+    final_globals: np.ndarray | None
+
+
+@dataclass
 class Entry:
     step: int
     state: dict  # a frozen copy of the learner's state dict at `step` (CPU tensors)
@@ -273,6 +285,17 @@ class SelfPlayVecEnv(SyncVecEnv):
                 restarted.append(i)
         self._advance(restarted)
         return out
+
+    def learner_slots(self) -> list[int]:
+        """Slots whose learner is to move, ascending (docs/MILESTONE_13 "Ticks")."""
+        raise NotImplementedError("milestone 13")
+
+    def tick(self, learner_actions: dict[int, tuple[int, int, int]]) -> list[Transition]:
+        """Apply one learner action to every slot in `learner_actions` (all must be in
+        `learner_slots()`), then one opponent move to every other slot whose snapshot opponent is to
+        move (one batch-policy call per snapshot), handle episode ends and auto-resets, and return the
+        transitions completed during this tick, in ascending slot order (docs/MILESTONE_13 "Ticks")."""
+        raise NotImplementedError("milestone 13")
 
     def _episode_stat(self, i: int) -> EpisodeStat:
         seat = self._seed[i] % 2

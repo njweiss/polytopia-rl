@@ -41,6 +41,8 @@ class PPOConfig:
     target_kl: float | None = None
     norm_adv: bool = True
     clip_vloss: bool = True
+    # Self-play rollout collector (docs/MILESTONE_13): "interleaved" | "lockstep".
+    rollout: str = "interleaved"
     # Model.
     width: int = 64
     blocks: int = 4

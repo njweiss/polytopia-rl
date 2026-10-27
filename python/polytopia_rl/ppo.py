@@ -136,6 +136,13 @@ def collect_rollout(net, vec_env, buffer: RolloutBuffer, generator: torch.Genera
     return stats
 
 
+def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: torch.Generator) -> list:
+    """Fill `buffer` (`[t_i, i]` per slot) from the tick interface of a `SelfPlayVecEnv` (already
+    reset) under `net`; return the `EpisodeStat`s of the episodes that finished, in completion order
+    (docs/MILESTONE_13 "Collecting a rollout")."""
+    raise NotImplementedError("milestone 13")
+
+
 def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Generator) -> dict:
     """GAE on `buffer`, then `cfg.update_epochs` epochs of shuffled minibatches. Uses the
     optimizer's current learning rate. Returns the update's metrics (`pg_loss`, `v_loss`,
