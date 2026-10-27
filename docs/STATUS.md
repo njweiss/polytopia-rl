@@ -50,6 +50,13 @@ Milestone 12 (closed 2026-10-26):
 | M11 | hashes, checkpoints, suite, losses, Elo, tournament, snapshot-pool self-play | 11b passed: 0.675 vs M10, worst suite drop -3.0 pp (passes from ~18M on) |
 | M12 | batched suite, seed-varied maps, multi-seed experiment harness, Welch | 12b: see above; `pbot40` best against rush, not significant |
 
+**Working rule while an experiment runs from this checkout:** milestone work happens in a git worktree
+(M13: `../polytopia_rl-m13`, branch `milestone-13`). In a worktree, never run `pixi run`, `maturin develop`
+or `check.sh` (they would create a second pixi env or replace the shared `polytopia_sim` the running
+trainers load); run tests with
+`PYTHONPATH=$PWD/python /home/njweiss4/projects/polytopia_rl/.pixi/envs/default/bin/python -m pytest ...`.
+The full `pixi run check` gate runs in the main checkout after the experiment ends.
+
 ## Waiting on the owner
 
 1. Launch 12c-b (command above) and run `report` when it finishes.
@@ -72,6 +79,7 @@ Milestone 12 (closed 2026-10-26):
 
 | Date | Change |
 | --- | --- |
+| 2026-10-27 | 12c-b launched by the owner. M13 S1-S3 confirmed; phase A moved to worktree `../polytopia_rl-m13` (first attempt stopped before any edit). |
 | 2026-10-27 | Profiled self-play at pool 10 (92% of rollout in opponent calls, 58 calls per learner step, barrier per step); M13 brief (interleaved rollout) drafted; scaling becomes M14. |
 | 2026-10-27 | M12c tests and implementation merged (7af81d4); Q35 answered A; 12b pbot40 runs linked as 12c decay10. |
 | 2026-10-27 | `p_bot` 0.4 adopted (tests `6a8b487`, config `4c6740f`, gate green). M12c brief (LR schedule experiment) drafted. |
