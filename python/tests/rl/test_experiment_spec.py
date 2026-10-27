@@ -126,7 +126,7 @@ def test_selfplay12b_spec_is_the_owners_experiment():
     assert s.init_checkpoint == "runs/curriculum_seed1/latest.pt"
     assert list(s.seeds) == [1, 2, 3]
     assert s.total_steps == 10_000_000
-    assert s.arms == {"base": {}, "pbot40": {"p_bot": 0.4}, "ent003": {"ent_coef": 0.003}}
+    assert s.arms == {"base": {"p_bot": 0.2}, "pbot40": {"p_bot": 0.4}, "ent003": {"ent_coef": 0.003}}
     assert list(s.arms) == ["base", "pbot40", "ent003"]
     assert sorted(s.primary) == ["elo_vs_init", "rush_e0"]
     assert s.eval_checkpoints == 3
