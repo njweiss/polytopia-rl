@@ -73,10 +73,16 @@ class PPOConfig:
 
     @classmethod
     def from_json(cls, text: str) -> PPOConfig:
-        """Fields missing from `text` keep their defaults; an unknown key raises `ValueError`."""
+        """Fields missing from `text` keep their defaults; an unknown key, or `lr_anneal_steps` below
+        `total_steps`, raises `ValueError`."""
         data = json.loads(text)
         _check_keys(data)
-        return cls(**data)
+        cfg = cls(**data)
+        if cfg.lr_anneal_steps is not None and cfg.lr_anneal_steps < cfg.total_steps:
+            raise ValueError(
+                f"lr_anneal_steps {cfg.lr_anneal_steps} is below total_steps {cfg.total_steps}: the LR would go negative"
+            )
+        return cfg
 
 
 def _check_keys(keys) -> None:

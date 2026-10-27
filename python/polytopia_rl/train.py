@@ -126,6 +126,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     optimizer = torch.optim.Adam(net.parameters(), lr=cfg.lr, eps=1e-5)
     batch = cfg.num_envs * cfg.num_steps
     num_updates = cfg.total_steps // batch
+    anneal_updates = (cfg.lr_anneal_steps or cfg.total_steps) // batch  # H (docs/MILESTONE_12c)
 
     # Self-play state: the pool, the dedicated opponent-draw stream, and the generator the snapshot
     # opponents sample their actions with (on the model's device, so sampling needs no copy).
@@ -212,8 +213,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
         saved_at = None
         while update < num_updates:
             update += 1
-            # Linear LR annealing (CleanRL): full lr at update 1, lr / num_updates at the last.
-            lr = cfg.lr * (1 - (update - 1) / num_updates)
+            # Linear LR annealing (CleanRL) over H updates: full lr at update 1; off with `anneal_lr` false.
+            lr = cfg.lr * (1 - (update - 1) / anneal_updates) if cfg.anneal_lr else cfg.lr
             for group in optimizer.param_groups:
                 group["lr"] = lr
 
