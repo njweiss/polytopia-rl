@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` (`git show 540a214:docs/QUESTIONS.md`).
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) and `7542ffa` for Q31-Q34.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -37,3 +37,7 @@ spec section, or the brief when the answer is an implementation detail.
 | Q28 | 2026-10-23 | Self-play rollout throughput (~200 sps) | Accept for now; speed work later after profiling | M11 brief; RL_REPORT |
 | Q29 | 2026-10-23 | Speed after the 3M smoke run | R1 opponent `act(stats=False)`; R2 batched tournament; R3 later (done in Q30); R4 deferred; R6 lower LR if needed | RL_REPORT |
 | Q30 | 2026-10-24 | Per-call cost of play-only policy calls | A no mask check and `inference_mode` on play paths; B opponent generator on device; config 128x32, `lr 1e-4`; C (CUDA graphs) deferred. Follow-up: `OMP_NUM_THREADS=1` default | RL_REPORT; `scripts/selfplay.sh` |
+| Q31 | 2026-10-25 | Experiment file formats and report schema | `h2h_{step}.json` is `asdict(play_pair)` (run = a, init = b); players `{arm}_seed{seed}`; `ExperimentReport` as in the stub; `significant` is `None` for exploratory metrics; `n_flagged` counts flagged comparisons | M12 brief; `experiment.py` |
+| Q32 | 2026-10-25 | `total_steps` of the smoke spec | `smoke.json` holds 200000 itself | M12 brief |
+| Q33 | 2026-10-25 | Launcher and trainer details | Overlap check raises `ValueError`; `Popen` launcher; `run` exits non-zero after the others finish; `make_batch_fn` once per condition | M12 brief |
+| Q34 | 2026-10-25 | Batched greedy GPU evaluation is not game-for-game identical (TF32) | Accept: W-L-D and outcomes match; a few game lengths differ through TF32 numerics; documented in RL_REPORT | RL_REPORT (12a) |
