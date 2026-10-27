@@ -4,7 +4,7 @@
   "init_checkpoint": "runs/curriculum_seed1/latest.pt",
   "seeds": [1, 2, 3],
   "total_steps": 10000000,
-  "arms": {"base": {}, "pbot40": {"p_bot": 0.4}, "ent003": {"ent_coef": 0.003}},
+  "arms": {"base": {"p_bot": 0.2}, "pbot40": {"p_bot": 0.4}, "ent003": {"ent_coef": 0.003}},
   "primary": ["rush_e0", "elo_vs_init"],
   "suite_seeds": 200,
   "tournament_seeds": 100,
