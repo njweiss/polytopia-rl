@@ -28,6 +28,10 @@ class PPOConfig:
     num_minibatches: int = 8
     update_epochs: int = 4
     lr: float = 3e-4
+    # LR schedule (docs/MILESTONE_12c): `anneal_lr` false keeps `lr` for the whole run;
+    # `lr_anneal_steps` None anneals over `total_steps`.
+    anneal_lr: bool = True
+    lr_anneal_steps: int | None = None
     max_grad_norm: float = 0.5
     gamma: float = 0.999
     gae_lambda: float = 0.95
