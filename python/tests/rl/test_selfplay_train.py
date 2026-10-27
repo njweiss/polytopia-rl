@@ -286,7 +286,7 @@ def test_selfplay_config_and_defaults_match_the_brief():
     assert cfg.selfplay is True
     assert cfg.total_steps == 20_000_000
     assert (cfg.snapshot_every, cfg.pool_max) == (1_000_000, 40)
-    assert (cfg.p_bot, cfg.p_latest, cfg.opponent_greedy) == (0.2, 0.5, False)
+    assert (cfg.p_bot, cfg.p_latest, cfg.opponent_greedy) == (0.4, 0.5, False)
     assert (cfg.eval_every, cfg.eval_seeds, cfg.regression_floor) == (1_000_000, 50, 0.9)
     assert (cfg.rating_every, cfg.rating_seeds) == (2_000_000, 50)
 
