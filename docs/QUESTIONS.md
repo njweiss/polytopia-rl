@@ -23,7 +23,7 @@ Append entries below. Format:
 - Agent's pick and why: A. It is a caller error like the others in the package, and a test cannot
   accept "any exception" without also accepting the phase A stub's `NotImplementedError`. The tests
   (`test_interleaved_tick.py`) require `ValueError`, also for a slot index outside `range(num_envs)`.
-- Owner answer:
+- Owner answer: A on 2026-10-27
 
 ## Q37: the equivalence test fixes each episode's opponent as a function of its seed
 
@@ -40,4 +40,4 @@ Append entries below. Format:
 - Agent's pick and why: A. It keeps the brief's mix (two snapshots plus bots, both seats) and depends
   only on today's `_reset -> _start` path, which the brief says to reuse. Consequence for phase B: every
   episode start, in both collectors, must keep going through `_start` (as `_reset` does today).
-- Owner answer:
+- Owner answer: A on 2026-10-27
