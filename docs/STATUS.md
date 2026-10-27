@@ -33,8 +33,9 @@ Milestone 12 (closed 2026-10-26):
 
 1. **Close M11:** done (2026-10-24).
 2. **M12 experiments:** done (2026-10-26).
-3. **M13 architecture and scaling:** network width/depth ladder measured with the M12 harness.
-4. **Game v2:** drafted after M13. The damage preview goes into v2, not into a separate v1
+3. **M13 speed:** interleaved self-play rollout (brief `docs/MILESTONE_13.md`), then a re-profile.
+4. **M14 architecture and scaling:** network width/depth ladder measured with the M12 harness.
+5. **Game v2:** drafted after M14. The damage preview goes into v2, not into a separate v1
    milestone (owner: it is unlikely to be a significant information source).
 
 ## Done
@@ -64,13 +65,14 @@ Milestone 12 (closed 2026-10-26):
 ## Next three actions
 
 1. Owner: launch 12c-b; orchestrator reviews the report and writes the RL_REPORT section.
-2. Orchestrator: draft the speed milestone (Q30 C CUDA graphs, Q29 R4) and M13 (schedule and run length from 12c).
+2. Owner: review `docs/MILESTONE_13.md` (S1-S3); M13 can be built while 12c-b runs (CPU tests only), but its gate measurements need an idle GPU.
 3. Orchestrator: re-export `docs/SPEC.md` if the Claude Doc changes.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-10-27 | Profiled self-play at pool 10 (92% of rollout in opponent calls, 58 calls per learner step, barrier per step); M13 brief (interleaved rollout) drafted; scaling becomes M14. |
 | 2026-10-27 | M12c tests and implementation merged (7af81d4); Q35 answered A; 12b pbot40 runs linked as 12c decay10. |
 | 2026-10-27 | `p_bot` 0.4 adopted (tests `6a8b487`, config `4c6740f`, gate green). M12c brief (LR schedule experiment) drafted. |
 | 2026-10-27 | 12b done and reported (RL_REPORT "Milestone 12b"); M12 closed; Q31-Q34 moved to DECISIONS.md. |
