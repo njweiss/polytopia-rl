@@ -8,7 +8,7 @@
   "stages": [{"opponents": ["economy", "rush"]}],
   "snapshot_every": 1000000,
   "pool_max": 40,
-  "p_bot": 0.2,
+  "p_bot": 0.4,
   "p_latest": 0.5,
   "opponent_greedy": false,
   "eval_every": 1000000,
