@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from polytopia_rl.vec_env import EpisodeStat, SyncVecEnv, VecState, VecStep, agent_outcome, env_kwargs_of
+from polytopia_rl.vec_env import EpisodeStat, SyncVecEnv, VecState, VecStep, agent_outcome, env_kwargs_of, env_masks_fn
 
 BOT_OPPONENTS = ("economy", "rush")
 
@@ -91,19 +91,7 @@ def net_batch_policy(net, generator, greedy: bool = False, device: str = "cpu") 
         obs = [env.observation() for env in envs]
         board = torch.from_numpy(np.stack([b for b, _ in obs])).to(device)
         glob = torch.from_numpy(np.stack([g for _, g in obs])).to(device)
-        n = board.shape[2] * board.shape[3]
-
-        def masks_fn(stage, actors=None, kinds=None):
-            if stage == "actor":
-                return np.stack([env.actor_mask() for env in envs])
-            if stage == "kind":
-                return np.stack([env.kind_mask(int(a)) for env, a in zip(envs, actors)])
-            m = np.zeros((len(envs), n), dtype=bool)
-            for i, env in enumerate(envs):
-                xm = env.arg_mask(int(actors[i]), int(kinds[i]))
-                m[i, : xm.size] = xm
-            return m
-
+        masks_fn = env_masks_fn(envs, board.shape[2] * board.shape[3])
         with torch.inference_mode():
             out = net.act(net.trunk(board, glob), masks_fn, generator, greedy=greedy, stats=False)
         return list(zip(out.actors.tolist(), out.kinds.tolist(), out.args.tolist()))
@@ -335,15 +323,15 @@ class SelfPlayVecEnv(SyncVecEnv):
         for i in range(self.num_envs):
             if self._opponent_to_move(i):
                 groups.setdefault(self._opp[i].name, []).append(i)
-        if self.stacked_policy is not None and groups:
+        if self.stacked_policy is None:
+            per_group = [self._policy(self._opp[idx[0]])([self.envs[i] for i in idx]) for idx in groups.values()]
+        elif groups:
             # docs/MILESTONE_13b: one stacked call for all the groups, after syncing its stack.
             self.stacked_policy.sync(self._stack_entries())
-            stacked = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in groups.items()])
-        for g, idx in enumerate(groups.values()):
-            if self.stacked_policy is not None:
-                actions = stacked[g]
-            else:
-                actions = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
+            per_group = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in groups.items()])
+        else:
+            per_group = []
+        for idx, actions in zip(groups.values(), per_group):
             for i, a in zip(idx, actions):
                 a = tuple(int(x) for x in a)
                 _, _, terminated, truncated = self.envs[i].step_factored(*a)
