@@ -32,4 +32,4 @@ Append entries below. Format:
   and the extra restacks are as rare as thinning. The phase A tests do not exercise thinning: they
   assert `sync` receives exactly `pool.entries` only in fixtures where every slot's opponent is in the
   pool, which A, B and C all satisfy.
-- Owner answer:
+- Owner answer: A on 2026-10-28 (sync the pool entries plus the entries of slots whose opponent left the pool)
