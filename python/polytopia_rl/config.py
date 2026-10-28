@@ -78,7 +78,8 @@ class PPOConfig:
     @classmethod
     def from_json(cls, text: str) -> PPOConfig:
         """Fields missing from `text` keep their defaults; an unknown key, `lr_anneal_steps` below
-        `total_steps`, or a `rollout` other than "interleaved" / "lockstep" raises `ValueError`."""
+        `total_steps`, a `rollout` other than "interleaved" / "lockstep", or an `opponent_forward` other
+        than "stacked" / "per_snapshot" raises `ValueError`."""
         data = json.loads(text)
         _check_keys(data)
         cfg = cls(**data)
@@ -88,6 +89,8 @@ class PPOConfig:
             )
         if cfg.rollout not in ("interleaved", "lockstep"):
             raise ValueError(f"rollout {cfg.rollout!r} is not 'interleaved' or 'lockstep'")
+        if cfg.opponent_forward not in ("stacked", "per_snapshot"):
+            raise ValueError(f"opponent_forward {cfg.opponent_forward!r} is not 'stacked' or 'per_snapshot'")
         return cfg
 
 

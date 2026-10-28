@@ -185,6 +185,17 @@ class SelfPlayVecEnv(SyncVecEnv):
             self._policies[entry.name] = self.make_policy(entry)
         return self._policies[entry.name]
 
+    def _stack_entries(self) -> list[Entry]:
+        """The pool's entries, then those of slots still playing a snapshot that left the pool, in
+        slot order of first appearance (docs/QUESTIONS.md Q38)."""
+        entries = list(self.pool.entries)
+        names = {e.name for e in entries}
+        for opp in self._opp:
+            if isinstance(opp, Entry) and opp.name not in names:
+                entries.append(opp)
+                names.add(opp.name)
+        return entries
+
     def _start(self, i: int, seed: int, opp) -> None:
         """Begin slot `i`'s episode on `seed` against `opp` (the opponent's opening moves, if any,
         are left to `_advance`)."""
@@ -297,7 +308,8 @@ class SelfPlayVecEnv(SyncVecEnv):
     def tick(self, learner_actions: dict[int, tuple[int, int, int]]) -> list[Transition]:
         """Apply one learner action to every slot in `learner_actions` (all must be in
         `learner_slots()`), then one opponent move to every other slot whose snapshot opponent is to
-        move (one batch-policy call per snapshot), handle episode ends and auto-resets, and return the
+        move (one batch-policy call per snapshot, or one `stacked_policy` call for all of them when
+        given, docs/MILESTONE_13b), handle episode ends and auto-resets, and return the
         transitions completed during this tick, in ascending slot order (docs/MILESTONE_13 "Ticks")."""
         bad = sorted(set(learner_actions) - set(self.learner_slots()))
         if bad:
@@ -323,8 +335,15 @@ class SelfPlayVecEnv(SyncVecEnv):
         for i in range(self.num_envs):
             if self._opponent_to_move(i):
                 groups.setdefault(self._opp[i].name, []).append(i)
-        for idx in groups.values():
-            actions = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
+        if self.stacked_policy is not None and groups:
+            # docs/MILESTONE_13b: one stacked call for all the groups, after syncing its stack.
+            self.stacked_policy.sync(self._stack_entries())
+            stacked = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in groups.items()])
+        for g, idx in enumerate(groups.values()):
+            if self.stacked_policy is not None:
+                actions = stacked[g]
+            else:
+                actions = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
             for i, a in zip(idx, actions):
                 a = tuple(int(x) for x in a)
                 _, _, terminated, truncated = self.envs[i].step_factored(*a)
