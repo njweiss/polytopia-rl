@@ -9,6 +9,7 @@
   "snapshot_every": 1000000,
   "pool_max": 40,
   "p_bot": 0.4,
+  "opponent_forward": "per_snapshot",
   "p_latest": 0.5,
   "opponent_greedy": false,
   "eval_every": 1000000,
