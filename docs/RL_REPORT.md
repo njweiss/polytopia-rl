@@ -782,3 +782,69 @@ robin of the final weights (exploratory): `pbot40` seeds 1st, 3rd and 4th (1372,
 - **Report quirks:** when both arms have zero spread (e.g. economy_e20, 0.997 for every `base` seed and
   1.000 for every `pbot40` seed), Welch gives p = 0; those rows are exploratory and meaningless. The
   curves use a 0-1 axis, which hides the differences against rush.
+
+# Milestone 12c: learning-rate schedule experiment (`selfplay12c`)
+
+`pixi run scripts/experiment.sh run python/experiments/selfplay12c.json`, then `report`
+(`runs/exp/selfplay12c/report.md`, `report.json`, `report_curves.png`, `tournament.md`). Code `7af81d4`
+(lockstep rollout), build obs `d5f9b1033cfd55ca`, rules `a8b52b91eae34503`. Three schedules by three
+seeds, 10M steps, `p_bot` 0.4, warm start from the M10 `latest.pt`. `decay10` reuses 12b's `pbot40` runs
+(identical config, trained on code `9e5fd5d`, hard-linked; owner decision N1). The six new runs took
+~20 h (2026-10-27 15:40 to 10-28 11:34), 3 at a time.
+
+| arm | schedule | LR at 10M |
+| --- | --- | --- |
+| `decay10` | linear decay to 0 over 10M (default) | 0 |
+| `decay20` | linear decay over a 20M horizon (11b's first half) | 5e-5 |
+| `const` | no decay | 1e-4 |
+
+## Primary metrics (mean over the 8/9/10M checkpoints)
+
+| arm | rush_e0 (seeds 1, 2, 3) | mean | sd | elo_vs_init (seeds 1, 2, 3) | mean | sd |
+| --- | --- | --- | --- | --- | --- | --- |
+| decay10 | 0.966, 0.936, 0.925 | 0.942 | 0.021 | 207, 113, 184 | 168 | 49 |
+| decay20 | 0.956, 0.901, 0.932 | 0.930 | 0.028 | 119, 105, 133 | 119 | 14 |
+| const | 0.893, 0.861, 0.861 | 0.872 | 0.019 | 60, 80, 127 | 89 | 34 |
+
+Welch (6 flagged): `const` below `decay10` on rush_e0 (-7.1 pp, p 0.013, significant) and below
+`decay20` (-5.8 pp, p 0.046, significant); `elo_vs_init` differences not detected (p 0.09-0.27);
+`decay20` vs `decay10` not detected on either. With a Bonferroni correction for 6 tests (0.0083), none
+passes alone.
+
+## All conditions (arm means)
+
+| metric | decay10 | decay20 | const |
+| --- | --- | --- | --- |
+| random_e0 | 1.000 | 1.000 | 1.000 |
+| economy_e0 | 0.998 | 0.997 | 0.994 |
+| economy_e20 | 1.000 | 0.998 | 0.998 |
+| economy_fullobs | 0.992 | 0.990 | 0.986 |
+| rush_e0 | 0.942 | 0.930 | 0.872 |
+| rush_e20 | 0.976 | 0.967 | 0.936 |
+| rush_fullobs | 0.910 | 0.872 | 0.781 |
+| rush_e0_sampled | 0.956 | 0.923 | 0.868 |
+| elo_vs_init | 168 | 119 | 89 |
+
+Round robin of the final weights (exploratory): the three `decay10` runs are the top three (1370,
+1325, 1310), above every `decay20` run (1257-1291); two of three `const` runs are last (1200, 1228);
+`init` 1153.
+
+## What we learned
+
+- **The hypothesis holds: how low the LR gets by the end of the run drives the result.** Every one of
+  the nine metrics orders `decay10 >= decay20 >= const`, the dose series the brief predicted. Seed by seed
+  (seed `k` of each arm shares maps and starting weights), `elo_vs_init` orders
+  `decay10 > decay20 > const` in all three seeds (9 of 9 paired comparisons), and the round robin
+  separates the arms almost completely. No single test survives a 6-test correction, but an ordered
+  pattern this consistent across seeds and metrics is strong evidence; a test built for ordered
+  alternatives (a trend test) would be the right tool and is not in the harness.
+- **11b's slow start is explained.** 11b decayed over 20M, so at 10M it was where `decay20` is now:
+  weaker against networks and against rush than a run that had annealed fully. Its late improvement
+  came as its LR fell. A 10M run annealed to zero (`decay10`, `elo_vs_init` 168 = ~0.72 expected score)
+  is at least as strong against the M10 checkpoint as 11b's 20M final (0.675 head to head; one run, at
+  `p_bot` 0.2).
+- **A constant LR hurts most against rush** (-7 to -13 pp), more than against networks. A large step size
+  keeps chasing the latest pool and never settles into the robust play the bots punish the lack of.
+- **For M14 (scaling):** anneal to zero within each run (the default), and 10M-step runs are enough to
+  compare configurations; the final checkpoints of a fully annealed run are its best. Whether 20M steps
+  annealed over 20M beats 10M annealed over 10M is untested.
