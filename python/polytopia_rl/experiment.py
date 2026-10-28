@@ -5,11 +5,14 @@
 
 Layout (paths relative to the working directory): run `(arm, seed)` lives in
 `runs/exp/{name}/{arm}/seed{seed}` with `command.txt`, the trainer's files, `suite_{step}/suite.json`
-(and `suite.md`) per evaluated checkpoint and, with an init checkpoint, `h2h_{step}.json`:
-`dataclasses.asdict(play_pair(run, init, h2h_seeds, env_kwargs))` with the run's checkpoint as player
-`a` and the init checkpoint as `b` (named `"init"`). The experiment round robin is
+(and `suite.md`) per evaluated checkpoint and, with a reference or an init checkpoint,
+`h2h_{step}.json`: `dataclasses.asdict(play_pair(run, opponent, h2h_seeds, env_kwargs))` with the run's
+checkpoint as player `a` and the opponent as `b`: the reference (named `"ref"`) if the spec has one,
+else the init checkpoint (named `"init"`). The experiment round robin is
 `runs/exp/{name}/tournament.json` and `.md` (`tournament.write_tournament`); its players are the bots
-(`random`, `economy`, `rush`), `init` (if any) and each run's `ckpt_final.pt` as `{arm}_seed{seed}`.
+(`random`, `economy`, `rush`), that opponent (if any) and each run's `ckpt_final.pt` as
+`{arm}_seed{seed}`. With `init_from`, run `(arm, seed)` warm-starts from
+`runs/exp/{init_from}/{arm}/seed{seed}/ckpt_final.pt`.
 """
 
 from __future__ import annotations
@@ -41,11 +44,17 @@ class Spec:
     arms: dict  # arm name -> config overrides (JSON values), in spec order
     total_steps: int = DEFAULT_TOTAL_STEPS
     init_checkpoint: str | None = None
-    primary: list = field(default_factory=list)  # suite condition names and/or "elo_vs_init"
+    primary: list = field(default_factory=list)  # suite condition names and/or the Elo metric
     suite_seeds: int
     tournament_seeds: int
     eval_checkpoints: int = 3
     h2h_seeds: int = 100
+    # A checkpoint every evaluated checkpoint plays head to head instead of the init checkpoint
+    # (`h2h_{step}.json`, metric "elo_vs_ref", round robin player "ref"), and the name of an earlier
+    # experiment whose `runs/exp/{init_from}/{arm}/seed{seed}/ckpt_final.pt` warm-starts run (arm, seed)
+    # (exclusive with `init_checkpoint`).
+    reference: str | None = None
+    init_from: str | None = None
 
 
 @dataclass
@@ -56,10 +65,10 @@ class ExperimentReport:
     # One dict per (arm, seed), arms outer and seeds inner: {"arm", "seed", "steps" (evaluated steps,
     # ascending), "suite": {condition: [win rate per step]}, "suite_mean": {condition: mean over the
     # steps}, "elo_vs_init": [Elo per step] or None, "elo_vs_init_mean": float or None, "obs_hash",
-    # "rules_hash"}.
+    # "rules_hash"}; with a reference "elo_vs_ref" and "elo_vs_ref_mean" replace the "elo_vs_init" keys.
     runs: list
     # metric -> arm -> {"per_seed": [run value per seed, spec order], "mean", "sd" (ddof=1), "min",
-    # "max"}; metrics are the suite conditions, then "elo_vs_init" when there is an init checkpoint.
+    # "max"}; metrics are the suite conditions, then the Elo metric (`elo_metric(spec)`) if any.
     tables: dict
     # One dict per (pair of arms in spec order, metric): {"a", "b", "metric", "primary", "mean_a",
     # "mean_b", "diff", "t", "df", "p", "significant"} from `welch(per_seed[a], per_seed[b])`;
@@ -68,6 +77,10 @@ class ExperimentReport:
     n_flagged: int  # comparisons that carry a significance flag (primary ones)
     elo: dict | None  # player -> Elo from the experiment round robin (None if not played yet)
     obs_hash: str
+    # arm -> {"params": parameter count of the arm's network (from its first seed's final checkpoint),
+    # "sps": `_summary` over seeds of each run's mean `sps` in `metrics.jsonl`}; None where a checkpoint
+    # cannot be loaded or a metrics file is missing.
+    cost: dict | None = None
 
 
 def eval_checkpoints(run_dir, k) -> list[str]:
@@ -96,6 +109,8 @@ def load_spec(path) -> Spec:
         bad = sorted({"seed", "total_steps"} & set(overrides))
         if bad:
             raise ValueError(f"{path}: arm {arm!r} sets {bad}, which the launcher sets")
+    if d.get("init_from") is not None and d.get("init_checkpoint") is not None:
+        raise ValueError(f"{path}: init_from and init_checkpoint are mutually exclusive")
     return Spec(**d)
 
 
@@ -108,11 +123,33 @@ def exp_dir(spec) -> str:
     return os.path.join("runs", "exp", spec.name)
 
 
+def opponent(spec) -> tuple[str, str] | None:
+    """`(name, checkpoint)` of the head-to-head opponent: the reference, else the init checkpoint."""
+    if spec.reference is not None:
+        return "ref", spec.reference
+    if spec.init_checkpoint is not None:
+        return "init", spec.init_checkpoint
+    return None
+
+
+def elo_metric(spec) -> str | None:
+    """The metric of the head-to-heads: `elo_vs_ref` or `elo_vs_init` (None without an opponent)."""
+    opp = opponent(spec)
+    return None if opp is None else f"elo_vs_{opp[0]}"
+
+
+def init_source(spec, arm, seed) -> str:
+    """`runs/exp/{init_from}/{arm}/seed{seed}/ckpt_final.pt`."""
+    return os.path.join("runs", "exp", spec.init_from, arm, f"seed{seed}", "ckpt_final.pt")
+
+
 def tournament_players(spec) -> list[str]:
-    """The experiment round robin's players: the bots, `init` (if any), then `{arm}_seed{seed}`."""
+    """The experiment round robin's players: the bots, the opponent (`ref` or `init`, if any), then
+    `{arm}_seed{seed}`."""
     from polytopia_rl.tournament import BOTS
 
-    return list(BOTS) + (["init"] if spec.init_checkpoint is not None else []) + [f"{a}_seed{s}" for a in spec.arms for s in spec.seeds]
+    opp = opponent(spec)
+    return list(BOTS) + ([opp[0]] if opp is not None else []) + [f"{a}_seed{s}" for a in spec.arms for s in spec.seeds]
 
 
 def train_command(spec, arm, seed) -> list[str]:
@@ -124,6 +161,8 @@ def train_command(spec, arm, seed) -> list[str]:
         argv += ["--resume", latest]
     elif spec.init_checkpoint is not None:
         argv += ["--init-checkpoint", spec.init_checkpoint]
+    elif spec.init_from is not None:
+        argv += ["--init-checkpoint", init_source(spec, arm, seed)]
     argv += [f"seed={seed}", f"total_steps={spec.total_steps}"]
     return argv + [f"{k}={json.dumps(v)}" for k, v in spec.arms[arm].items()]
 
@@ -158,6 +197,10 @@ def run(spec, parallel=1) -> None:
             argv = train_command(spec, arm, seed)
             with open(os.path.join(d, "command.txt"), "w") as f:
                 f.write(shlex.join(argv) + "\n" + f"git {commit}\n")
+            if spec.init_from is not None and "--resume" not in argv and not os.path.exists(init_source(spec, arm, seed)):
+                failed.append((arm, seed))
+                print(f"FAILED {d}: init_from source {init_source(spec, arm, seed)} does not exist", file=sys.stderr, flush=True)
+                continue
             env = dict(os.environ)
             env.setdefault("OMP_NUM_THREADS", "1")
             log = open(os.path.join(d, "train.out"), "a")
@@ -199,7 +242,7 @@ class _Evaluator:
 
     def __init__(self, spec):
         self.spec = spec
-        self._init = None
+        self._opponent = None
 
     def _device(self):
         from polytopia_rl.train import resolve_device
@@ -217,10 +260,10 @@ class _Evaluator:
         net, ck = load_net(path, device)
         return Player(name, batch_fn=net_batch_policy(net, torch.Generator(), greedy=True, device=device)), net, ck
 
-    def init_player(self):
-        if self._init is None:
-            self._init = self._player("init", self.spec.init_checkpoint)[0]
-        return self._init
+    def opponent_player(self):
+        if self._opponent is None:
+            self._opponent = self._player(*opponent(self.spec))[0]
+        return self._opponent
 
     def evaluate(self, arm, seed) -> None:
         """Suite and head-to-head of each of the run's last checkpoints that lack them."""
@@ -238,7 +281,7 @@ class _Evaluator:
             step = int(os.path.basename(path)[5:-3])
             suite_dir = os.path.join(d, f"suite_{step}")
             h2h_path = os.path.join(d, f"h2h_{step}.json")
-            need_h2h = spec.init_checkpoint is not None and not os.path.exists(h2h_path)
+            need_h2h = opponent(spec) is not None and not os.path.exists(h2h_path)
             if os.path.exists(os.path.join(suite_dir, "suite.json")) and not need_h2h:
                 continue
             player, net, ck = self._player(f"{arm}_seed{seed}", path)
@@ -259,13 +302,13 @@ class _Evaluator:
                 with open(os.path.join(suite_dir, "suite.json"), "w") as f:  # last: marks the suite done
                     f.write(suite_to_json(res))
             if need_h2h:
-                print(f"head-to-head {path} against init ({spec.h2h_seeds} seeds)", flush=True)
-                pair = play_pair(player, self.init_player(), spec.h2h_seeds, env_kwargs)
+                print(f"head-to-head {path} against {opponent(spec)[0]} ({spec.h2h_seeds} seeds)", flush=True)
+                pair = play_pair(player, self.opponent_player(), spec.h2h_seeds, env_kwargs)
                 with open(h2h_path, "w") as f:
                     json.dump(dataclasses.asdict(pair), f)
 
     def round_robin(self, pairs) -> None:
-        """The bots, `init` and every final policy, unless `tournament.json` already has them."""
+        """The bots, the opponent and every final policy, unless `tournament.json` already has them."""
         from polytopia_rl.tournament import BOTS, Player, round_robin, write_tournament
         from polytopia_rl.vec_env import env_kwargs_of
 
@@ -277,8 +320,8 @@ class _Evaluator:
                 if json.load(f)["players"] == names:
                     return
         players = [Player(b, bot=b) for b in BOTS]
-        if spec.init_checkpoint is not None:
-            players.append(self.init_player())
+        if opponent(spec) is not None:
+            players.append(self.opponent_player())
         cfg = None
         for arm, seed in pairs:
             player, _, ck = self._player(f"{arm}_seed{seed}", os.path.join(run_dir(spec, arm, seed), "ckpt_final.pt"))
@@ -326,8 +369,8 @@ def _read_run(spec, arm, seed) -> dict:
         raise ValueError(f"{d}: suites with different obs_hash values {sorted(obs)}")
     conditions = list(suites[0].conditions)
     suite = {c: [float(r.conditions[c].win_rate) for r in suites] for c in conditions}
-    elo = None
-    if spec.init_checkpoint is not None:
+    elo, metric = None, elo_metric(spec) or "elo_vs_init"
+    if opponent(spec) is not None:
         elo = []
         for step in steps:
             with open(os.path.join(d, f"h2h_{step}.json")) as f:
@@ -338,8 +381,8 @@ def _read_run(spec, arm, seed) -> dict:
         "steps": steps,
         "suite": suite,
         "suite_mean": {c: float(np.mean(v)) for c, v in suite.items()},
-        "elo_vs_init": elo,
-        "elo_vs_init_mean": float(np.mean(elo)) if elo is not None else None,
+        metric: elo,
+        f"{metric}_mean": float(np.mean(elo)) if elo is not None else None,
         "obs_hash": suites[0].obs_hash,
         "rules_hash": suites[0].rules_hash,
     }
@@ -355,10 +398,11 @@ def report(spec) -> ExperimentReport:
     obs = sorted({r["obs_hash"] for r in runs})
     if len(obs) > 1:
         raise ValueError(f"experiment {spec.name}: runs with different obs_hash values {obs}")
-    metrics = list(runs[0]["suite_mean"]) + (["elo_vs_init"] if spec.init_checkpoint is not None else [])
+    elo_m = elo_metric(spec)
+    metrics = list(runs[0]["suite_mean"]) + ([elo_m] if elo_m is not None else [])
 
     def value(r, metric):
-        return r["elo_vs_init_mean"] if metric == "elo_vs_init" else r["suite_mean"][metric]
+        return r[f"{metric}_mean"] if metric == elo_m else r["suite_mean"][metric]
 
     by_run = {(r["arm"], r["seed"]): r for r in runs}
     tables = {m: {arm: _summary([value(by_run[arm, s], m) for s in seeds]) for arm in arms} for m in metrics}
@@ -400,6 +444,7 @@ def report(spec) -> ExperimentReport:
         n_flagged=sum(c["primary"] for c in comparisons),
         elo=elo,
         obs_hash=obs[0],
+        cost={arm: _cost(spec, arm) for arm in arms},
     )
     out = exp_dir(spec)
     with open(os.path.join(out, "report.json"), "w") as f:
@@ -410,30 +455,56 @@ def report(spec) -> ExperimentReport:
     return rep
 
 
+def _cost(spec, arm) -> dict:
+    """Parameter count of the arm's network (its first seed's `ckpt_final.pt`) and `_summary` over
+    seeds of each run's mean `sps` over its `metrics.jsonl` rows; None where a file is unreadable."""
+    from polytopia_rl.checkpoint import load_net
+
+    try:
+        net, _ = load_net(os.path.join(run_dir(spec, arm, spec.seeds[0]), "ckpt_final.pt"), "cpu")
+        params = sum(p.numel() for p in net.parameters())
+    except Exception:  # placeholder or missing checkpoint
+        params = None
+    per_seed = []
+    for seed in spec.seeds:
+        p = os.path.join(run_dir(spec, arm, seed), "metrics.jsonl")
+        if not os.path.exists(p):
+            per_seed = None
+            break
+        with open(p) as f:
+            sps = [r["sps"] for line in f if line.strip() and "sps" in (r := json.loads(line))]
+        if not sps:
+            per_seed = None
+            break
+        per_seed.append(float(np.mean(sps)))
+    return {"params": params, "sps": _summary(per_seed) if per_seed is not None else None}
+
+
 def _fmt(x, digits=3) -> str:
     return "-" if x is None else f"{x:.{digits}f}"
 
 
 def report_markdown(rep: ExperimentReport) -> str:
     n_seeds = len(rep.seeds)
+    elo_m = "elo_vs_ref" if "elo_vs_ref" in rep.tables else "elo_vs_init"
     lines = [
         f"# Experiment {rep.name}",
         "",
         f"Arms {', '.join(rep.arms)}; seeds {', '.join(map(str, rep.seeds))}; obs_hash `{rep.obs_hash}`.",
-        "A run's value is the mean over its evaluated checkpoints (suite win rate, or `elo_vs_init`).",
+        f"A run's value is the mean over its evaluated checkpoints (suite win rate, or `{elo_m}`).",
         f"With {n_seeds} seeds per arm Welch's test detects only large effects; a primary comparison without a "
         "flag is \"not detected\", not \"no effect\". Non-primary comparisons are exploratory (no flag).",
         "",
     ]
     for metric, table in rep.tables.items():
-        digits = 1 if metric == "elo_vs_init" else 3
+        digits = 1 if metric == elo_m else 3
         lines += [f"## {metric}", "", "| arm | " + " | ".join(f"seed {s}" for s in rep.seeds) + " | mean | sd | min to max |", "| --- |" + " --- |" * (n_seeds + 3)]
         for arm, row in table.items():
             cells = [_fmt(v, digits) for v in row["per_seed"]]
             lines.append(f"| {arm} | " + " | ".join(cells) + f" | {_fmt(row['mean'], digits)} | {_fmt(row['sd'], digits)} | {_fmt(row['min'], digits)} to {_fmt(row['max'], digits)} |")
         lines += ["", "Per checkpoint (step: value):", "", "| arm | seed | checkpoints |", "| --- | --- | --- |"]
         for r in rep.runs:
-            vals = r["elo_vs_init"] if metric == "elo_vs_init" else r["suite"][metric]
+            vals = r[elo_m] if metric == elo_m else r["suite"][metric]
             lines.append(f"| {r['arm']} | {r['seed']} | " + ", ".join(f"{s}: {_fmt(v, digits)}" for s, v in zip(r["steps"], vals)) + " |")
         lines.append("")
     lines += [
@@ -452,6 +523,20 @@ def report_markdown(rep: ExperimentReport) -> str:
         lines.append("Not played yet.")
     else:
         lines += ["| player | Elo |", "| --- | --- |"] + [f"| {name} | {r:.0f} |" for name, r in sorted(rep.elo.items(), key=lambda kv: -kv[1])]
+    if rep.cost is not None:
+        lines += [
+            "",
+            "## Cost (reported, not tested)",
+            "",
+            "Parameters of the arm's network; training sps: each run's mean over its updates.",
+            "",
+            "| arm | parameters | " + " | ".join(f"sps seed {s}" for s in rep.seeds) + " | sps mean | sps sd |",
+            "| --- | --- |" + " --- |" * (n_seeds + 2),
+        ]
+        for arm, c in rep.cost.items():
+            sps = c["sps"]
+            cells = [_fmt(v, 0) for v in sps["per_seed"]] + [_fmt(sps["mean"], 0), _fmt(sps["sd"], 0)] if sps is not None else ["-"] * (n_seeds + 2)
+            lines.append(f"| {arm} | {'-' if c['params'] is None else c['params']} | " + " | ".join(cells) + " |")
     lines += ["", "## Runs", "", "| arm | seed | evaluated steps | obs_hash | rules_hash |", "| --- | --- | --- | --- | --- |"]
     for r in rep.runs:
         lines.append(f"| {r['arm']} | {r['seed']} | {', '.join(map(str, r['steps']))} | `{r['obs_hash']}` | `{r['rules_hash']}` |")

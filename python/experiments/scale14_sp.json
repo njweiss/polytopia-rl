@@ -1,0 +1,19 @@
+{
+  "name": "scale14_sp",
+  "base_config": "python/configs/selfplay.json",
+  "init_from": "scale14_bots",
+  "reference": "runs/curriculum_seed1/latest.pt",
+  "seeds": [1, 2, 3],
+  "total_steps": 10000000,
+  "arms": {
+    "w32b4": {"width": 32, "blocks": 4},
+    "w64b4": {"width": 64, "blocks": 4},
+    "w128b4": {"width": 128, "blocks": 4},
+    "w64b8": {"width": 64, "blocks": 8}
+  },
+  "primary": ["elo_vs_ref", "rush_e0"],
+  "suite_seeds": 200,
+  "tournament_seeds": 100,
+  "eval_checkpoints": 3,
+  "h2h_seeds": 100
+}
