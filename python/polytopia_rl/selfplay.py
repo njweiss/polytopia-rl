@@ -323,15 +323,15 @@ class SelfPlayVecEnv(SyncVecEnv):
         for i in range(self.num_envs):
             if self._opponent_to_move(i):
                 groups.setdefault(self._opp[i].name, []).append(i)
-        if self.stacked_policy is not None and groups:
+        if self.stacked_policy is None:
+            per_group = [self._policy(self._opp[idx[0]])([self.envs[i] for i in idx]) for idx in groups.values()]
+        elif groups:
             # docs/MILESTONE_13b: one stacked call for all the groups, after syncing its stack.
             self.stacked_policy.sync(self._stack_entries())
-            stacked = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in groups.items()])
-        for g, idx in enumerate(groups.values()):
-            if self.stacked_policy is not None:
-                actions = stacked[g]
-            else:
-                actions = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
+            per_group = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in groups.items()])
+        else:
+            per_group = []
+        for idx, actions in zip(groups.values(), per_group):
             for i, a in zip(idx, actions):
                 a = tuple(int(x) for x in a)
                 _, _, terminated, truncated = self.envs[i].step_factored(*a)
