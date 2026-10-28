@@ -68,8 +68,7 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Next speed step or M14: (a) batch the rollout buffer writes (cheap, no behavior change), (b) stack
-   snapshot weights into one forward per tick (`torch.func`), or go straight to M14.
+1. Review `docs/MILESTONE_13b.md` (stacked snapshot forward; clarifications T1-T3), then start phase A.
 
 ## Open questions
 
@@ -90,6 +89,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | Owner chose option (b): M13b brief (stacked snapshot forward via torch.func) drafted. Option (a) and the hang safeguard deferred. |
 | 2026-10-28 | Gate 13a: interleaved 1.66x rollout / 1.54x total at pool 10; smoke OK; --parallel 4. |
 | 2026-10-28 | 12c done and reported (decay10 best); M13 merged (c8a0fcf), gate green, worktree removed; Q36-Q37 to DECISIONS.md. |
 | 2026-10-27 | 12c-b launched by the owner. M13 S1-S3 confirmed; phase A moved to worktree `../polytopia_rl-m13` (first attempt stopped before any edit). |
