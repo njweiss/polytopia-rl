@@ -10,6 +10,7 @@ import torch
 from torch import Tensor
 
 from polytopia_rl.gae import compute_gae
+from polytopia_rl.vec_env import env_masks_fn
 
 
 @dataclass
@@ -161,20 +162,8 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
             envs = [vec_env.envs[i] for i in acting]
             obs = [env.observation() for env in envs]
             board, glob = tensors(np.stack([b for b, _ in obs]), np.stack([g for _, g in obs]))
-
-            def masks_fn(stage, actors=None, kinds=None):
-                if stage == "actor":
-                    return np.stack([env.actor_mask() for env in envs])
-                if stage == "kind":
-                    return np.stack([env.kind_mask(int(a)) for env, a in zip(envs, actors)])
-                m = np.zeros((len(envs), vec_env.num_tiles), dtype=bool)
-                for r, env in enumerate(envs):
-                    xm = env.arg_mask(int(actors[r]), int(kinds[r]))
-                    m[r, : xm.size] = xm
-                return m
-
             with torch.no_grad():
-                out = net.act(net.trunk(board, glob), masks_fn, generator)
+                out = net.act(net.trunk(board, glob), env_masks_fn(envs, vec_env.num_tiles), generator)
             ti = torch.tensor([t[i] for i in acting], device=device)
             si = torch.tensor(acting, device=device)
             buffer.board[ti, si], buffer.globals[ti, si] = board, glob
