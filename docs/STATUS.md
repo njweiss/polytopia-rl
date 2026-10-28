@@ -5,6 +5,14 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
+**Milestone 14 (capacity ladder): merged into `main` (`3501282`, 2026-10-28), `pixi run check` green
+(362 RL + 26 Python tests); 14a smoke running, then the owner launches 14b.** Tests `99f499b` (42
+tests, 14 mutants), implementation `693c60c`. Specs `python/experiments/scale14_bots.json` (phase 1, bot
+curriculum from scratch) and `scale14_sp.json` (phase 2, self-play from each run's own phase-1
+`ckpt_final.pt`); arms w32b4, w64b4, w128b4, w64b8; 3 seeds; 10M each; reference = M10 `latest.pt`.
+A simplify pass over the M12-13b code was merged before it (`1eb8146`, behavior-preserving);
+`experiment.py` still gets its own pass after M14.
+
 **Milestone 13b (stacked snapshot forward): merged into `main` (`074b0ef`, 2026-10-28), `pixi run check`
 green (320 RL + 26 Python tests); gate 13b measured (`4344435`).** Stacking gave little: pool 10
 total sps 1.11x (opponent calls 3.9x fewer, but each stacked call costs 2.8x: 372 launches, padding,
@@ -71,15 +79,16 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Review `docs/MILESTONE_14.md` (capacity ladder: w32b4, w64b4, w128b4, w64b8 from scratch, bot
-   curriculum then self-play, 3 seeds, M10 as reference; clarifications P1-P5), then start phase A.
+1. After the 14a smoke: launch 14b phase 1, then phase 2 (tmux or nohup), about 1.5-2 days in total:
+   `pixi run scripts/experiment.sh run python/experiments/scale14_bots.json`, then `report`, then the
+   same for `scale14_sp.json`.
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q39). Q1-Q38 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q42). Q1-Q41 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (rev 394).
-- `.git/tests-lock` points at `9b7a1ca` (M13b's test commit).
+- `.git/tests-lock` points at `99f499b` (M14's test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
@@ -93,6 +102,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | Simplify pass merged (1eb8146). M14 merged (3501282), gate green; Q39-Q41 to DECISIONS.md. |
 | 2026-10-28 | Self-play `opponent_forward` set to per_snapshot (5eaa577). M14 brief (capacity ladder) drafted. |
 | 2026-10-28 | Gate 13b: stacked 1.11x at pool 10, 0.82x at pool 1; smoke OK. |
 | 2026-10-28 | M13b merged (074b0ef), gate green, worktree removed; Q38 to DECISIONS.md. |

@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 and `074b0ef` for Q38.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 and `3501282` for Q39-Q41.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -45,3 +45,6 @@ spec section, or the brief when the answer is an implementation detail.
 | Q36 | 2026-10-27 | Error type for a `tick` action of a slot not on its learner's move | `ValueError`, raised before anything is applied | M13 brief; `selfplay.py` |
 | Q37 | 2026-10-27 | Equivalence test: opponents fixed by seed | Accepted; the real draw order changes with interleaving, so the test keys each episode's opponent to its seed; every episode starts through `_reset` -> `_start` | M13 tests |
 | Q38 | 2026-10-28 | A snapshot thinned out of the pool while slots still play it | `sync` stacks the pool entries plus the entries of slots whose opponent left the pool (pool order, then slot order) | M13b brief; `selfplay._stack_entries` |
+| Q39 | 2026-10-28 | Where the cost columns live | `ExperimentReport.cost`: arm -> {params, sps}; None for unreadable runs; also a Cost table in `report.md` | M14 brief; `experiment.py` |
+| Q40 | 2026-10-28 | Names with a reference | per-run `elo_vs_ref`/`elo_vs_ref_mean`, opponent "ref"; with both fields set, `init_checkpoint` only starts training | M14 brief; `experiment.py` |
+| Q41 | 2026-10-28 | A missing `init_from` source | The launcher reports it itself (`FAILED ... does not exist`), skips that run, others continue | M14 brief; `experiment.py` |
