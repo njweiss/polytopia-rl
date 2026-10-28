@@ -71,8 +71,8 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Speed follow-up or M14: the default `opponent_forward` ("stacked" is slower early in a run), a
-   single-group fallback in `tick`, and batching the buffer writes (option (a)).
+1. Review `docs/MILESTONE_14.md` (capacity ladder: w32b4, w64b4, w128b4, w64b8 from scratch, bot
+   curriculum then self-play, 3 seeds, M10 as reference; clarifications P1-P5), then start phase A.
 
 ## Open questions
 
@@ -93,6 +93,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | Self-play `opponent_forward` set to per_snapshot (5eaa577). M14 brief (capacity ladder) drafted. |
 | 2026-10-28 | Gate 13b: stacked 1.11x at pool 10, 0.82x at pool 1; smoke OK. |
 | 2026-10-28 | M13b merged (074b0ef), gate green, worktree removed; Q38 to DECISIONS.md. |
 | 2026-10-28 | Owner chose option (b): M13b brief (stacked snapshot forward via torch.func) drafted. Option (a) and the hang safeguard deferred. |
