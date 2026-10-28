@@ -1024,3 +1024,142 @@ What this says:
   the learner's actions back with one `.cpu()` per call, should remove most of the ~29,000 syncs.
   This changes `ppo.py`, so it needs an owner decision; it could go into the same speed step as
   stacking.
+
+# Milestone 13b: stacked snapshot forward gate
+
+Run on the owner's machine (RTX 4060 8 GB, WSL2, 12 threads) on 2026-10-28, code at commit `27458aa`
+(`main`, M13b merged at `074b0ef`). Build hashes: obs `d5f9b1033cfd55ca`, rules `a8b52b91eae34503`.
+`pixi run check` was green before the gate. Every trainer ran with `OMP_NUM_THREADS=1`; nothing else
+was running; all runs were sequential (`runs/gate13b/run_all.sh`). Scripts and run dirs are in
+`runs/gate13b/` (not tracked): `fixture.py`, `reprofile.py`, `torchprof.py`, `smoke_compare.py`.
+
+`fixture.py` is the 13a fixture with `rollout=interleaved` and `opponent_forward=MODE`. An
+"opponent call" is one per-snapshot batch-policy call (`per_snapshot`) or one stacked call
+(`stacked`, one per tick with snapshot moves); the stack's `sync` is timed apart and is not in the
+opponent time. Sampled stacked runs are not bit-identical to per-snapshot runs (draws in (group, slot)
+order, MILESTONE_13b), so the two modes play different games from the first opponent move: counts
+like ticks and learner calls differ between modes, not between runs of one mode at a pool of 10.
+
+## 1. Profile fixture at a pool of 10
+
+Resume `runs/exp/selfplay12b/pbot40/seed1/latest.pt` (pool of 10, `p_bot` 0.4, 128 x 32) for 3
+rollouts, eval/rating/snapshot off. Order: per_snapshot 1, stacked 1, per_snapshot 2, stacked 2.
+Per rollout = per 4,096 learner transitions.
+
+| measure | per_snapshot run 1 / 2 | stacked run 1 / 2 | ratio (means) |
+| --- | --- | --- | --- |
+| rollout sps | 588 / 636 | 664 / 711 | **1.12x** |
+| update sps | 2,818 / 2,811 | 2,897 / 3,114 | 1.07x |
+| total sps (rollout + update) | 487 / 519 | 540 / 579 | **1.11x** |
+| rollout time, 3 rollouts (s) | 20.9 / 19.3 | 18.5 / 17.3 | 0.89x |
+| opponent calls per rollout | 650 | 165 | 3.9x fewer |
+| opponent batch per call, mean (median) | 4.45 (2) | 17.9 (6) | |
+| snapshot groups per tick with snapshot moves (mean, max) | 4.58, 10 | 4.26, 10 | |
+| ticks per rollout | 147 | 172 | |
+| time per opponent call (ms) | 6.1 / 5.7 | 16.9 / 16.1 | **2.8x** |
+| share of rollout time in opponent calls | 57% / 58% | 45% / 46% | |
+| share of rollout time in learner forward | 16% / 17% | 20% / 19% | |
+| learner calls per rollout (mean batch) | 109 (37.6) | 119 (34.3) | |
+| stack `sync`, 3 rollouts (s) | | 0.11 / 0.08 | |
+
+**The rollout is 1.12x faster and the whole loop 1.11x, not the ~1.5x 13a estimated.** Calls fell
+3.9x as planned (one per tick), but a stacked call costs ~16.5 ms, not the ~7-8 ms 13a assumed, so
+opponent time per rollout only fell from ~3.8 s to ~2.8 s. Why (`torchprof.py`, `torch.profiler`
+over rollout 2; CPU times inflated by the profiler):
+
+| per call | kernel launches | host-device syncs | memcpy | GPU kernel time (ms) | CPU time (ms) |
+| --- | --- | --- | --- | --- | --- |
+| per-snapshot opponent call (13a) | 171 | 10 | 12.9 | 1.11 | 7.1 |
+| stacked call, pool of 10 | 372 | 13 | 15.9 | 6.84 | 21.0 |
+| stacked call, pool of 1 | 269 | 13 | 13.1 | 2.50 | 20.2 |
+
+A stacked call makes twice the launches (`index_select` of every stacked parameter per call,
+vmap's batching of each op, the pad and unpad gathers), runs ~6x the GPU work at a pool of 10 (every
+group is padded to the largest group, mean 17.9 real envs in up to 10 x B padded rows), and its
+CPU side (`functional_call` + `vmap` dispatch in Python) is ~3x a plain call.
+
+## 2. Pool of 1 (start of a run)
+
+A fresh self-play run from `runs/curriculum_seed1/latest.pt` with `python/configs/selfplay.json`,
+10 updates (`total_steps=40960`, `tournament_seeds=1`, eval/rating/snapshot off), same order.
+
+| measure | per_snapshot run 1 / 2 | stacked run 1 / 2 | ratio (means) |
+| --- | --- | --- | --- |
+| rollout sps | 1,166 / 1,309 | 932 / 1,002 | **0.78x** |
+| total sps | 847 / 938 | 716 / 756 | **0.82x** |
+| total sps, updates 2-10 | 848 / 938 | 707 / 742 | 0.81x |
+| opponent calls per rollout (mean batch) | 117 / 130 (28.7 / 25.0) | 115 / 124 (28.2 / 25.7) | |
+| time per opponent call (ms) | 6.7 / 5.8 | 13.3 / 12.2 | 2.0x |
+| share of rollout time in opponent calls | 22% / 24% | 35% / 38% | |
+
+**Stacked is slower at the start of a run: -18% total, -22% rollout.** With one snapshot there is
+one group per tick in both modes, so the call count is the same, and the stacked call costs twice
+as much (the overhead above with nothing to amortize). The two runs of one mode differ here (update
+1's `approx_kl` already differs in the 4th digit: the GPU update is not bit-deterministic, and from a
+fresh start the weights then move, so the games diverge), but both pairs show the same direction and
+the per-call cost explains it. The 1M smoke (3) confirms it over 244 updates.
+
+## 3. Smoke run: 1M steps with the default config
+
+`pixi run scripts/selfplay.sh python/configs/selfplay.json total_steps=1000000
+lr_anneal_steps=10000000 --run-dir runs/gate13b/smoke1m` (stacked, the default). It **completed**
+(exit 0; 244 updates, final step 999,424, pool of 1, `ckpt_final.pt`, `pool/`, `tournament.json`/`.md`).
+**Wall time 22 min 57 s**; training (rollout + update) 22.7 min at a mean of **735 sps** (rollout 962
+sps); peak RSS 2.08 GiB. Over the same 244 updates (all at a pool of 1): 13a smoke (per-snapshot,
+interleaved) 889 sps (rollout 1,234), 12b `pbot40` seeds (lockstep, 3 at a time) 529-549 sps. So
+stacked is **17% slower than the 13a path over the first 1M steps**, as the pool-of-1 fixture says.
+
+The run ends one update before the 1M evaluation (1,003,520), so it has no in-training suite row;
+its 1M row is `ckpt_final.pt` (999,424) evaluated with the in-training code (`SELFPLAY_SUBSET`, 50
+seeds = 100 games, batched greedy), as 13a did at 2M. Win rates:
+
+| condition | smoke (999,424) | 13a smoke (1,003,520) | 12b `pbot40` seeds 1 / 2 / 3 (1,003,520) | inside the 12b range |
+| --- | --- | --- | --- | --- |
+| economy_e0 | 1.00 | 1.00 | 1.00 / 1.00 / 0.99 | yes |
+| rush_e0 | 0.94 | 0.87 | 0.86 / 0.93 / 0.97 | yes |
+| rush_e20 | 0.97 | 0.97 | 0.94 / 0.99 / 0.93 | yes |
+
+Training metrics, mean over the updates in the 100k steps to 999,424:
+
+| metric | smoke | 13a smoke | 12b seeds 1 / 2 / 3 | inside |
+| --- | --- | --- | --- | --- |
+| approx_kl | 0.0629 | 0.0700 | 0.0637 / 0.0682 / 0.0813 | no (0.0008 below) |
+| entropy | 0.644 | 0.632 | 0.564 / 0.642 / 0.598 | no (0.002 above) |
+| clipfrac | 0.160 | 0.164 | 0.168 / 0.158 / 0.163 | yes |
+| train_win_rate | 0.824 | 0.769 | 0.673 / 0.808 / 0.778 | no (0.016 above) |
+
+**Verdict: learning is not broken.** All three suite rows fall inside the three-seed range; the three
+training metrics outside are at its edge and on the good side (a higher training win rate, depending
+on the opponent mix). Three seeds make a narrow range; a sanity check, not a test.
+
+## 4. Re-profile of the stacked interleaved rollout (pool of 10)
+
+`runs/gate13b/reprofile.py`: the 13a timing wrappers (`cuda.synchronize` at the rollout edges), one
+run, 3 rollouts (19.03 s, 495 stacked calls):
+
+| part | seconds | share | 13a (per-snapshot) |
+| --- | --- | --- | --- |
+| opponent forward (stacked call; observations and mask Rust calls excluded) | 8.68 | 45.6% | 10.50 (50.8%) |
+| stack `sync` | 0.09 | 0.5% | |
+| learner forward (`trunk` + `act` + `value`, mask fetching excluded) | 4.20 | 22.1% | 3.55 (17.2%) |
+| mask fetching (learner `masks_fn` 0.08 + opponent Rust mask calls 0.02) | 0.10 | 0.5% | 0.22 (1.1%) |
+| env stepping (Rust `step_factored` 0.37, `info` 0.36, `observation` 0.15, `reset` 0.00) | 0.88 | 4.6% | 0.83 (4.0%) |
+| Python loop and per-element buffer writes (the rest) | 5.07 | 26.6% | 5.56 (26.9%) |
+
+The profiler (1) still shows ~29,200 synchronous host-device copies per rollout outside the forward
+passes, as in 13a: the per-element buffer writes and action reads of `collect_rollout_interleaved`.
+
+**Recommendation.** Stacking did what it was built to do (one opponent call per tick) but its per-call
+overhead eats most of the gain at a pool of 10 (+11% total) and makes the start of a run slower (-18%
+at a pool of 1), so over a 10M run, where the pool grows by one per 1M steps, the net is small and
+may be negative in the first few million steps. Two things are worth doing before M14, both cheap:
+(i) an owner decision on the default: either `per_snapshot` until the pool reaches some size, or a
+stacked call that falls back to the plain per-snapshot call when a tick has a single group (one-line
+dispatch in `tick`, recovers the pool-of-1 loss); (ii) deferred option (a), batching the
+per-element buffer writes and action reads in `collect_rollout_interleaved`: 27% of the rollout at
+every pool size, ~29,000 syncs per rollout, independent of the opponent path. Halving that part
+would give ~1.15x on the rollout, more than stacking gave. Beyond that, the stacked call itself
+could be trimmed (gather the parameters once per pool change instead of per call, pad less), but its
+Python dispatch cost is inherent to `vmap`. Note also that M14 runs 4 trainers at once, where CPU
+launch time is the contended resource; the stacked call's 2x launches may cost more there than
+here (not measured), so the concurrency table of 13a (3) should be re-measured with the chosen default.
