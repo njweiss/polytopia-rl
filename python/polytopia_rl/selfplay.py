@@ -144,6 +144,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         rng: np.random.Generator,
         p_bot: float = 0.2,
         reward: dict,
+        stacked_policy: Callable | None = None,
     ):
         self.env_fn = env_fn
         self.num_envs = num_envs
@@ -151,6 +152,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         self.seed_stride = seed_stride
         self.pool = pool
         self.make_policy = make_policy
+        self.stacked_policy = stacked_policy  # docs/MILESTONE_13b: None keeps the M13 per-snapshot calls in `tick`
         self.rng = rng
         self.p_bot = p_bot
         self.reward = {k: np.float32(reward[k]) for k in ("terminal_weight", "shaping_weight", "gamma", "potential_scale")}
@@ -399,7 +401,9 @@ class SelfPlayVecEnv(SyncVecEnv):
         self._stats = []
 
 
-def make_selfplay_vec_env(cfg, seed_base: int, *, pool: SnapshotPool, make_policy: Callable, rng: np.random.Generator) -> SelfPlayVecEnv:
+def make_selfplay_vec_env(
+    cfg, seed_base: int, *, pool: SnapshotPool, make_policy: Callable, rng: np.random.Generator, stacked_policy: Callable | None = None
+) -> SelfPlayVecEnv:
     """`cfg.num_envs` slots of `polytopia_sim.Env(size, turn_cap, full_observability, opponent,
     opponent_epsilon, agent_seat="seed_parity", reward weights)` from `cfg`."""
     import polytopia_sim
@@ -415,4 +419,4 @@ def make_selfplay_vec_env(cfg, seed_base: int, *, pool: SnapshotPool, make_polic
             **reward,
         )
 
-    return SelfPlayVecEnv(env_fn, cfg.num_envs, seed_base, pool=pool, make_policy=make_policy, rng=rng, p_bot=cfg.p_bot, reward=reward)
+    return SelfPlayVecEnv(env_fn, cfg.num_envs, seed_base, pool=pool, make_policy=make_policy, rng=rng, p_bot=cfg.p_bot, reward=reward, stacked_policy=stacked_policy)

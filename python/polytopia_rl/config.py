@@ -43,6 +43,8 @@ class PPOConfig:
     clip_vloss: bool = True
     # Self-play rollout collector (docs/MILESTONE_13): "interleaved" | "lockstep".
     rollout: str = "interleaved"
+    # Snapshot opponents' forward in the interleaved collector (docs/MILESTONE_13b): "stacked" | "per_snapshot".
+    opponent_forward: str = "stacked"
     # Model.
     width: int = 64
     blocks: int = 4
