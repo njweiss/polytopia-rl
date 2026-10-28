@@ -33,7 +33,7 @@ Append entries below. Format:
   run's rows, then `np.mean` / `np.std(ddof=1)` over seeds), that `report.md` shows each parameter count
   (plain or comma-grouped) and the word "sps", and that `cost` is the only new top-level key of
   `report.json` for a milestone 12 spec.
-- Owner answer:
+- Owner answer: A on 2026-10-28
 
 ## Q40: Report and file names with a reference
 
@@ -48,7 +48,7 @@ Append entries below. Format:
   `elo_vs_ref`; with a reference `report.md` does not mention `elo_vs_init` (its explanatory line names
   the metric in use). Without a reference the per-run keys, tables, players, files and `report.md`
   metric names are exactly the milestone 12 ones.
-- Owner answer:
+- Owner answer: A on 2026-10-28
 
 ## Q41: A missing `init_from` source: who reports it
 
@@ -66,4 +66,4 @@ Append entries below. Format:
   is not tested. Not tested either: `init_from` without `reference` (the agent reads the brief as "no
   head-to-head", since only `init_checkpoint` gives one), and a missing source for a run that resumes
   from its own `latest.pt` (the source is not needed then).
-- Owner answer:
+- Owner answer: A on 2026-10-28
