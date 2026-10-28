@@ -34,6 +34,7 @@ from polytopia_rl.model import PolicyNet
 from polytopia_rl.ppo import RolloutBuffer, collect_rollout, collect_rollout_interleaved, train_update
 from polytopia_rl.rating import fit_ratings
 from polytopia_rl.selfplay import Entry, SnapshotPool, make_selfplay_vec_env, net_batch_policy, regression
+from polytopia_rl.stacked import StackedSnapshots, stacked_batch_policy
 from polytopia_rl.suite import DEFAULT_SUITE, run_suite
 from polytopia_rl.tournament import BOTS, Player, anchor_of, play_pair, round_robin, write_tournament
 from polytopia_rl.vec_env import make_vec_env
@@ -141,7 +142,11 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
 
     def new_vec(seed_base):
         if cfg.selfplay:
-            return make_selfplay_vec_env(cfg, seed_base, pool=pool, make_policy=make_policy, rng=opp_rng)
+            stacked_policy = None
+            if cfg.opponent_forward == "stacked":  # docs/MILESTONE_13b
+                stack = StackedSnapshots(copy.deepcopy(net), device)
+                stacked_policy = stacked_batch_policy(stack, opp_gen, cfg.opponent_greedy)
+            return make_selfplay_vec_env(cfg, seed_base, pool=pool, make_policy=make_policy, rng=opp_rng, stacked_policy=stacked_policy)
         return make_vec_env(stage_config(cfg, stage), seed_base=seed_base)
 
     # Run state: everything a checkpoint has to carry for an exact resume.

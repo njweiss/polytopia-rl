@@ -144,6 +144,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         rng: np.random.Generator,
         p_bot: float = 0.2,
         reward: dict,
+        stacked_policy: Callable | None = None,
     ):
         self.env_fn = env_fn
         self.num_envs = num_envs
@@ -151,6 +152,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         self.seed_stride = seed_stride
         self.pool = pool
         self.make_policy = make_policy
+        self.stacked_policy = stacked_policy  # docs/MILESTONE_13b: None keeps the M13 per-snapshot calls in `tick`
         self.rng = rng
         self.p_bot = p_bot
         self.reward = {k: np.float32(reward[k]) for k in ("terminal_weight", "shaping_weight", "gamma", "potential_scale")}
@@ -182,6 +184,17 @@ class SelfPlayVecEnv(SyncVecEnv):
         if entry.name not in self._policies:
             self._policies[entry.name] = self.make_policy(entry)
         return self._policies[entry.name]
+
+    def _stack_entries(self) -> list[Entry]:
+        """The pool's entries, then those of slots still playing a snapshot that left the pool, in
+        slot order of first appearance (docs/QUESTIONS.md Q38)."""
+        entries = list(self.pool.entries)
+        names = {e.name for e in entries}
+        for opp in self._opp:
+            if isinstance(opp, Entry) and opp.name not in names:
+                entries.append(opp)
+                names.add(opp.name)
+        return entries
 
     def _start(self, i: int, seed: int, opp) -> None:
         """Begin slot `i`'s episode on `seed` against `opp` (the opponent's opening moves, if any,
@@ -295,7 +308,8 @@ class SelfPlayVecEnv(SyncVecEnv):
     def tick(self, learner_actions: dict[int, tuple[int, int, int]]) -> list[Transition]:
         """Apply one learner action to every slot in `learner_actions` (all must be in
         `learner_slots()`), then one opponent move to every other slot whose snapshot opponent is to
-        move (one batch-policy call per snapshot), handle episode ends and auto-resets, and return the
+        move (one batch-policy call per snapshot, or one `stacked_policy` call for all of them when
+        given, docs/MILESTONE_13b), handle episode ends and auto-resets, and return the
         transitions completed during this tick, in ascending slot order (docs/MILESTONE_13 "Ticks")."""
         bad = sorted(set(learner_actions) - set(self.learner_slots()))
         if bad:
@@ -321,8 +335,15 @@ class SelfPlayVecEnv(SyncVecEnv):
         for i in range(self.num_envs):
             if self._opponent_to_move(i):
                 groups.setdefault(self._opp[i].name, []).append(i)
-        for idx in groups.values():
-            actions = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
+        if self.stacked_policy is not None and groups:
+            # docs/MILESTONE_13b: one stacked call for all the groups, after syncing its stack.
+            self.stacked_policy.sync(self._stack_entries())
+            stacked = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in groups.items()])
+        for g, idx in enumerate(groups.values()):
+            if self.stacked_policy is not None:
+                actions = stacked[g]
+            else:
+                actions = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
             for i, a in zip(idx, actions):
                 a = tuple(int(x) for x in a)
                 _, _, terminated, truncated = self.envs[i].step_factored(*a)
@@ -399,7 +420,9 @@ class SelfPlayVecEnv(SyncVecEnv):
         self._stats = []
 
 
-def make_selfplay_vec_env(cfg, seed_base: int, *, pool: SnapshotPool, make_policy: Callable, rng: np.random.Generator) -> SelfPlayVecEnv:
+def make_selfplay_vec_env(
+    cfg, seed_base: int, *, pool: SnapshotPool, make_policy: Callable, rng: np.random.Generator, stacked_policy: Callable | None = None
+) -> SelfPlayVecEnv:
     """`cfg.num_envs` slots of `polytopia_sim.Env(size, turn_cap, full_observability, opponent,
     opponent_epsilon, agent_seat="seed_parity", reward weights)` from `cfg`."""
     import polytopia_sim
@@ -415,4 +438,4 @@ def make_selfplay_vec_env(cfg, seed_base: int, *, pool: SnapshotPool, make_polic
             **reward,
         )
 
-    return SelfPlayVecEnv(env_fn, cfg.num_envs, seed_base, pool=pool, make_policy=make_policy, rng=rng, p_bot=cfg.p_bot, reward=reward)
+    return SelfPlayVecEnv(env_fn, cfg.num_envs, seed_base, pool=pool, make_policy=make_policy, rng=rng, p_bot=cfg.p_bot, reward=reward, stacked_policy=stacked_policy)
