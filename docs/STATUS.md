@@ -6,7 +6,13 @@ from this file. Update it at the end of every working session.
 ## Current milestone and phase
 
 **Milestone 13 (interleaved self-play rollout): merged into `main` (`c8a0fcf`, 2026-10-28), `pixi run
-check` green (300 RL + 26 Python tests); gate 13a measurements next (GPU).** Tests `b243472` (21 tests,
+check` green (300 RL + 26 Python tests); gate 13a done (`13f6a5d`).** At pool 10 the interleaved
+rollout is 1.66x faster (350 -> 582 rollout sps; total 311 -> 478), below the orchestrator's "several
+times" estimate: snapshot groups per tick rose to 4.4, and learner calls tripled. Smoke run (2M, 41 min,
+~820 sps) inside the 12b spread: learning not broken. `--parallel 4` default (+7% over 3; ~1.7 GiB RAM
+margin estimated, watch it). With a pool of 1 under 3-4 trainers, interleaved is ~8% slower than
+lockstep. Re-profile: opponent forward 51%, Python loop and per-element GPU buffer writes 27% (~29k
+host-device syncs per rollout), learner forward 17%. Tests `b243472` (21 tests,
 equivalence with the lockstep path on the real env), implementation `b86c2d5`. Default
 `rollout: "interleaved"`; `"lockstep"` reproduces earlier runs. Known gap (harmless at defaults): an
 episode truncated during the opponent's opening turn would hang the rollout (needs `max_agent_actions`
@@ -62,8 +68,8 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Nothing blocking. Gate 13a measurements are being run by an agent (GPU); then the re-profile decides
-   whether a second speed step (stacked snapshots or CUDA graphs) precedes M14.
+1. Next speed step or M14: (a) batch the rollout buffer writes (cheap, no behavior change), (b) stack
+   snapshot weights into one forward per tick (`torch.func`), or go straight to M14.
 
 ## Open questions
 
@@ -84,6 +90,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | Gate 13a: interleaved 1.66x rollout / 1.54x total at pool 10; smoke OK; --parallel 4. |
 | 2026-10-28 | 12c done and reported (decay10 best); M13 merged (c8a0fcf), gate green, worktree removed; Q36-Q37 to DECISIONS.md. |
 | 2026-10-27 | 12c-b launched by the owner. M13 S1-S3 confirmed; phase A moved to worktree `../polytopia_rl-m13` (first attempt stopped before any edit). |
 | 2026-10-27 | Profiled self-play at pool 10 (92% of rollout in opponent calls, 58 calls per learner step, barrier per step); M13 brief (interleaved rollout) drafted; scaling becomes M14. |
