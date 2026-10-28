@@ -46,6 +46,11 @@ class Spec:
     tournament_seeds: int
     eval_checkpoints: int = 3
     h2h_seeds: int = 100
+    # Milestone 14 (not implemented yet): a checkpoint every evaluated checkpoint plays head to head
+    # (`h2h_{step}.json`, metric "elo_vs_ref", round robin player "ref"), and the name of an earlier
+    # experiment whose `runs/exp/{init_from}/{arm}/seed{seed}/ckpt_final.pt` warm-starts run (arm, seed).
+    reference: str | None = None
+    init_from: str | None = None
 
 
 @dataclass
@@ -68,6 +73,9 @@ class ExperimentReport:
     n_flagged: int  # comparisons that carry a significance flag (primary ones)
     elo: dict | None  # player -> Elo from the experiment round robin (None if not played yet)
     obs_hash: str
+    # Milestone 14 (not implemented yet): arm -> {"params": parameter count of the arm's network (from
+    # its final checkpoint), "sps": `_summary` over seeds of each run's mean `sps` in `metrics.jsonl`}.
+    cost: dict | None = None
 
 
 def eval_checkpoints(run_dir, k) -> list[str]:
