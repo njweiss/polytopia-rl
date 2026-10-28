@@ -136,6 +136,84 @@ def collect_rollout(net, vec_env, buffer: RolloutBuffer, generator: torch.Genera
     return stats
 
 
+def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: torch.Generator) -> list:
+    """Fill `buffer` (`[t_i, i]` per slot) from the tick interface of a `SelfPlayVecEnv` (already
+    reset) under `net`; return the `EpisodeStat`s of the episodes that finished, in completion order
+    (docs/MILESTONE_13 "Collecting a rollout")."""
+    device = buffer.device
+    T, n = buffer.num_steps, buffer.num_envs
+    t = [0] * n  # per slot: transitions written so far
+    stats = []
+    buffer.env_time = buffer.policy_time = 0.0
+
+    def tensors(board, glob):
+        return torch.from_numpy(board).to(device), torch.from_numpy(glob).to(device)
+
+    while True:
+        ready = vec_env.learner_slots()
+        if len(ready) == n and all(x == T for x in t):
+            break
+        acting = [i for i in ready if t[i] < T]
+        actions = {}
+        t0 = time.perf_counter()
+        if acting:
+            # One learner forward pass for the slots on their learner's move with rows left.
+            envs = [vec_env.envs[i] for i in acting]
+            obs = [env.observation() for env in envs]
+            board, glob = tensors(np.stack([b for b, _ in obs]), np.stack([g for _, g in obs]))
+
+            def masks_fn(stage, actors=None, kinds=None):
+                if stage == "actor":
+                    return np.stack([env.actor_mask() for env in envs])
+                if stage == "kind":
+                    return np.stack([env.kind_mask(int(a)) for env, a in zip(envs, actors)])
+                m = np.zeros((len(envs), vec_env.num_tiles), dtype=bool)
+                for r, env in enumerate(envs):
+                    xm = env.arg_mask(int(actors[r]), int(kinds[r]))
+                    m[r, : xm.size] = xm
+                return m
+
+            with torch.no_grad():
+                out = net.act(net.trunk(board, glob), masks_fn, generator)
+            ti = torch.tensor([t[i] for i in acting], device=device)
+            si = torch.tensor(acting, device=device)
+            buffer.board[ti, si], buffer.globals[ti, si] = board, glob
+            buffer.actors[ti, si], buffer.kinds[ti, si], buffer.args[ti, si] = out.actors, out.kinds, out.args
+            buffer.actor_mask[ti, si], buffer.kind_mask[ti, si], buffer.arg_mask[ti, si] = out.actor_mask, out.kind_mask, out.arg_mask
+            buffer.logp[ti, si], buffer.values[ti, si] = out.logp, out.value
+            for r, i in enumerate(acting):
+                actions[i] = (int(out.actors[r]), int(out.kinds[r]), int(out.args[r]))
+        t1 = time.perf_counter()
+        done = vec_env.tick(actions)
+        stats += vec_env.episode_stats()
+        t2 = time.perf_counter()
+        cut = []
+        for tr in done:
+            i = tr.slot
+            buffer.rewards[t[i], i] = tr.reward
+            buffer.terminated[t[i], i] = bool(tr.terminated)
+            buffer.truncated[t[i], i] = bool(tr.truncated)
+            buffer.next_values[t[i], i] = 0.0
+            if tr.truncated:
+                cut.append(tr)
+            else:
+                t[i] += 1
+        # A truncated episode did not really end: bootstrap from the value of its final
+        # observation (the one before the auto-reset), computed for those slots in one batch.
+        if cut:
+            fb, fg = tensors(np.stack([tr.final_board for tr in cut]), np.stack([tr.final_globals for tr in cut]))
+            with torch.no_grad():
+                values = net.value(net.trunk(fb, fg))
+            for r, tr in enumerate(cut):
+                buffer.next_values[t[tr.slot], tr.slot] = values[r]
+                t[tr.slot] += 1
+        buffer.env_time += t2 - t1
+        buffer.policy_time += t1 - t0 + time.perf_counter() - t2
+    with torch.no_grad():
+        buffer.last_value[:] = net.value(net.trunk(*tensors(*vec_env.observations())))
+    return stats
+
+
 def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Generator) -> dict:
     """GAE on `buffer`, then `cfg.update_epochs` epochs of shuffled minibatches. Uses the
     optimizer's current learning rate. Returns the update's metrics (`pg_loss`, `v_loss`,
