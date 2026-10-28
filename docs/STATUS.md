@@ -6,7 +6,12 @@ from this file. Update it at the end of every working session.
 ## Current milestone and phase
 
 **Milestone 13b (stacked snapshot forward): merged into `main` (`074b0ef`, 2026-10-28), `pixi run check`
-green (320 RL + 26 Python tests); gate 13b measurements next (GPU).** Tests `9b7a1ca` (20 tests, 19
+green (320 RL + 26 Python tests); gate 13b measured (`4344435`).** Stacking gave little: pool 10
+total sps 1.11x (opponent calls 3.9x fewer, but each stacked call costs 2.8x: 372 launches, padding,
+vmap/functional_call dispatch); pool 1 0.82x (18% slower; one group per tick, so only the extra per-call
+cost shows). The 1M smoke (default stacked, pool 1 throughout) ran 17% slower than the 13a per-snapshot
+smoke; learning not broken. Re-profile at pool 10: opponent forward 46%, Python loop and per-element
+buffer writes 27% (~29k host-device syncs per rollout), learner 22%. Tests `9b7a1ca` (20 tests, 19
 mutants caught), implementation `8809bcf`. Default `opponent_forward: "stacked"`; `"per_snapshot"`
 reproduces M13. Q38 A: the stack also holds snapshots thinned out of the pool while slots still play
 them (untested path; first thinning at ~41M steps with the defaults).
@@ -66,7 +71,8 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Nothing blocking: gate 13b measurements next. Then the M14 brief (scaling ladder).
+1. Speed follow-up or M14: the default `opponent_forward` ("stacked" is slower early in a run), a
+   single-group fallback in `tick`, and batching the buffer writes (option (a)).
 
 ## Open questions
 
@@ -87,6 +93,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | Gate 13b: stacked 1.11x at pool 10, 0.82x at pool 1; smoke OK. |
 | 2026-10-28 | M13b merged (074b0ef), gate green, worktree removed; Q38 to DECISIONS.md. |
 | 2026-10-28 | Owner chose option (b): M13b brief (stacked snapshot forward via torch.func) drafted. Option (a) and the hang safeguard deferred. |
 | 2026-10-28 | Gate 13a: interleaved 1.66x rollout / 1.54x total at pool 10; smoke OK; --parallel 4. |
