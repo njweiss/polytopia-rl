@@ -848,3 +848,179 @@ Round robin of the final weights (exploratory): the three `decay10` runs are the
 - **For M14 (scaling):** anneal to zero within each run (the default), and 10M-step runs are enough to
   compare configurations; the final checkpoints of a fully annealed run are its best. Whether 20M steps
   annealed over 20M beats 10M annealed over 10M is untested.
+
+# Milestone 13a: interleaved rollout gate
+
+Run on the owner's machine (RTX 4060 8 GB, WSL2 with 11.7 GiB, 12 threads) on 2026-10-28, code at
+commit `40f8711` (`main`, M13 merged at `c8a0fcf`). Build hashes: obs `d5f9b1033cfd55ca`, rules
+`a8b52b91eae34503`. `pixi run check` was green before the gate. Every trainer ran with
+`OMP_NUM_THREADS=1`; nothing else was running. Scripts and run dirs are in `runs/gate13a/` (not
+tracked): `fixture.py`, `reprofile.py`, `smoke_compare.py`, `concurrency/measure.sh`, `concurrency/summarize.py`.
+
+## 1. Profile fixture: lockstep vs interleaved
+
+The M13 profile fixture: resume `runs/exp/selfplay12b/pbot40/seed1/latest.pt` (pool of 10, `p_bot`
+0.4, 128 x 32) for 3 rollouts into a scratch dir, `tournament_seeds=1`, eval/rating/snapshot intervals
+off. `runs/gate13a/fixture.py MODE` sets `rollout=MODE` and counts calls by wrapping
+`SelfPlayVecEnv._policy` (opponent calls), `PolicyNet.trunk/act/value` outside opponent calls (learner
+forward), `_advance` (rounds) and `tick`. Two runs per mode, alternated (order: interleaved 1, lockstep 1, interleaved 2, lockstep 2).
+Per rollout = per 4,096 learner transitions. The lockstep counts reproduce the M13 profile exactly
+(1,868 calls per rollout = 5,604 / 3, 2.2 groups per round).
+
+| measure | lockstep run 1 / 2 | interleaved run 1 / 2 | ratio (means) |
+| --- | --- | --- | --- |
+| rollout sps | 360 / 340 | 585 / 580 | **1.66x** |
+| update sps | 2,768 / 2,722 | 2,561 / 2,777 | 0.98x |
+| total sps (rollout + update) | 319 / 303 | 476 / 480 | **1.54x** |
+| rollout time, 3 rollouts (s) | 34.1 / 36.1 | 21.0 / 21.2 | |
+| learner calls per rollout (mean batch) | 32 (128) | 109 (37.6) | 3.4x more |
+| opponent calls per rollout | 1,868 | 659 / 650 | 2.86x fewer |
+| opponent calls per learner transition | 0.456 | 0.161 / 0.159 | |
+| opponent batch per call, mean (median) | 1.70 (1) | 4.39 / 4.45 (2) | |
+| cost per opponent call (ms) | 5.5 / 5.9 | 5.9 / 6.2 | |
+| rounds (lockstep) or ticks (interleaved) per rollout | 840 rounds | 159 / 147 ticks (5 without an opponent call) | 5.5x fewer |
+| snapshot groups per round or tick: mean, max, share with 1 | 2.22, 7, 40% | 4.27 / 4.58, 10, 39% / 35% | 2.0x more |
+| share of rollout time in opponent calls | 91% / 92% | 56% / 58% | |
+| share of rollout time in learner forward | 6% / 5% | 18% / 16% | |
+| share of rollout time in policy calls (both) | 97% / 97% | 74% / 74% | |
+
+**The rollout is 1.66x faster and the whole loop 1.54x, not "several times".** The barrier did go:
+840 opponent rounds per rollout became ~153 ticks. Three things eat most of that 5.5x:
+
+- **Twice as many snapshot groups per tick (2.2 to 4.4).** A lockstep round only holds the few slots
+  still in mid-turn; a tick holds the opponent move of every snapshot slot that is on its opponent's
+  move (~77 slots spread over 10 snapshots), so more distinct snapshots meet in one tick. Calls fall
+  only 2.86x, and a call costs ~6 ms whatever its batch (1.7 or 4.4 envs), so opponent time falls
+  about as much as the call count.
+- **The learner now makes 109 small calls (mean 38 rows) instead of 32 calls of 128**, at ~11 ms each
+  (3.6 s of 20.7 s, see 4). Its share grows from 6% to 17%.
+- **The end-of-rollout barrier (S2):** ~45 of the ~153 ticks per rollout have no learner call; they
+  finish the opponent turns of slots that have used their 32 rows.
+
+## 2. Smoke run: 2M steps interleaved from the M10 checkpoint
+
+`pixi run scripts/selfplay.sh python/configs/selfplay.json total_steps=2000000 lr_anneal_steps=10000000
+--run-dir runs/gate13a/smoke2m` (seed 1, 128 x 32, `p_bot` 0.4, LR on the 10M schedule of 12b). It
+**completed** (exit 0; 488 updates, final step 1,998,848, pool of 2, `ckpt_final.pt`, `pool/`,
+`tournament.json`/`.md`). **Wall time 41 min 13 s** for the whole command (training, the 1M suite
+row, the end-of-run round robin of 100 seeds); training alone (rollout + update) 0.68 h at a mean of
+**821 sps** (893 sps with a pool of 1, updates 1-244; ~780 sps with a pool of 2, updates 245-488).
+Peak RSS 2.1 GiB. For scale only: the three 12b `pbot40` runs took 1.23-1.26 h (439-452 sps) for
+their first 488 updates, but they ran lockstep and three at a time, so this is not a like-for-like
+speed comparison (see 3 for that).
+
+The run ends one update before 12b's 2M evaluation (2,002,944), so its 2M suite row is
+`ckpt_final.pt` (1,998,848) evaluated afterwards with the in-training code (`SELFPLAY_SUBSET`, 50
+seeds = 100 games, batched greedy; `runs/gate13a/smoke_compare.py`). Win rates:
+
+| step (12b step) | condition | smoke | 12b `pbot40` seeds 1 / 2 / 3 | inside the 12b range |
+| --- | --- | --- | --- | --- |
+| 1,003,520 (1,003,520) | economy_e0 | 1.00 | 1.00 / 1.00 / 0.99 | yes |
+| 1,003,520 (1,003,520) | rush_e0 | 0.87 | 0.86 / 0.93 / 0.97 | yes |
+| 1,003,520 (1,003,520) | rush_e20 | 0.97 | 0.94 / 0.99 / 0.93 | yes |
+| 1,998,848 (2,002,944) | economy_e0 | 0.98 | 1.00 / 0.99 / 1.00 | no (98 of 100 against 99-100) |
+| 1,998,848 (2,002,944) | rush_e0 | 0.92 | 0.92 / 0.92 / 0.95 | yes |
+| 1,998,848 (2,002,944) | rush_e20 | 0.95 | 0.97 / 0.96 / 0.94 | yes |
+
+Training metrics, mean over the updates in the 100k steps up to each point:
+
+| window | metric | smoke | 12b seeds 1 / 2 / 3 | inside |
+| --- | --- | --- | --- | --- |
+| to 1,003,520 | approx_kl | 0.0696 | 0.0636 / 0.0668 / 0.0808 | yes |
+| to 1,003,520 | entropy | 0.634 | 0.562 / 0.642 / 0.603 | yes |
+| to 1,003,520 | clipfrac | 0.165 | 0.168 / 0.158 / 0.164 | yes |
+| to 1,003,520 | train_win_rate | 0.767 | 0.675 / 0.810 / 0.779 | yes |
+| to 1,998,848 | approx_kl | 0.0569 | 0.0625 / 0.0565 / 0.0534 | yes |
+| to 1,998,848 | entropy | 0.647 | 0.568 / 0.664 / 0.672 | yes |
+| to 1,998,848 | clipfrac | 0.165 | 0.158 / 0.169 / 0.163 | yes |
+| to 1,998,848 | train_win_rate | 0.650 | 0.734 / 0.651 / 0.805 | no (0.001 below) |
+
+**Verdict: learning is not broken.** 5 of 6 suite rows and 7 of 8 training metrics fall inside the
+three-seed range; the two outside are at its edge (one economy game, and a training win rate 0.001
+below seed 2's, which depends on the opponent mix). Three reference seeds make a narrow range; this
+is a sanity check, not a test.
+
+## 3. Concurrency with the interleaved path
+
+`runs/gate13a/concurrency/measure.sh N`: N copies of `python/configs/selfplay.json` (interleaved,
+the default) from the M10 checkpoint, seeds 1 to N, started together, 36 updates each, as in 12a.
+Total sps is the sum of each trainer's mean `sps` over updates 5 to 30; peak RSS from `/usr/bin/time
+-v`; GPU memory is the peak whole-device use (1,555 MiB idle); system memory is sampled every 2 s
+from `free` (2.5 GiB used and 9.2 GiB available when idle).
+
+| trainers | total sps | sps per trainer | peak RSS per trainer (GiB) | peak GPU memory MiB | peak system RAM used (GiB) | min RAM available (GiB) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 909 | 909 | 1.98 | 2087 (532 above idle) | 4.1 | 7.6 |
+| 2 | 1264 | 606, 658 | 1.99, 1.95 | 2615 (1060 above idle) | 5.6 | 6.1 |
+| 3 | 1368 | 453, 480, 435 | 2.02, 1.96, 1.97 | 3144 (1589 above idle) | 7.1 | 4.6 |
+| 4 | **1465** | 362, 363, 368, 373 | 1.94, 1.95, 1.96, 2.04 | 3641 (2086 above idle) | 8.6 | 3.1 |
+
+Same-day lockstep reference (`measure.sh N lockstep`): **1 trainer 818 sps, 3 trainers 1,495 sps**
+(515, 462, 518; 12a measured 804 and 1,570).
+
+**`scripts/experiment.sh` now defaults to `--parallel 4`**: the best total, with 3.1 GiB still
+available at the peak. In the 12a smoke experiment, 3 trainers plus the launcher's evaluation peaked
+at 8.5 GiB used, ~1.4 GiB above the 3-trainer peak here; the same margin on top of 4 trainers would
+leave ~1.7 GiB; watch memory early in the next experiment, and pass
+`--parallel 3` if it gets tight. The gain over 3 is small (+7%), and each run is 20% slower.
+
+Note on this table: it is measured at the warm start, **with a pool of 1**, where every snapshot slot
+plays the same snapshot, so a lockstep round already makes a single call. There the interleaved path
+gains little alone (+11%) and loses under contention (3 trainers: 1,368 against 1,495, -8%): its 3.4x
+more, smaller learner calls cost CPU launch time, which is what concurrent trainers compete for.
+Its gain grows with the pool (1.54x total at a pool of 10 in 1), and a 10M run spends most of its time
+with a pool of 2 to 10, so the table understates the interleaved path over a real run.
+
+## 4. Re-profile of the interleaved rollout
+
+On the fixture of 1 (interleaved), three instruments, one run each (`runs/gate13a/reprofile.py`):
+timing wrappers for the wall-clock split (`split`), `torch.profiler` with CPU and CUDA activities
+over rollout 2 (`torch`), and cProfile (`cprofile`; used only for the time inside the Rust methods,
+because under Python 3.12 its caller attribution came out incomplete).
+
+Split of 3 rollouts (20.65 s, with `cuda.synchronize` at the rollout edges):
+
+| part | seconds | share |
+| --- | --- | --- |
+| opponent forward (`trunk` + `act`, mask fetching and observations excluded) | 10.50 | 50.8% |
+| learner forward (`trunk` + `act` + `value`, mask fetching excluded) | 3.55 | 17.2% |
+| mask fetching, Python + Rust (`masks_fn`, learner 0.07 + opponents 0.14; the Rust mask calls alone 0.06) | 0.22 | 1.1% |
+| env stepping (Rust `step_factored` 0.37, `info` 0.32, `observation` 0.14, `reset` 0.00) | 0.83 | 4.0% |
+| Python loop and per-element buffer writes (the rest of `collect_rollout_interleaved` and `tick`) | 5.56 | 26.9% |
+
+Per call (`torch.profiler`, rollout 2; CPU times are inflated by the profiler, ~7 ms against ~6 ms
+without it):
+
+| call | calls per rollout | kernel launches | host-device syncs (`cudaStreamSynchronize`) | memcpy | GPU kernel time (ms) | CPU time (ms) |
+| --- | --- | --- | --- | --- | --- | --- |
+| opponent (`trunk` + `act`, stats off) | 655 | 171 | 10 | 12.9 | 1.11 | 7.1 |
+| learner (`trunk` + `act` with stats) | 116 | 60 + 149 = 209 | 20 | 22.5 | 1.52 + 0.90 = 2.42 | 1.9 + 8.0 = 9.9 |
+| everything outside these calls, per rollout | | 1,165 | 29,140 | 29,139 | 45 total | |
+
+What this says:
+
+- **Opponent forwards are still half the rollout, and they are host-bound.** A call has ~1.1 ms of GPU
+  work but costs ~6 ms, made of 171 kernel launches (~14 µs each) and 10 syncs (the three sampling
+  stages each go back to the CPU for the next mask). Its cost hardly depends on the batch (5.5 ms at
+  1.7 envs, 6.2 ms at 4.4). The number of calls is what matters: 4.4 snapshot groups per tick.
+- **The rest of the loop is a quarter of the rollout**, and the profiler shows why: ~29,000
+  synchronous host-device copies per rollout outside the forward passes, about 7 per learner
+  transition. `collect_rollout_interleaved` writes each transition's reward, terminated, truncated and
+  next value into the GPU buffer one element at a time (4 x 4,096 copies), and reads each learner
+  action back one element at a time with `int(out.actors[r])` (3 x 4,096).
+- Mask fetching (1%) and the Rust env (4%) are not worth touching yet.
+
+**Recommendation: stack the snapshot weights into one forward (`torch.func`), not CUDA graphs.**
+- Stacking attacks the largest part directly: one opponent call per tick instead of 4.4. Since a
+  call costs about the same at batch 2 or 10, the opponent part should fall from ~10.5 s to ~3-4 s
+  per 3 rollouts (~150 ticks x ~7-8 ms for a somewhat larger vmapped call). The rollout would then
+  take ~13-14 s instead of 20.7 s (~1.5x), more with a larger pool.
+- CUDA graphs fit this `act` badly: the 10 syncs per call (masks fetched between stages, sampled
+  actions read back) split it into at least 3 graph segments, and variable batch sizes need padded
+  shape buckets. At best they remove the launch cost (~2.4 ms of the ~6 ms) from each of the 4.4
+  calls, and they add more complexity than stacking.
+- Outside the three options in the brief: the per-element buffer writes (27%) look like the cheapest
+  win. Collecting a tick's transitions in NumPy and copying them to the buffer in one go, and reading
+  the learner's actions back with one `.cpu()` per call, should remove most of the ~29,000 syncs.
+  This changes `ppo.py`, so it needs an owner decision; it could go into the same speed step as
+  stacking.
