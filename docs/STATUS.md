@@ -5,18 +5,16 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
-**Milestone 13 (interleaved self-play rollout): merged into `main` (`c8a0fcf`, 2026-10-28), `pixi run
-check` green (300 RL + 26 Python tests); gate 13a done (`13f6a5d`).** At pool 10 the interleaved
-rollout is 1.66x faster (350 -> 582 rollout sps; total 311 -> 478), below the orchestrator's "several
-times" estimate: snapshot groups per tick rose to 4.4, and learner calls tripled. Smoke run (2M, 41 min,
-~820 sps) inside the 12b spread: learning not broken. `--parallel 4` default (+7% over 3; ~1.7 GiB RAM
-margin estimated, watch it). With a pool of 1 under 3-4 trainers, interleaved is ~8% slower than
-lockstep. Re-profile: opponent forward 51%, Python loop and per-element GPU buffer writes 27% (~29k
-host-device syncs per rollout), learner forward 17%. Tests `b243472` (21 tests,
-equivalence with the lockstep path on the real env), implementation `b86c2d5`. Default
-`rollout: "interleaved"`; `"lockstep"` reproduces earlier runs. Known gap (harmless at defaults): an
-episode truncated during the opponent's opening turn would hang the rollout (needs `max_agent_actions`
-below an opening turn; same case M11 Q26 left untested).
+**Milestone 13b (stacked snapshot forward): merged into `main` (`074b0ef`, 2026-10-28), `pixi run check`
+green (320 RL + 26 Python tests); gate 13b measurements next (GPU).** Tests `9b7a1ca` (20 tests, 19
+mutants caught), implementation `8809bcf`. Default `opponent_forward: "stacked"`; `"per_snapshot"`
+reproduces M13. Q38 A: the stack also holds snapshots thinned out of the pool while slots still play
+them (untested path; first thinning at ~41M steps with the defaults).
+
+**Milestone 13 (interleaved rollout, `c8a0fcf`):** gate 13a: 1.66x rollout / 1.54x total at pool 10;
+`--parallel 4`. Known gap: an episode truncated during the opponent's opening turn would hang the
+rollout (needs a tiny `max_agent_actions`). Deferred option (a): batch the per-element GPU buffer writes
+in `collect_rollout_interleaved` (~27% of rollout time).
 
 **Milestone 12c closed (2026-10-28):** `decay10 >= decay20 >= const` on all 9 metrics; `elo_vs_init`
 168 / 119 / 89, rush_e0 0.942 / 0.930 / 0.872; 9 of 9 paired seed comparisons ordered on
@@ -68,14 +66,14 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Review `docs/MILESTONE_13b.md` (stacked snapshot forward; clarifications T1-T3), then start phase A.
+1. Nothing blocking: gate 13b measurements next. Then the M14 brief (scaling ladder).
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q38). Q1-Q37 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q39). Q1-Q38 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (rev 394).
-- `.git/tests-lock` points at `b243472` (M13's test commit).
+- `.git/tests-lock` points at `9b7a1ca` (M13b's test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
@@ -89,6 +87,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | M13b merged (074b0ef), gate green, worktree removed; Q38 to DECISIONS.md. |
 | 2026-10-28 | Owner chose option (b): M13b brief (stacked snapshot forward via torch.func) drafted. Option (a) and the hang safeguard deferred. |
 | 2026-10-28 | Gate 13a: interleaved 1.66x rollout / 1.54x total at pool 10; smoke OK; --parallel 4. |
 | 2026-10-28 | 12c done and reported (decay10 best); M13 merged (c8a0fcf), gate green, worktree removed; Q36-Q37 to DECISIONS.md. |
