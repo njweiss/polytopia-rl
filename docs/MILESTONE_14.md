@@ -95,18 +95,18 @@ somewhat slower; the cost columns will show how much.
 ## Clarifications (owner: confirm or overrule)
 
 - **P1:** four arms including a smaller one (`w32b4`). Dropping it saves a quarter of the compute but
-  loses the check of whether today's size is already more than enough.
+  loses the check of whether today's size is already more than enough. - Confirmed (owner, 2026-10-28)
 - **P2:** phase 1 is 10M steps, not M10's 20M: M12c showed that a run annealed to zero within its
-  length does well, and M10's best checkpoint was at 13M. Every arm gets the same 10M.
+  length does well, and M10's best checkpoint was at 13M. Every arm gets the same 10M. - Confirmed (owner, 2026-10-28)
 - **P3:** hyperparameters are held fixed across sizes (M10's for phase 1, the self-play config for phase
   2). Larger networks often want a lower learning rate, so a null result for a larger size means "not
-  better at these settings", not "not better".
+  better at these settings", not "not better". - Confirmed (owner, 2026-10-28)
 - **P4:** the M10 checkpoint is the reference opponent (`elo_vs_ref`). Because it was trained for 20M
   curriculum steps and every arm here gets 10M, the from-scratch `w64b4` arm may score below 0 against
-  it after phase 1; the comparison across arms is what matters.
+  it after phase 1; the comparison across arms is what matters. - Confirmed (owner, 2026-10-28)
 - **P5:** the cross-arm round robin of the final weights is reported (exploratory), not tested; it is
   the most direct ranking of the sizes, but its ratings are fitted jointly, so they are not independent
-  across seeds.
+  across seeds. - Confirmed (owner, 2026-10-28)
 
 ## Changes to earlier tests
 
