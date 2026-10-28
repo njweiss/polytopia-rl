@@ -97,11 +97,11 @@ The callable returned by `stacked_batch_policy` has a `sync(entries)` attribute 
 
 ## Clarifications (owner: confirm or overrule)
 
-- **T1:** the default becomes `"stacked"`; `"per_snapshot"` reproduces M13 runs.
+- **T1:** the default becomes `"stacked"`; `"per_snapshot"` reproduces M13 runs. - Confirmed (owner, 2026-10-28)
 - **T2:** padding repeats a group's first row (always a valid observation), so no special handling of
-  empty or zero rows is needed in the network; the padded outputs are discarded.
+  empty or zero rows is needed in the network; the padded outputs are discarded. - Confirmed (owner, 2026-10-28)
 - **T3:** the stack holds the whole pool (at most `pool_max` = 40 entries, ~2 MB each at width 64, so
-  ~80 MB on the GPU at most) and per tick gathers only the groups that move.
+  ~80 MB on the GPU at most) and per tick gathers only the groups that move. - Confirmed (owner, 2026-10-28)
 
 ## Changes to earlier tests
 
