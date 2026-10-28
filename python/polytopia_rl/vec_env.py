@@ -26,6 +26,24 @@ def env_kwargs_of(cfg) -> dict:
     return dict(size=cfg.size, turn_cap=cfg.turn_cap, full_observability=cfg.full_observability)
 
 
+def env_masks_fn(envs: list, num_tiles: int) -> Callable:
+    """`masks_fn` for `PolicyNet.act` over `envs`, from each env's own masks: arg masks are padded
+    with False to `num_tiles`."""
+
+    def masks_fn(stage, actors=None, kinds=None):
+        if stage == "actor":
+            return np.stack([env.actor_mask() for env in envs])
+        if stage == "kind":
+            return np.stack([env.kind_mask(int(a)) for env, a in zip(envs, actors)])
+        m = np.zeros((len(envs), num_tiles), dtype=bool)
+        for i, env in enumerate(envs):
+            xm = env.arg_mask(int(actors[i]), int(kinds[i]))
+            m[i, : xm.size] = xm
+        return m
+
+    return masks_fn
+
+
 @dataclass
 class VecState:
     board: np.ndarray  # (E, C, H, W) float32

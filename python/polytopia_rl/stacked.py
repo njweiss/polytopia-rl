@@ -18,6 +18,7 @@ from torch.func import functional_call, stack_module_state, vmap
 from polytopia_rl import categorical
 from polytopia_rl.model import Features, PolicyNet
 from polytopia_rl.selfplay import Entry
+from polytopia_rl.vec_env import env_masks_fn
 
 
 class _Stages(nn.Module):
@@ -44,7 +45,6 @@ class StackedSnapshots:
         self.device = device
         # A private copy: `functional_call` runs on it with the stacked parameters swapped in.
         self.module = _Stages(copy.deepcopy(base_net).to(device)).requires_grad_(False)
-        self.has_arg = self.module.net.has_arg
         self.names: list[str] | None = None
         self.params: dict = {}
         self.buffers: dict = {}
@@ -89,7 +89,7 @@ def stacked_batch_policy(stack: StackedSnapshots, generator, greedy: bool = Fals
         groups = list(groups)
         sizes = [len(envs) for _, envs in groups]
         envs = [env for _, g_envs in groups for env in g_envs]
-        G, B, R = len(groups), max(sizes), len(envs)
+        G, B = len(groups), max(sizes)
         # Padded position (g, j) reads valid row offset_g + j, or the group's first row when j >= b_g.
         offsets = np.cumsum([0] + sizes[:-1])
         pad_src = torch.as_tensor([int(o) + (j if j < b else 0) for o, b in zip(offsets, sizes) for j in range(B)], device=device)
@@ -104,13 +104,13 @@ def stacked_batch_policy(stack: StackedSnapshots, generator, greedy: bool = Fals
             """(G, B, K) -> (R, K)."""
             return x.reshape(G * B, *x.shape[2:]).index_select(0, valid)
 
-        def fetch(rows):
-            return torch.as_tensor(np.stack(rows), dtype=torch.bool, device=device)
-
         obs = [env.observation() for env in envs]
         board = torch.from_numpy(np.stack([b for b, _ in obs])).to(device)
         glob = torch.from_numpy(np.stack([g for _, g in obs])).to(device)
-        n = board.shape[2] * board.shape[3]
+        masks_fn = env_masks_fn(envs, board.shape[2] * board.shape[3])
+
+        def fetch(*a):
+            return torch.as_tensor(masks_fn(*a), dtype=torch.bool, device=device)
 
         with torch.inference_mode():
             idx = torch.as_tensor([stack.index(name) for name, _ in groups], device=device)
@@ -118,33 +118,24 @@ def stacked_batch_policy(stack: StackedSnapshots, generator, greedy: bool = Fals
             buffers = {k: v.index_select(0, idx) for k, v in stack.buffers.items()}
             fmap, g = run("trunk", params, buffers, pad(board), pad(glob))
 
-            actor_mask = fetch([env.actor_mask() for env in envs])
+            actor_mask = fetch("actor")
             logits = unpad(run("actor_logits", params, buffers, fmap, g))
             actors = categorical.sample(logits, actor_mask, generator, greedy, check=False)
             actors_np = actors.cpu().numpy()
 
-            kind_mask = fetch([env.kind_mask(int(a)) for env, a in zip(envs, actors_np)])
+            kind_mask = fetch("kind", actors_np)
             logits = unpad(run("kind_logits", params, buffers, fmap, g, pad(actors)))
             kinds = categorical.sample(logits, kind_mask, generator, greedy, check=False)
             kinds_np = kinds.cpu().numpy()
 
-            arg_mask = np.zeros((R, n), dtype=bool)
-            for r, env in enumerate(envs):
-                xm = env.arg_mask(int(actors_np[r]), int(kinds_np[r]))
-                arg_mask[r, : xm.size] = xm
-            arg_mask = torch.as_tensor(arg_mask, device=device)
+            arg_mask = fetch("arg", actors_np, kinds_np)
             # As `PolicyNet.act`: kinds without an argument sample from an all-true mask, then get 0.
-            fired = stack.has_arg[kinds]
-            safe = arg_mask | ~fired.unsqueeze(1)
+            fired, safe = stack.module.net._arg_stage(kinds, arg_mask)
             logits = unpad(run("arg_logits", params, buffers, fmap, g, pad(actors), pad(kinds)))
             args = torch.where(fired, categorical.sample(logits, safe, generator, greedy, check=False), 0)
 
         flat = list(zip(actors.tolist(), kinds.tolist(), args.tolist()))
-        out, k = [], 0
-        for b in sizes:
-            out.append(flat[k : k + b])
-            k += b
-        return out
+        return [flat[o : o + b] for o, b in zip(offsets, sizes)]
 
     policy.sync = stack.sync
     return policy
