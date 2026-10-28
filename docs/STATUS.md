@@ -5,12 +5,17 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
-**Milestone 12c (LR schedule experiment): code merged into `main` (`7af81d4`, 2026-10-27); experiment
-12c-b ready for the owner to launch.** Tests `4a374e7` (15 tests, 8 mutants caught), implementation
-`7af81d4`, `pixi run check` green (279 Python RL tests). `runs/exp/selfplay12c/decay10/seed1..3` are
-hard links of 12b's `pbot40` runs (N1), so the launcher trains only `decay20` and `const` (6 runs,
-~20 h). Launch in tmux or with nohup:
-`pixi run scripts/experiment.sh run python/experiments/selfplay12c.json`, then `report`.
+**Milestone 13 (interleaved self-play rollout): merged into `main` (`c8a0fcf`, 2026-10-28), `pixi run
+check` green (300 RL + 26 Python tests); gate 13a measurements next (GPU).** Tests `b243472` (21 tests,
+equivalence with the lockstep path on the real env), implementation `b86c2d5`. Default
+`rollout: "interleaved"`; `"lockstep"` reproduces earlier runs. Known gap (harmless at defaults): an
+episode truncated during the opponent's opening turn would hang the rollout (needs `max_agent_actions`
+below an opening turn; same case M11 Q26 left untested).
+
+**Milestone 12c closed (2026-10-28):** `decay10 >= decay20 >= const` on all 9 metrics; `elo_vs_init`
+168 / 119 / 89, rush_e0 0.942 / 0.930 / 0.872; 9 of 9 paired seed comparisons ordered on
+`elo_vs_init`. Conclusion: anneal the LR to zero within each run (the default); 10M-step runs suffice
+for M14 comparisons. RL_REPORT "Milestone 12c".
 
 Milestone 12 (closed 2026-10-26):
 - **12a:** batched suite 22 min -> 28 s (greedy W-L-D identical; Q34 TF32 length differences accepted);
@@ -50,35 +55,36 @@ Milestone 12 (closed 2026-10-26):
 | M11 | hashes, checkpoints, suite, losses, Elo, tournament, snapshot-pool self-play | 11b passed: 0.675 vs M10, worst suite drop -3.0 pp (passes from ~18M on) |
 | M12 | batched suite, seed-varied maps, multi-seed experiment harness, Welch | 12b: see above; `pbot40` best against rush, not significant |
 
-**Working rule while an experiment runs from this checkout:** milestone work happens in a git worktree
-(M13: `../polytopia_rl-m13`, branch `milestone-13`). In a worktree, never run `pixi run`, `maturin develop`
-or `check.sh` (they would create a second pixi env or replace the shared `polytopia_sim` the running
-trainers load); run tests with
+**Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
+worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
+the shared `polytopia_sim`); run tests with
 `PYTHONPATH=$PWD/python /home/njweiss4/projects/polytopia_rl/.pixi/envs/default/bin/python -m pytest ...`.
-The full `pixi run check` gate runs in the main checkout after the experiment ends.
 
 ## Waiting on the owner
 
-1. Launch 12c-b (command above) and run `report` when it finishes.
+1. Nothing blocking. Gate 13a measurements are being run by an agent (GPU); then the re-profile decides
+   whether a second speed step (stacked snapshots or CUDA graphs) precedes M14.
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q36). Q1-Q35 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q38). Q1-Q37 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (rev 394).
-- `.git/tests-lock` points at `4a374e7` (M12c's test commit).
+- `.git/tests-lock` points at `b243472` (M13's test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
-1. Owner: launch 12c-b; orchestrator reviews the report and writes the RL_REPORT section.
-2. Owner: review `docs/MILESTONE_13.md` (S1-S3); M13 can be built while 12c-b runs (CPU tests only), but its gate measurements need an idle GPU.
-3. Orchestrator: re-export `docs/SPEC.md` if the Claude Doc changes.
+1. Gate 13a: profile fixture before/after, 2M smoke run, concurrency 1-4, re-profile, RL_REPORT section.
+2. Orchestrator: from the re-profile, a second speed step or straight to the M14 brief (scaling ladder,
+   10M runs annealed to zero, `p_bot` 0.4).
+3. Small safeguard for the opening-turn truncation hang (raise instead of looping) in the next milestone.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | 12c done and reported (decay10 best); M13 merged (c8a0fcf), gate green, worktree removed; Q36-Q37 to DECISIONS.md. |
 | 2026-10-27 | 12c-b launched by the owner. M13 S1-S3 confirmed; phase A moved to worktree `../polytopia_rl-m13` (first attempt stopped before any edit). |
 | 2026-10-27 | Profiled self-play at pool 10 (92% of rollout in opponent calls, 58 calls per learner step, barrier per step); M13 brief (interleaved rollout) drafted; scaling becomes M14. |
 | 2026-10-27 | M12c tests and implementation merged (7af81d4); Q35 answered A; 12b pbot40 runs linked as 12c decay10. |
