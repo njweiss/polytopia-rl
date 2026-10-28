@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from polytopia_rl.vec_env import EpisodeStat, SyncVecEnv, VecState, VecStep, agent_outcome, env_kwargs_of
+from polytopia_rl.vec_env import EpisodeStat, SyncVecEnv, VecState, VecStep, agent_outcome, env_kwargs_of, env_masks_fn
 
 BOT_OPPONENTS = ("economy", "rush")
 
@@ -91,19 +91,7 @@ def net_batch_policy(net, generator, greedy: bool = False, device: str = "cpu") 
         obs = [env.observation() for env in envs]
         board = torch.from_numpy(np.stack([b for b, _ in obs])).to(device)
         glob = torch.from_numpy(np.stack([g for _, g in obs])).to(device)
-        n = board.shape[2] * board.shape[3]
-
-        def masks_fn(stage, actors=None, kinds=None):
-            if stage == "actor":
-                return np.stack([env.actor_mask() for env in envs])
-            if stage == "kind":
-                return np.stack([env.kind_mask(int(a)) for env, a in zip(envs, actors)])
-            m = np.zeros((len(envs), n), dtype=bool)
-            for i, env in enumerate(envs):
-                xm = env.arg_mask(int(actors[i]), int(kinds[i]))
-                m[i, : xm.size] = xm
-            return m
-
+        masks_fn = env_masks_fn(envs, board.shape[2] * board.shape[3])
         with torch.inference_mode():
             out = net.act(net.trunk(board, glob), masks_fn, generator, greedy=greedy, stats=False)
         return list(zip(out.actors.tolist(), out.kinds.tolist(), out.args.tolist()))
