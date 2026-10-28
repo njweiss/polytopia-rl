@@ -31,7 +31,7 @@ from polytopia_rl.config import PPOConfig, load_config
 from polytopia_rl.curriculum import StageHistory, next_stage
 from polytopia_rl.evaluate import env_kwargs_of, evaluate, net_policy
 from polytopia_rl.model import PolicyNet
-from polytopia_rl.ppo import RolloutBuffer, collect_rollout, train_update
+from polytopia_rl.ppo import RolloutBuffer, collect_rollout, collect_rollout_interleaved, train_update
 from polytopia_rl.rating import fit_ratings
 from polytopia_rl.selfplay import Entry, SnapshotPool, make_selfplay_vec_env, net_batch_policy, regression
 from polytopia_rl.suite import DEFAULT_SUITE, run_suite
@@ -219,7 +219,9 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                 group["lr"] = lr
 
             t0 = time.perf_counter()
-            stats = collect_rollout(net, vec, buffer, gen)
+            # Self-play uses the interleaved collector unless `rollout` is "lockstep" (docs/MILESTONE_13).
+            collect = collect_rollout_interleaved if cfg.selfplay and cfg.rollout == "interleaved" else collect_rollout
+            stats = collect(net, vec, buffer, gen)
             _check_run_seeds(vec, seed_limit)
             t1 = time.perf_counter()
             m = train_update(net, optimizer, buffer, cfg, gen)

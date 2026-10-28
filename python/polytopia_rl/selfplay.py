@@ -23,6 +23,18 @@ BOT_OPPONENTS = ("economy", "rush")
 
 
 @dataclass
+class Transition:
+    """A learner transition completed during `SelfPlayVecEnv.tick` (docs/MILESTONE_13 "Ticks")."""
+
+    slot: int
+    reward: float  # the M9 formula over the learner's action and everything up to its next move or the episode end
+    terminated: bool
+    truncated: bool
+    final_board: np.ndarray | None  # as VecStep: the final observation when the episode ended
+    final_globals: np.ndarray | None
+
+
+@dataclass
 class Entry:
     step: int
     state: dict  # a frozen copy of the learner's state dict at `step` (CPU tensors)
@@ -156,6 +168,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         self._log = [[] for _ in range(num_envs)]  # snapshot slots: every action of the episode, both seats
         self._ended = [None] * num_envs  # (terminated, truncated) once the slot's episode is over
         self._ret = [0.0] * num_envs
+        self._before = [None] * num_envs  # tick: a waiting snapshot slot's scores before its learner action
         self._stats: list[EpisodeStat] = []
         for i in range(num_envs):
             self._check_seed(self._episode_seed(i, 0))
@@ -182,6 +195,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         self._log[i] = []
         self._ended[i] = None
         self._ret[i] = 0.0
+        self._before[i] = None
 
     def _reset(self, i: int) -> None:
         seed = self._episode_seed(i, self._next_k[i])
@@ -272,6 +286,66 @@ class SelfPlayVecEnv(SyncVecEnv):
                 self._reset(i)
                 restarted.append(i)
         self._advance(restarted)
+        return out
+
+    def learner_slots(self) -> list[int]:
+        """Slots whose learner is to move, ascending (docs/MILESTONE_13 "Ticks")."""
+        return [i for i, env in enumerate(self.envs) if self._ended[i] is None and env.info()["current_player"] == self._seed[i] % 2]
+
+    def tick(self, learner_actions: dict[int, tuple[int, int, int]]) -> list[Transition]:
+        """Apply one learner action to every slot in `learner_actions` (all must be in
+        `learner_slots()`), then one opponent move to every other slot whose snapshot opponent is to
+        move (one batch-policy call per snapshot), handle episode ends and auto-resets, and return the
+        transitions completed during this tick, in ascending slot order (docs/MILESTONE_13 "Ticks")."""
+        bad = sorted(set(learner_actions) - set(self.learner_slots()))
+        if bad:
+            raise ValueError(f"slots {bad} are not on their learner's move")
+        bot_reward = {}  # bot slots: the env's reward, complete in this tick
+        for i in sorted(learner_actions):
+            action = tuple(int(x) for x in learner_actions[i])
+            env = self.envs[i]
+            snapshot = isinstance(self._opp[i], Entry)
+            if snapshot:
+                self._before[i] = env.info()["scores"]
+            reward, _, terminated, truncated = env.step_factored(*action)
+            self._actions[i].append(action)
+            if snapshot:
+                self._log[i].append(action)
+            else:
+                bot_reward[i] = reward
+            if terminated or truncated:
+                self._ended[i] = (terminated, truncated)
+        # One opponent move per slot whose snapshot opponent is to move, grouped by snapshot in order
+        # of first appearance by slot.
+        groups: dict[str, list[int]] = {}
+        for i in range(self.num_envs):
+            if self._opponent_to_move(i):
+                groups.setdefault(self._opp[i].name, []).append(i)
+        for idx in groups.values():
+            actions = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
+            for i, a in zip(idx, actions):
+                a = tuple(int(x) for x in a)
+                _, _, terminated, truncated = self.envs[i].step_factored(*a)
+                self._log[i].append(a)
+                if terminated or truncated:
+                    self._ended[i] = (terminated, truncated)
+        out = []
+        for i in range(self.num_envs):
+            if i in bot_reward:
+                reward = np.float32(bot_reward[i])
+            elif self._before[i] is not None and (self._ended[i] is not None or not self._opponent_to_move(i)):
+                reward = self._snapshot_reward(i, self._before[i])
+                self._before[i] = None
+            else:
+                continue
+            self._ret[i] += float(reward)
+            tr = Transition(slot=i, reward=float(reward), terminated=False, truncated=False, final_board=None, final_globals=None)
+            if self._ended[i] is not None:
+                tr.terminated, tr.truncated = self._ended[i]
+                tr.final_board, tr.final_globals = self.envs[i].observation()
+                self._stats.append(self._episode_stat(i))
+                self._reset(i)
+            out.append(tr)
         return out
 
     def _episode_stat(self, i: int) -> EpisodeStat:

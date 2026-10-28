@@ -41,6 +41,8 @@ class PPOConfig:
     target_kl: float | None = None
     norm_adv: bool = True
     clip_vloss: bool = True
+    # Self-play rollout collector (docs/MILESTONE_13): "interleaved" | "lockstep".
+    rollout: str = "interleaved"
     # Model.
     width: int = 64
     blocks: int = 4
@@ -73,8 +75,8 @@ class PPOConfig:
 
     @classmethod
     def from_json(cls, text: str) -> PPOConfig:
-        """Fields missing from `text` keep their defaults; an unknown key, or `lr_anneal_steps` below
-        `total_steps`, raises `ValueError`."""
+        """Fields missing from `text` keep their defaults; an unknown key, `lr_anneal_steps` below
+        `total_steps`, or a `rollout` other than "interleaved" / "lockstep" raises `ValueError`."""
         data = json.loads(text)
         _check_keys(data)
         cfg = cls(**data)
@@ -82,6 +84,8 @@ class PPOConfig:
             raise ValueError(
                 f"lr_anneal_steps {cfg.lr_anneal_steps} is below total_steps {cfg.total_steps}: the LR would go negative"
             )
+        if cfg.rollout not in ("interleaved", "lockstep"):
+            raise ValueError(f"rollout {cfg.rollout!r} is not 'interleaved' or 'lockstep'")
         return cfg
 
 
