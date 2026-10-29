@@ -79,9 +79,10 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. After the 14a smoke: launch 14b phase 1, then phase 2 (tmux or nohup), about 1.5-2 days in total:
-   `pixi run scripts/experiment.sh run python/experiments/scale14_bots.json`, then `report`, then the
-   same for `scale14_sp.json`.
+1. Nothing: `runs/gate14a/run14.sh` (detached with nohup/setsid, log `runs/gate14a/run14.log`) runs the
+   14a smoke, then, only if it passed, 14b phase 1 + report and phase 2 + report (~1.5-2 days). If it
+   stops, `grep FAILED runs/gate14a/run14.log`; rerunning the same `scripts/experiment.sh run SPEC`
+   resumes unfinished runs.
 
 ## Open questions
 
@@ -102,6 +103,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-28 | Fix: every training run writes ckpt_final.pt (tests c82a9fb, code 98eba2d); the first 14a smoke failed without it. Smoke + 14b launched via runs/gate14a/run14.sh. |
 | 2026-10-28 | Simplify pass merged (1eb8146). M14 merged (3501282), gate green; Q39-Q41 to DECISIONS.md. |
 | 2026-10-28 | Self-play `opponent_forward` set to per_snapshot (5eaa577). M14 brief (capacity ladder) drafted. |
 | 2026-10-28 | Gate 13b: stacked 1.11x at pool 10, 0.82x at pool 1; smoke OK. |
