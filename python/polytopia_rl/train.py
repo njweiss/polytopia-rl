@@ -104,7 +104,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     """Train for `cfg.total_steps` agent steps and return the `PolicyNet`. With `resume`, model,
     optimizer, counters, curriculum state, RNG states and env state come from that checkpoint, and
     the run continues as if it had never stopped. With `init_checkpoint`, only the model weights
-    come from that checkpoint (obs hash enforced); optimizer and LR schedule start fresh.
+    come from that checkpoint (obs hash enforced); optimizer and LR schedule start fresh. Every run
+    ends with `ckpt_final.pt` (the final weights, as `latest.pt`).
 
     `cfg.selfplay` (docs/MILESTONE_11 "Self-play"): the learner plays `SelfPlayVecEnv` against the
     pool and the bots instead of the curriculum. Snapshot 0 is the initial weights; then one every
@@ -112,7 +113,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     {"win_rate", ...}}, "regression"}` every `eval_every` steps (conditions economy_e0, rush_e0,
     rush_e20, `eval_seeds` seeds) and `{"type": "rating", "global_step", "rating": {"learner",
     "snapshot_0"}}` every `rating_every` steps. Metrics rows also have `pool_size`. At the end:
-    `ckpt_final.pt`, `pool/snap_{step}.pt` (checkpoints), `tournament.json`, `tournament.md`
+    `pool/snap_{step}.pt` (checkpoints), `tournament.json`, `tournament.md`
     (`tournament_seeds` seeds) and `train.log`."""
     os.makedirs(run_dir, exist_ok=True)
     device = resolve_device(cfg.device)
@@ -332,8 +333,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             )
         if saved_at != global_step:
             save([f"ckpt_{global_step}.pt", "latest.pt"])
+        save(["ckpt_final.pt"])  # every run, so the experiment harness can find finished runs
         if cfg.selfplay:
-            save(["ckpt_final.pt"])
             finish_selfplay(net, pool, cfg, spec, run_dir, device)
     return net
 
