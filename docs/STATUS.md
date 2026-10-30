@@ -103,6 +103,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-29 | 14b phase 1: 11 of 12 runs done (~19.7 h); w32b4/seed3 crashed 6 s in (CUDA_ERROR_UNKNOWN at start-up, GPU fine after). Chain restarted from phase 1 via runs/gate14a/run14b.sh. |
 | 2026-10-28 | Fix: every training run writes ckpt_final.pt (tests c82a9fb, code 98eba2d); the first 14a smoke failed without it. Smoke + 14b launched via runs/gate14a/run14.sh. |
 | 2026-10-28 | Simplify pass merged (1eb8146). M14 merged (3501282), gate green; Q39-Q41 to DECISIONS.md. |
 | 2026-10-28 | Self-play `opponent_forward` set to per_snapshot (5eaa577). M14 brief (capacity ladder) drafted. |
