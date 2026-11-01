@@ -106,8 +106,10 @@ CUDA torch build. Training runs are hours long and run by the owner (`scripts/tr
   so partly the enemy's techs). It will be added later as an observation feature (not an action), as a
   deliberate, documented exception to the hidden-tech rule, together with a bump of `obs_hash`. It is not
   part of M11.
-- Roadmap (2026-10-27): M12 multi-seed experiments (done), 12c LR schedule, M13 speed (interleaved
-  self-play rollout), M14 architecture and scaling, then game v2. The damage preview moves into v2 (it is not a separate v1 milestone).
+- Roadmap (2026-11-01): M12-M14 done (experiments, speed, capacity: no gap, 64x4 kept). Next is game v2:
+  land only (water/naval in v3); techs Roads, Mathematics, Trade, Smithery, Construction, Free Spirit,
+  Chivalry with their units/buildings/actions; damage preview as an observation feature; v1 behind a
+  ruleset flag; the v1 policy carried over by distillation.
 - Architecture refinement waits until the evaluation suite can discriminate; the ladder is bots ->
   self-play pool -> (only if a capacity experiment shows a gap) a larger model, with distillation mainly
   for carrying a policy across a game or observation change (v2).

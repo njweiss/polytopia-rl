@@ -55,8 +55,11 @@ Milestone 12 (closed 2026-10-26):
 2. **M12 experiments:** done (2026-10-26).
 3. **M13 speed:** interleaved self-play rollout (brief `docs/MILESTONE_13.md`), then a re-profile.
 4. **M14 architecture and scaling:** network width/depth ladder measured with the M12 harness.
-5. **Game v2:** drafted after M14. The damage preview goes into v2, not into a separate v1
-   milestone (owner: it is unlikely to be a significant information source).
+5. **Game v2 (owner scope, 2026-11-01):** land only (water and naval units deferred to v3). New techs:
+   Roads (roads), Mathematics (sawmill, catapult), Trade (market), Smithery (swordsman, forge),
+   Construction (burn forest, windmill), Free Spirit (disband), Chivalry (knight, destroy building);
+   plus the damage preview as an observation feature. v1 stays runnable behind a ruleset flag. The v1
+   policy is carried over to v2 by distillation.
 
 ## Done
 
@@ -77,8 +80,8 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Pick the next step: draft game v2 (roadmap item 5), or first a short LR-scaled check of a larger network,
-   or the deferred `experiment.py` simplify pass. Orchestrator recommends game v2 with 64x4 (or 32x4).
+1. Confirm the v2 milestone plan and how the v2 rules are sourced (orchestrator drafts from the wiki for
+   the owner to approve, or the owner supplies the wiki extract as for v1).
 
 ## Open questions
 
@@ -99,6 +102,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-11-01 | v2 scope set by the owner: land only; Roads, Mathematics, Trade, Smithery, Construction, Free Spirit, Chivalry; damage preview; distillation from v1. |
 | 2026-10-31 | 14b done (phase 1 restart after a CUDA start-up failure); RL_REPORT 14b: no capacity gap, larger worse at fixed settings. |
 | 2026-10-29 | 14b phase 1: 11 of 12 runs done (~19.7 h); w32b4/seed3 crashed 6 s in (CUDA_ERROR_UNKNOWN at start-up, GPU fine after). Chain restarted from phase 1 via runs/gate14a/run14b.sh. |
 | 2026-10-28 | Fix: every training run writes ckpt_final.pt (tests c82a9fb, code 98eba2d); the first 14a smoke failed without it. Smoke + 14b launched via runs/gate14a/run14.sh. |
