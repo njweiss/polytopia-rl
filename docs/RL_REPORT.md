@@ -1163,3 +1163,60 @@ could be trimmed (gather the parameters once per pool change instead of per call
 Python dispatch cost is inherent to `vmap`. Note also that M14 runs 4 trainers at once, where CPU
 launch time is the contended resource; the stacked call's 2x launches may cost more there than
 here (not measured), so the concurrency table of 13a (3) should be re-measured with the chosen default.
+
+# Milestone 14b: network capacity ladder (`scale14_bots`, `scale14_sp`)
+
+Driver `runs/gate14a/run14.sh` (14a smoke, passed 2026-10-29 00:09), then 14b: phase 1 `scale14_bots`
+(M10 bot curriculum from scratch, 10M steps), phase 2 `scale14_sp` (self-play, each run warm-started
+from its own phase-1 `ckpt_final.pt`, 10M steps). 4 arms x 3 seeds, 4 trainers at once, reference
+opponent = the M10 `latest.pt` (20M curriculum steps). Code `98eba2d`, build obs `d5f9b1033cfd55ca`,
+rules `a8b52b91eae34503`. Phase 1 took ~20 h plus a 1.6 h rerun of `w32b4` seed 3 (crashed 6 s in with
+`CUDA_ERROR_UNKNOWN` while four trainers initialized the GPU; healthy afterwards); phase 2 took ~36 h
+(2026-10-29 23:58 to 10-31 12:06). Reports: `runs/exp/scale14_bots/report.md`,
+`runs/exp/scale14_sp/report.md`.
+
+| arm | width x blocks | parameters | phase 1 sps | phase 2 sps |
+| --- | --- | --- | --- | --- |
+| w32b4 | 32 x 4 | 114,325 | 890 (seeds 1-2) | 335 |
+| w64b4 | 64 x 4 (today's) | 422,869 | 708 | 277 |
+| w128b4 | 128 x 4 | 1,623,637 | 384 | 217 |
+| w64b8 | 64 x 8 | 718,293 | 667 | 231 |
+
+(Phase 1 sps of `w32b4` seed 3 was 1,937 because it ran alone after the restart.)
+
+## Results (mean over the 8/9/10M checkpoints, 3 seeds)
+
+| arm | phase 1 elo_vs_ref | phase 1 rush_e0 | phase 2 elo_vs_ref (seeds) | phase 2 rush_e0 (seeds) |
+| --- | --- | --- | --- | --- |
+| w32b4 | -10 +- 60 | 0.959 | 152 +- 92 (195, 46, 215) | 0.957 (0.960, 0.941, 0.970) |
+| w64b4 | -18 +- 12 | 0.968 | 147 +- 89 (184, 45, 212) | 0.944 (0.968, 0.925, 0.940) |
+| w128b4 | -3 +- 59 | 0.946 | 75 +- 57 (71, 133, 20) | 0.856 (0.848, 0.868, 0.851) |
+| w64b8 | -137 +- 33 | 0.846 | -118 +- 82 (-75, -212, -66) | 0.703 (0.754, 0.637, 0.718) |
+
+Phase 2 Welch (12 flagged): `w64b8` is below every other arm on both metrics (p 0.012-0.044);
+`w128b4` is below `w32b4` and `w64b4` on rush_e0 (p 0.001 and 0.009; the 0.001 survives a 12-test
+Bonferroni correction, 0.0042); `w32b4` vs `w64b4` not detected on either (p 0.47, 0.95). Phase 1:
+`w64b8` below the others on `elo_vs_ref` (p 0.015-0.047), nothing else detected.
+
+Round robin of the phase-2 final weights (exploratory): `w64b4`, `w32b4` and `w128b4` interleave
+(1,217-1,334); all three `w64b8` runs are below the reference (906-1,101); `ref` 1,112.
+
+## What we learned
+
+- **No capacity gap at these settings: bigger was not better, it was worse.** `w32b4` and `w64b4` are
+  indistinguishable (Elo 152 vs 147, rush 0.957 vs 0.944, interleaved in the round robin). The 4x wider
+  `w128b4` is about as strong against networks (round robin) but clearly weaker against rush (0.856).
+  The 2x deeper `w64b8` is worse on everything, already after phase 1.
+- **The likely cause is optimization, not capacity (hypothesis).** Hyperparameters were held fixed (P3):
+  phase 1 at lr 3e-4, phase 2 at 1e-4, tuned for 64 x 4. Larger networks usually want a smaller step
+  size, and the residual blocks have no normalization, so an 8-block stack starts with a larger
+  activation scale than a 4-block one. A null or negative result for a larger size here means "not
+  better at these settings and this budget (10M + 10M steps)", not "not better".
+- **Today's 64 x 4 is a sound choice, and 32 x 4 is a cheaper equal** at ~20% higher self-play speed
+  (335 vs 277 sps) and ~25% in phase 1. Per the roadmap's ladder ("a larger model only if a capacity
+  experiment shows a gap"), there is no reason to grow the network for v1.
+- **From scratch, 20M steps (10M curriculum + 10M self-play) beat the M10 checkpoint** (20M curriculum
+  only): `w64b4` scores +147 Elo against it (~0.70 expected score).
+- **Seed 2 is weak for every size in phase 2** (`elo_vs_ref` 45, 45, 133, -212; the lowest of the three
+  seeds for three of four arms): the paired design shares maps and phase-1 seeds, so part of the spread
+  is the seed, not the arm.
