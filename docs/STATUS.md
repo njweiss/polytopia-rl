@@ -5,13 +5,11 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
-**Milestone 14 (capacity ladder): merged into `main` (`3501282`, 2026-10-28), `pixi run check` green
-(362 RL + 26 Python tests); 14a smoke running, then the owner launches 14b.** Tests `99f499b` (42
-tests, 14 mutants), implementation `693c60c`. Specs `python/experiments/scale14_bots.json` (phase 1, bot
-curriculum from scratch) and `scale14_sp.json` (phase 2, self-play from each run's own phase-1
-`ckpt_final.pt`); arms w32b4, w64b4, w128b4, w64b8; 3 seeds; 10M each; reference = M10 `latest.pt`.
-A simplify pass over the M12-13b code was merged before it (`1eb8146`, behavior-preserving);
-`experiment.py` still gets its own pass after M14.
+**Milestone 14 closed (2026-10-31): no capacity gap.** Phase 2 (self-play) `elo_vs_ref` vs the M10
+checkpoint: w32b4 152, w64b4 147, w128b4 75, w64b8 -118; rush_e0 0.957 / 0.944 / 0.856 / 0.703. Larger was
+worse at fixed hyperparameters (P3); likely an optimization effect (LR tuned for 64x4, no normalization in
+the residual blocks), not proof that capacity cannot help. w32b4 equals w64b4 at ~20-25% higher speed.
+From scratch, 10M curriculum + 10M self-play beats M10 (+147 Elo). RL_REPORT "Milestone 14b".
 
 **Milestone 13b (stacked snapshot forward): merged into `main` (`074b0ef`, 2026-10-28), `pixi run check`
 green (320 RL + 26 Python tests); gate 13b measured (`4344435`).** Stacking gave little: pool 10
@@ -79,10 +77,8 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Nothing: `runs/gate14a/run14.sh` (detached with nohup/setsid, log `runs/gate14a/run14.log`) runs the
-   14a smoke, then, only if it passed, 14b phase 1 + report and phase 2 + report (~1.5-2 days). If it
-   stops, `grep FAILED runs/gate14a/run14.log`; rerunning the same `scripts/experiment.sh run SPEC`
-   resumes unfinished runs.
+1. Pick the next step: draft game v2 (roadmap item 5), or first a short LR-scaled check of a larger network,
+   or the deferred `experiment.py` simplify pass. Orchestrator recommends game v2 with 64x4 (or 32x4).
 
 ## Open questions
 
@@ -103,6 +99,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-10-31 | 14b done (phase 1 restart after a CUDA start-up failure); RL_REPORT 14b: no capacity gap, larger worse at fixed settings. |
 | 2026-10-29 | 14b phase 1: 11 of 12 runs done (~19.7 h); w32b4/seed3 crashed 6 s in (CUDA_ERROR_UNKNOWN at start-up, GPU fine after). Chain restarted from phase 1 via runs/gate14a/run14b.sh. |
 | 2026-10-28 | Fix: every training run writes ckpt_final.pt (tests c82a9fb, code 98eba2d); the first 14a smoke failed without it. Smoke + 14b launched via runs/gate14a/run14.sh. |
 | 2026-10-28 | Simplify pass merged (1eb8146). M14 merged (3501282), gate green; Q39-Q41 to DECISIONS.md. |

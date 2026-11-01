@@ -1217,6 +1217,6 @@ Round robin of the phase-2 final weights (exploratory): `w64b4`, `w32b4` and `w1
   experiment shows a gap"), there is no reason to grow the network for v1.
 - **From scratch, 20M steps (10M curriculum + 10M self-play) beat the M10 checkpoint** (20M curriculum
   only): `w64b4` scores +147 Elo against it (~0.70 expected score).
-- **Seed 2 is weak for every size in phase 2** (`elo_vs_ref` 45, 45, 133, -212; the lowest of the three
+- **Seed 2 is weak for every size in phase 2** (`elo_vs_ref` 46, 45, 133, -212; the lowest of the three
   seeds for three of four arms): the paired design shares maps and phase-1 seeds, so part of the spread
   is the seed, not the arm.
