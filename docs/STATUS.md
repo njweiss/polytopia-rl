@@ -80,8 +80,12 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Confirm the v2 milestone plan and how the v2 rules are sourced (orchestrator drafts from the wiki for
-   the owner to approve, or the owner supplies the wiki extract as for v1).
+1. Review the v2 rules draft: Claude Doc tab "v2 rules (draft)"
+   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm#f868c7c8-c04b), especially the 8 open proposals
+   in its last section. Working notes: `docs/V2_RULES_NOTES.md`. Then the orchestrator writes the
+   M15 brief (v2 spec and data tables, ruleset flag).
+2. Distillation vs warm start for the v1 -> v2 transfer: decided at the transfer milestone, possibly
+   both as arms of one experiment.
 
 ## Open questions
 
@@ -102,6 +106,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-11-02 | v2 rules drafted from owner rulings + namu.moe into a new Claude Doc tab; ruins and water out of v2; monuments M18 added to the v2 plan. |
 | 2026-11-01 | v2 scope set by the owner: land only; Roads, Mathematics, Trade, Smithery, Construction, Free Spirit, Chivalry; damage preview; distillation from v1. |
 | 2026-10-31 | 14b done (phase 1 restart after a CUDA start-up failure); RL_REPORT 14b: no capacity gap, larger worse at fixed settings. |
 | 2026-10-29 | 14b phase 1: 11 of 12 runs done (~19.7 h); w32b4/seed3 crashed 6 s in (CUDA_ERROR_UNKNOWN at start-up, GPU fine after). Chain restarted from phase 1 via runs/gate14a/run14b.sh. |
