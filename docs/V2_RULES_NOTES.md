@@ -59,7 +59,7 @@ Cost formula unchanged: `4 + cities x tier`.
   adjacent sawmills, windmills and forges, at most 8. A building's level is its adjacency count, and it
   updates when a neighbor is added, changes or goes away.
 - **Disband** (Free Spirit, owner 2026-11-02): removes one of your units and refunds half its cost,
-  rounded down.
+  rounded down; legal in any phase; not a kill. A Super Unit counts as worth 10 stars and refunds 5.
 - **Destroy** (Chivalry, owner 2026-11-02): removes any building except a road on your territory, with no
   refund; the population and score it gave are removed too.
 
@@ -101,6 +101,17 @@ without one. Approved.
 
 Water and naval units, ruins (random bonuses add variance; the owner leans against them), the other
 monuments. Candidates for v3.
+
+## Approved proposals (owner, 2026-11-02)
+
+The ruleset flag `v1` | `v2` (part of `rules_hash`); building a road is a site action, including on
+neutral tiles; "adjacent" = the 8 surrounding tiles; burn forest forfeits an animal; disband as above;
+the bots at least handle the new units and actions legally (how much they use them: units milestone);
+placing a monument is a site action, kills count as in v1, a destroyed monument cannot be placed again;
+no separate score for roads and economy buildings, and surplus population is floored at 0 in the score.
+
+The full v2 draft is the Claude Doc tab "v2 rules (draft)"
+(https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm#f868c7c8-c04b).
 
 ## Open points
 
