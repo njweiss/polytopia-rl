@@ -27,9 +27,13 @@ Cost formula unchanged: `4 + cities x tier`.
 
 | unit | health | attack | defense | movement | range | cost | skills |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Swordsman | 15 | 3 | 3 | 1 | 1 | open | open |
-| Catapult | 10 | 4 | 0 | 1 | 3 | open | open |
-| Knight | 10 | 3.5 | open | 3 | 1 | open | open |
+| Swordsman | 15 | 3 | 3 | 1 | 1 | 5 | Dash, Fortify |
+| Catapult | 10 | 4 | 0 | 1 | 3 | 8 | Stiff |
+| Knight | 10 | 3.5 | 1 | 3 | 1 | 8 | Dash, Fortify, Persist |
+
+- **Stiff** (owner, 2026-11-02): never retaliates. With no Dash, a Catapult cannot attack after moving.
+- **Persist** (owner, 2026-11-02): each kill restores a full attack, with no limit. It does not restore
+  movement, apart from the kill-move onto the target's tile.
 
 ## Tile actions and buildings
 
@@ -45,20 +49,43 @@ Cost formula unchanged: `4 + cities x tier`.
   obstacle on the final tile does not block the move.
 - **City connection** (owner): the capital is connected to another own city when roads link them; the
   path may pass through own cities.
-- Sawmill, windmill, forge, market: namu.moe values, see "Open points".
+- **Road building in neutral territory** (owner, 2026-11-02): on any explored, unoccupied neutral tile.
+- **Road movement in neutral territory** counts for both players (owner, 2026-11-02).
+- **Connection reward** (owner, 2026-11-02): when a city becomes connected to the capital, both it and
+  the capital gain +1 population (namu.moe, confirmed).
+- **Sawmill, windmill, forge, market** (namu.moe, confirmed by the owner 2026-11-02): 5 stars each; one
+  of each per city; placed next to what they count. Sawmill +1 population per adjacent lumber hut,
+  windmill +1 per adjacent farm, forge +2 per adjacent mine; market +1 star per turn per level of the
+  adjacent sawmills, windmills and forges, at most 8. A building's level is its adjacency count, and it
+  updates when a neighbor is added, changes or goes away.
+- **Disband** (Free Spirit, owner 2026-11-02): removes one of your units and refunds half its cost,
+  rounded down.
+- **Destroy** (Chivalry, owner 2026-11-02): removes any building except a road on your territory, with no
+  refund; the population and score it gave are removed too.
 
 ## Monuments (owner, 2026-11-01)
 
 v2 has three: Park of Fortune (task: a city reaches level 5), Gate of Power (task: kill 10 enemy units),
-Eye of God (task: discover all four lighthouses). The other monuments' tasks are impractical in the v2
-ruleset. Each monument: +3 population to its city, 400 score (namu.moe; to confirm).
+Eye of God (task: discover all four lighthouses; active from the start). The other monuments' tasks are
+impractical in the v2 ruleset. Each monument: free, +3 population to its city, 400 score; placed on any
+field tile in a city's territory without a building; one of each per player per game (owner, 2026-11-02).
 
 ## Lighthouses (owner, 2026-11-01)
 
 A lighthouse stands on each of the four corners of the map. Lighthouse tiles are always fogged at the
 start, even if they would be visible on turn 0. When a player first removes the fog over a lighthouse
-(by a unit's vision or the Explorer), that player's capital gains 1 population.
+(by a unit's vision or the Explorer), that player's capital gains 1 population. Every player who reveals
+a lighthouse gets this, once per lighthouse (owner, 2026-11-02).
+
+Lighthouse tiles are always field, never carry a resource, village or city, and can be occupied by
+units (owner, 2026-11-02).
+
+**Explorer** (owner, 2026-11-02): v2's Explorer no longer ignores lighthouses. New step 3b of the walk:
+a candidate whose uncovered fog tiles include a lighthouse gets a bonus a little larger than uncovering
+three fog tiles (orchestrator's proposal: +3.5, so it never ties an integer count).
 
 ## Open points (to ask the owner)
 
-See the orchestrator's questions of 2026-11-01 in the session; answers go here.
+- Removing population (a destroyed building, a neighbor that lowers a building's level): can a city's
+  level go down, and what happens to its population below the current level's threshold?
+- The Explorer's lighthouse bonus: +3.5 (orchestrator's proposal) or another value.
