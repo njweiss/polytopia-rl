@@ -84,8 +84,24 @@ units (owner, 2026-11-02).
 a candidate whose uncovered fog tiles include a lighthouse gets a bonus a little larger than uncovering
 three fog tiles (orchestrator's proposal: +3.5, so it never ties an integer count).
 
-## Open points (to ask the owner)
+## Population loss (owner, 2026-11-02)
 
-- Removing population (a destroyed building, a neighbor that lowers a building's level): can a city's
-  level go down, and what happens to its population below the current level's threshold?
-- The Explorer's lighthouse bonus: +3.5 (orchestrator's proposal) or another value.
+A city's level never goes down. Population can fall below the current level's threshold (even below
+zero); the city must grow back past it before its next level-up. Population is lost when a building
+that gave it is destroyed or loses adjacency levels, and when a road connection to the capital is lost
+(the +1 of the connection is removed from both cities).
+
+## Explorer lighthouse bonus (owner, 2026-11-02)
+
++3.5 per candidate whose uncovered fog tiles include a lighthouse, added after the cap of 4 on the fog
+count; so a candidate uncovering 1 fog tile that hides a lighthouse scores 4.5 and beats every candidate
+without one. Approved.
+
+## Not in v2 (owner, 2026-11-02)
+
+Water and naval units, ruins (random bonuses add variance; the owner leans against them), the other
+monuments. Candidates for v3.
+
+## Open points
+
+None as of 2026-11-02.
