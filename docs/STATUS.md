@@ -80,10 +80,9 @@ the shared `polytopia_sim`); run tests with
 
 ## Waiting on the owner
 
-1. Nothing blocking: the v2 rules draft is approved (2026-11-02). Next: the orchestrator writes the M15
-   brief (v2 data tables and the ruleset flag).
-2. Distillation vs warm start for the v1 -> v2 transfer: decided at the transfer milestone, possibly
-   both as arms of one experiment.
+1. Review `docs/MILESTONE_15.md` (v2 foundation: ruleset flag, `data/v2/` tables, the 7 new techs
+   researchable under v2, v1 byte-identical; clarifications V1-V5), then start phase A.
+2. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
 
 ## Open questions
 
@@ -104,6 +103,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-11-06 | M15 brief (v2 foundation) drafted; v2 plan M15-M21 recorded in it. |
 | 2026-11-02 | v2 rules draft approved by the owner (8 proposals; Super Unit disband refund 5). |
 | 2026-11-02 | v2 rules drafted from owner rulings + namu.moe into a new Claude Doc tab; ruins and water out of v2; monuments M18 added to the v2 plan. |
 | 2026-11-01 | v2 scope set by the owner: land only; Roads, Mathematics, Trade, Smithery, Construction, Free Spirit, Chivalry; damage preview; distillation from v1. |
