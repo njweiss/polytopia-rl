@@ -77,11 +77,14 @@ Milestone 12 (closed 2026-10-26):
 worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
 the shared `polytopia_sim`); run tests with
 `PYTHONPATH=$PWD/python /home/njweiss4/projects/polytopia_rl/.pixi/envs/default/bin/python -m pytest ...`.
+For milestones that change Rust, build the extension into the worktree only and put it first on the path:
+`(cd python && $E/bin/maturin build --release -q -i $E/bin/python -o ../target/wheels)`, unzip the wheel
+into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/python -m pytest ...`
+(`E` = the main checkout's `.pixi/envs/default`); cargo runs normally in the worktree's own `target/`.
 
 ## Waiting on the owner
 
-1. Review `docs/MILESTONE_15.md` (v2 foundation: ruleset flag, `data/v2/` tables, the 7 new techs
-   researchable under v2, v1 byte-identical; clarifications V1-V5), then start phase A.
+1. Nothing: M15 phase A is running in `../polytopia_rl-m15` (V1-V5 confirmed 2026-11-07).
 2. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
 
 ## Open questions
@@ -103,6 +106,7 @@ the shared `polytopia_sim`); run tests with
 
 | Date | Change |
 | --- | --- |
+| 2026-11-07 | M15 V1-V5 confirmed; phase A started in worktree ../polytopia_rl-m15 (Rust built in the worktree, extension unpacked to target/pyext). |
 | 2026-11-06 | M15 brief (v2 foundation) drafted; v2 plan M15-M21 recorded in it. |
 | 2026-11-02 | v2 rules draft approved by the owner (8 proposals; Super Unit disband refund 5). |
 | 2026-11-02 | v2 rules drafted from owner rulings + namu.moe into a new Claude Doc tab; ruins and water out of v2; monuments M18 added to the v2 plan. |
