@@ -1,0 +1,9 @@
+[
+  { "tech": "roads",        "tier": 2, "requires": "riding" },
+  { "tech": "free_spirit",  "tier": 2, "requires": "riding" },
+  { "tech": "trade",        "tier": 3, "requires": "roads" },
+  { "tech": "chivalry",     "tier": 3, "requires": "free_spirit" },
+  { "tech": "mathematics",  "tier": 3, "requires": "forestry" },
+  { "tech": "construction", "tier": 3, "requires": "farming" },
+  { "tech": "smithery",     "tier": 3, "requires": "mining" }
+]

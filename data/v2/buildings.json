@@ -1,0 +1,6 @@
+[
+  { "building": "sawmill",  "cost": 5, "tech": "mathematics",  "adjacent": ["lumber_hut"],                  "level_from": "count",  "population_per_level": 1, "stars_per_level": 0, "max_output": null, "one_per_city": true },
+  { "building": "windmill", "cost": 5, "tech": "construction", "adjacent": ["farm"],                        "level_from": "count",  "population_per_level": 1, "stars_per_level": 0, "max_output": null, "one_per_city": true },
+  { "building": "forge",    "cost": 5, "tech": "smithery",     "adjacent": ["mine"],                        "level_from": "count",  "population_per_level": 2, "stars_per_level": 0, "max_output": null, "one_per_city": true },
+  { "building": "market",   "cost": 5, "tech": "trade",        "adjacent": ["sawmill", "windmill", "forge"], "level_from": "levels", "population_per_level": 0, "stars_per_level": 1, "max_output": 8,    "one_per_city": true }
+]

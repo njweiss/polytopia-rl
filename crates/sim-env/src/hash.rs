@@ -1,6 +1,7 @@
 //! Spec hashes stored in checkpoints (docs/MILESTONE_11 "Hashes and checkpoints").
 
 use sim_core::data::{ALL_REWARDS, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS};
+use sim_core::state::Ruleset;
 
 use crate::actions::{arg_len, ActionType};
 use crate::obs::{obs_spec, snake_name};
@@ -86,4 +87,36 @@ pub fn rules_hash() -> String {
         &embedded_data_files(),
         RULES_VERSION,
     )))
+}
+
+/// Every `data/v2/*.json` the simulator embeds, as `("v2/<file name>", contents)` in file-name
+/// order.
+pub fn embedded_v2_data_files() -> Vec<(&'static str, &'static str)> {
+    vec![
+        (
+            "v2/buildings.json",
+            include_str!("../../../data/v2/buildings.json"),
+        ),
+        (
+            "v2/monuments.json",
+            include_str!("../../../data/v2/monuments.json"),
+        ),
+        ("v2/rules.json", include_str!("../../../data/v2/rules.json")),
+        (
+            "v2/site_actions.json",
+            include_str!("../../../data/v2/site_actions.json"),
+        ),
+        ("v2/techs.json", include_str!("../../../data/v2/techs.json")),
+        ("v2/units.json", include_str!("../../../data/v2/units.json")),
+    ]
+}
+
+/// `V1`: `rules_hash()`. `V2`: FNV-1a 64 of the v1 canonical bytes, then for each
+/// `embedded_v2_data_files()` entry its name, `\0`, its contents, then `RULESET`, `\0`, `v2`
+/// (docs/MILESTONE_15 "Hashes").
+pub fn rules_hash_for(ruleset: Ruleset) -> String {
+    match ruleset {
+        Ruleset::V1 => rules_hash(),
+        Ruleset::V2 => unimplemented!("milestone 15: rules_hash_for(V2)"),
+    }
 }

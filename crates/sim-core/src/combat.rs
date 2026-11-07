@@ -2,9 +2,10 @@
 //! writes the formulas, with half-up rounding.
 
 /// The numbers combat needs about one unit at the moment of the attack.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Combatant {
-    pub attack: u32,
+    /// `f32` like `UnitStats.attack` (docs/MILESTONE_15 V2).
+    pub attack: f32,
     pub defense: u32,
     pub health: u32,
     pub max_health: u32,
@@ -38,13 +39,12 @@ pub fn compute_damage(
     defender: &Combatant,
     defense_bonus: f32,
 ) -> CombatDamage {
-    let attack_force =
-        attacker.attack as f32 * (attacker.health as f32 / attacker.max_health as f32);
+    let attack_force = attacker.attack * (attacker.health as f32 / attacker.max_health as f32);
     let defense_force = defender.defense as f32
         * (defender.health as f32 / defender.max_health as f32)
         * defense_bonus;
     let total_damage = attack_force + defense_force;
-    let attack_result = attack_force / total_damage * attacker.attack as f32 * 4.5;
+    let attack_result = attack_force / total_damage * attacker.attack * 4.5;
     let defense_result = defense_force / total_damage * defender.defense as f32 * 4.5;
     CombatDamage {
         to_defender: round_half_up(attack_result),

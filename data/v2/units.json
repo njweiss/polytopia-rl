@@ -1,0 +1,5 @@
+[
+  { "unit": "swordsman", "cost": 5, "health": 15, "attack": 3,   "defense": 3, "movement": 1, "range": 1, "skills": ["dash", "fortify"],            "unlocked_by": "smithery" },
+  { "unit": "catapult",  "cost": 8, "health": 10, "attack": 4,   "defense": 0, "movement": 1, "range": 3, "skills": ["stiff"],                      "unlocked_by": "mathematics" },
+  { "unit": "knight",    "cost": 8, "health": 10, "attack": 3.5, "defense": 1, "movement": 3, "range": 1, "skills": ["dash", "fortify", "persist"], "unlocked_by": "chivalry" }
+]

@@ -185,6 +185,8 @@ fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
         }
         SiteAction::Farm => t.resource == Some(Resource::Crop) && t.improvement.is_none(),
         SiteAction::Mine => t.resource == Some(Resource::Metal) && t.improvement.is_none(),
+        // Its effect is milestone 17's; never legal before (docs/MILESTONE_15 V4).
+        SiteAction::BurnForest => false,
     };
     state.city(owner_city).owner == state.current
         && !enemy_here
@@ -307,7 +309,7 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
     let a = state.unit(attacker_id).expect("living attacker").clone();
     let d = state.unit(defender_id).expect("living defender").clone();
     let (sa, sd) = (state.tables.unit(a.kind), state.tables.unit(d.kind));
-    let combatant = |u: &Unit, attack: u32, defense: u32| Combatant {
+    let combatant = |u: &Unit, attack: f32, defense: u32| Combatant {
         attack,
         defense,
         health: u.health,
@@ -486,6 +488,7 @@ fn apply_site(state: &mut State, at: Pos, action: SiteAction) {
         }
         SiteAction::Farm => t.improvement = Some(Improvement::Farm),
         SiteAction::Mine => t.improvement = Some(Improvement::Mine),
+        SiteAction::BurnForest => unreachable!("BurnForest is never legal before milestone 17"),
     }
     let owner_city = t.owner_city.expect("legal site actions are on owned tiles");
     state.city_mut(owner_city).population += info.population;
