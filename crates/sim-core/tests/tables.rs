@@ -85,7 +85,7 @@ fn unit_table_matches_spec() {
         let s = t.unit(u);
         assert_eq!(s.cost, r.cost, "{u:?} cost");
         assert_eq!(s.health, r.health, "{u:?} health");
-        assert_eq!(s.attack, r.attack, "{u:?} attack");
+        assert_eq!(s.attack, r.attack as f32, "{u:?} attack");
         assert_eq!(s.defense, r.defense, "{u:?} defense");
         assert_eq!(s.movement, r.movement, "{u:?} movement");
         assert_eq!(s.range, r.range, "{u:?} range");

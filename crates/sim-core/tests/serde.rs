@@ -7,7 +7,7 @@ use sim_core::actions::Action;
 use sim_core::data::{Reward, SiteAction, Tech, UnitType};
 use sim_core::grid::Pos;
 use sim_core::map::MapParams;
-use sim_core::state::{CityId, Config, Outcome, ScoreWeights, UnitId};
+use sim_core::state::{CityId, Config, Outcome, Ruleset, ScoreWeights, UnitId};
 
 fn to_json<T: serde::Serialize>(v: &T) -> String {
     serde_json::to_string(v).expect("serialize")
@@ -214,6 +214,7 @@ fn config_round_trips_with_every_weight() {
             park: 8,
             tech_per_tier: 9,
         },
+        ruleset: Ruleset::V1,
     };
     assert_eq!(round_trip(&c), c);
     assert_eq!(round_trip(&Config::default()), Config::default());

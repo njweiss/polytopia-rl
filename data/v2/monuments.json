@@ -1,0 +1,5 @@
+[
+  { "monument": "park_of_fortune", "task": "city_level",  "threshold": 5 },
+  { "monument": "gate_of_power",   "task": "kills",       "threshold": 10 },
+  { "monument": "eye_of_god",      "task": "lighthouses", "threshold": 4 }
+]

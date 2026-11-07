@@ -4,6 +4,8 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
+use crate::state::Ruleset;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnitType {
@@ -12,6 +14,9 @@ pub enum UnitType {
     Archer,
     Defender,
     SuperUnit,
+    Swordsman,
+    Catapult,
+    Knight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
@@ -21,6 +26,8 @@ pub enum Skill {
     Escape,
     Fortify,
     Static,
+    Stiff,
+    Persist,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -35,6 +42,13 @@ pub enum Tech {
     Farming,
     Strategy,
     Mining,
+    Roads,
+    FreeSpirit,
+    Trade,
+    Chivalry,
+    Mathematics,
+    Construction,
+    Smithery,
 }
 
 pub const ALL_UNITS: [UnitType; 5] = [
@@ -67,6 +81,26 @@ pub enum SiteAction {
     ClearForest,
     Farm,
     Mine,
+    BurnForest,
+}
+
+/// v2 economy buildings (docs/MILESTONE_15 "Data files").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Building {
+    Sawmill,
+    Windmill,
+    Forge,
+    Market,
+}
+
+/// v2 monuments (docs/MILESTONE_15 "Data files").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Monument {
+    ParkOfFortune,
+    GateOfPower,
+    EyeOfGod,
 }
 
 /// Level-up rewards (docs/MILESTONE_4 "Reward menus", docs/MILESTONE_5 "Menus").
@@ -103,12 +137,77 @@ pub const ALL_REWARDS: [Reward; 8] = [
     Reward::SuperUnit,
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+const V2_UNITS: [UnitType; 8] = [
+    UnitType::Warrior,
+    UnitType::Rider,
+    UnitType::Archer,
+    UnitType::Defender,
+    UnitType::SuperUnit,
+    UnitType::Swordsman,
+    UnitType::Catapult,
+    UnitType::Knight,
+];
+
+const V2_TECHS: [Tech; 16] = [
+    Tech::Climbing,
+    Tech::Hunting,
+    Tech::Organization,
+    Tech::Riding,
+    Tech::Archery,
+    Tech::Forestry,
+    Tech::Farming,
+    Tech::Strategy,
+    Tech::Mining,
+    Tech::Roads,
+    Tech::FreeSpirit,
+    Tech::Trade,
+    Tech::Chivalry,
+    Tech::Mathematics,
+    Tech::Construction,
+    Tech::Smithery,
+];
+
+const V2_SITE_ACTIONS: [SiteAction; 7] = [
+    SiteAction::HarvestAnimal,
+    SiteAction::HarvestFruit,
+    SiteAction::LumberHut,
+    SiteAction::ClearForest,
+    SiteAction::Farm,
+    SiteAction::Mine,
+    SiteAction::BurnForest,
+];
+
+/// v1: `ALL_UNITS`; v2: all 8 (declaration order).
+pub fn units(ruleset: Ruleset) -> &'static [UnitType] {
+    match ruleset {
+        Ruleset::V1 => &ALL_UNITS,
+        Ruleset::V2 => &V2_UNITS,
+    }
+}
+
+/// v1: `ALL_TECHS`; v2: all 16 (declaration order).
+pub fn techs(ruleset: Ruleset) -> &'static [Tech] {
+    match ruleset {
+        Ruleset::V1 => &ALL_TECHS,
+        Ruleset::V2 => &V2_TECHS,
+    }
+}
+
+/// v1: `ALL_SITE_ACTIONS`; v2: all 7 (declaration order).
+pub fn site_actions(ruleset: Ruleset) -> &'static [SiteAction] {
+    match ruleset {
+        Ruleset::V1 => &ALL_SITE_ACTIONS,
+        Ruleset::V2 => &V2_SITE_ACTIONS,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct UnitStats {
     /// `None` for reward-only units (Super Unit).
     pub cost: Option<u32>,
     pub health: u32,
-    pub attack: u32,
+    /// `f32` for the Knight's 3.5 (docs/MILESTONE_15 V2); v1's integer attacks convert exactly.
+    pub attack: f32,
     pub defense: u32,
     pub movement: u32,
     pub range: u32,
@@ -148,6 +247,69 @@ pub struct Rules {
 
 // Sound because the floats come from JSON, which cannot encode NaN.
 impl Eq for Rules {}
+impl Eq for UnitStats {}
+
+/// What a building's level counts (`data/v2/buildings.json` `level_from`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LevelFrom {
+    /// The number of adjacent matches.
+    Count,
+    /// The sum of the adjacent buildings' levels.
+    Levels,
+}
+
+/// One row of `data/v2/buildings.json` (without the `building` key).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct BuildingInfo {
+    pub cost: u32,
+    pub tech: Tech,
+    /// Snake-case names of improvements (`lumber_hut`, `farm`, `mine`) or buildings.
+    pub adjacent: Vec<String>,
+    pub level_from: LevelFrom,
+    pub population_per_level: u32,
+    pub stars_per_level: u32,
+    /// Caps the output (stars for the market); `None` = no cap.
+    pub max_output: Option<u32>,
+    pub one_per_city: bool,
+}
+
+/// A monument's task (`data/v2/monuments.json` `task`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MonumentTask {
+    CityLevel,
+    Kills,
+    Lighthouses,
+}
+
+/// One row of `data/v2/monuments.json` (without the `monument` key).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct MonumentInfo {
+    pub task: MonumentTask,
+    pub threshold: u32,
+}
+
+/// v2 scalar rules constants (`data/v2/rules.json`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RulesV2 {
+    pub road_cost: u32,
+    pub road_tech: Tech,
+    pub road_step_cost: f32,
+    pub connection_population: u32,
+    pub disband_tech: Tech,
+    pub destroy_tech: Tech,
+    pub disband_refund_divisor: u32,
+    pub super_unit_value: u32,
+    pub lighthouse_population: u32,
+    pub explorer_lighthouse_bonus: f32,
+    pub monument_population: u32,
+    pub monument_score: u32,
+}
+
+// Sound because the floats come from JSON, which cannot encode NaN.
+impl Eq for RulesV2 {}
 
 #[derive(Deserialize)]
 struct UnitRow {
@@ -202,6 +364,7 @@ pub struct Tables {
     resources_reward_stars: u32,
     population_growth_amount: u32,
     rules: Rules,
+    ruleset: Ruleset,
 }
 
 impl Tables {
@@ -216,6 +379,59 @@ impl Tables {
             include_str!("../../../data/site_actions.json"),
             include_str!("../../../data/rewards.json"),
         )
+    }
+
+    /// `V1`: the same as `load()`. `V2`: the v1 files plus `data/v2/*.json`, validated (docs/MILESTONE_15
+    /// "Data files"): every variant of `units(V2)`, `techs(V2)`, `site_actions(V2)`, `Building` and
+    /// `Monument` exactly once, every tech prerequisite a tech of a lower tier, every `adjacent` name
+    /// known. Errors (never panics) on malformed or incomplete data.
+    pub fn load_for(ruleset: Ruleset) -> Result<Tables, String> {
+        match ruleset {
+            Ruleset::V1 => Tables::load(),
+            Ruleset::V2 => unimplemented!("milestone 15: Tables::load_for(V2)"),
+        }
+    }
+
+    /// Same as `load_for(V2)` but with caller-provided `data/v2/*.json` contents (used to test
+    /// error handling). The v1 files always come from the embedded `data/*.json`.
+    pub fn from_json_v2(
+        units_json: &str,
+        techs_json: &str,
+        site_actions_json: &str,
+        buildings_json: &str,
+        monuments_json: &str,
+        rules_json: &str,
+    ) -> Result<Tables, String> {
+        let _ = (
+            units_json,
+            techs_json,
+            site_actions_json,
+            buildings_json,
+            monuments_json,
+            rules_json,
+        );
+        unimplemented!("milestone 15: Tables::from_json_v2")
+    }
+
+    pub fn ruleset(&self) -> Ruleset {
+        self.ruleset
+    }
+
+    /// Panics under `V1`.
+    pub fn building(&self, b: Building) -> &BuildingInfo {
+        let _ = b;
+        unimplemented!("milestone 15: Tables::building")
+    }
+
+    /// Panics under `V1`.
+    pub fn monument(&self, m: Monument) -> &MonumentInfo {
+        let _ = m;
+        unimplemented!("milestone 15: Tables::monument")
+    }
+
+    /// Panics under `V1`.
+    pub fn v2_rules(&self) -> &RulesV2 {
+        unimplemented!("milestone 15: Tables::v2_rules")
     }
 
     /// The embedded tables, parsed once per process and shared by every new game.
@@ -318,6 +534,7 @@ impl Tables {
             resources_reward_stars: rewards.resources_stars,
             population_growth_amount: rewards.population_growth_amount,
             rules,
+            ruleset: Ruleset::V1,
         })
     }
 

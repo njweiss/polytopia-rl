@@ -116,6 +116,8 @@ fn potentials(s: &State, r: &RewardConfig) -> [f32; 2] {
 }
 
 impl Env {
+    /// Panics if the map is below `MapParams::MIN_SIZE`, or if `cfg.config.ruleset` is `V2` (refused
+    /// until milestone 20, docs/MILESTONE_15 "Env").
     pub fn new(cfg: EnvConfig) -> Env {
         assert!(
             cfg.map.size >= MapParams::MIN_SIZE,

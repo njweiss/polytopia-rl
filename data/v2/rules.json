@@ -1,0 +1,14 @@
+{
+  "road_cost": 3,
+  "road_tech": "roads",
+  "road_step_cost": 0.5,
+  "connection_population": 1,
+  "disband_tech": "free_spirit",
+  "destroy_tech": "chivalry",
+  "disband_refund_divisor": 2,
+  "super_unit_value": 10,
+  "lighthouse_population": 1,
+  "explorer_lighthouse_bonus": 3.5,
+  "monument_population": 3,
+  "monument_score": 400
+}

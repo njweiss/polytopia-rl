@@ -7,14 +7,14 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use sim_core::actions::{apply, legal_actions, Action};
-use sim_core::data::ALL_TECHS;
+use sim_core::data::techs;
 use sim_core::grid::Pos;
 use sim_core::map::{MapParams, Resource, Terrain};
 use sim_core::rng::Rng;
 use sim_core::setup::new_game_from_seed;
 use sim_core::state::{
-    City, CityId, Config, Dir, Improvement, Outcome, Phase, PlayerState, ScoreWeights, State,
-    TileState, Unit, UnitId,
+    City, CityId, Config, Dir, Improvement, Outcome, Phase, PlayerState, Ruleset, ScoreWeights,
+    State, TileState, Unit, UnitId,
 };
 use sim_tools::replay::ReplayLog;
 
@@ -30,6 +30,7 @@ pub fn cfg(turn_cap: u32, full_observability: bool) -> Config {
         full_observability,
         turn_cap,
         score_weights: ScoreWeights::default(),
+        ruleset: Ruleset::V1,
     }
 }
 
@@ -125,10 +126,11 @@ fn phase_index(ph: Phase) -> u8 {
     }
 }
 
-/// `TechSet(u16)`: the one field, bit `i` set for the `i`-th declared tech (Q6).
+/// `TechSet(u16)`: the one field, bit `i` set for the `i`-th declared tech (Q6), the v2 techs
+/// included (milestone 15, Q42; a v1 set never holds one, so v1 bytes are unchanged).
 fn techset_bits(state: &State, player: usize) -> u16 {
     let set = state.players[player].techs;
-    ALL_TECHS
+    techs(Ruleset::V2)
         .iter()
         .filter(|&&t| set.contains(t))
         .map(|&t| 1u16 << (t as u16))
@@ -165,6 +167,7 @@ pub fn digest_bytes(s: &State) -> Vec<u8> {
         full_observability,
         turn_cap,
         score_weights,
+        ruleset: _,
     } = config;
     e.bool(*full_observability);
     e.u32(*turn_cap);
