@@ -163,16 +163,16 @@ error (Python `ValueError`) naming milestone 20, until the observation supports 
 ## Clarifications (owner: confirm or overrule)
 
 - **V1:** the v2 data lives in separate files under `data/v2/` rather than in the v1 files, so the v1
-  `rules_hash` stays exactly as it is and every v1 checkpoint keeps loading without a warning.
+  `rules_hash` stays exactly as it is and every v1 checkpoint keeps loading without a warning. - Confirmed (owner, 2026-11-07)
 - **V2:** `UnitStats.attack` becomes `f32` (the Knight's 3.5). v1's integer attacks convert exactly, so
-  every combat result is unchanged.
+  every combat result is unchanged. - Confirmed (owner, 2026-11-07)
 - **V3:** the signed population type (needed for population loss) is deferred to M17, where population
-  loss first happens, to keep M15's changes to earlier tests minimal.
+  loss first happens, to keep M15's changes to earlier tests minimal. - Confirmed (owner, 2026-11-07)
 - **V4:** under `V2` in this milestone, researching a v2 tech unlocks nothing yet; each later milestone
   turns on its own content under `V2`, so v2 games are playable (as v1 plus a bigger tech tree) at every
-  step.
+  step. - Confirmed (owner, 2026-11-07)
 - **V5:** the observation, action heads and bots keep seeing only the v1 lists until M20 (observation) and
-  M19 (bots); `Env` refuses v2 until then, so no RL code can touch a half-built v2.
+  M19 (bots); `Env` refuses v2 until then, so no RL code can touch a half-built v2. - Confirmed (owner, 2026-11-07)
 
 ## Changes to earlier tests
 
