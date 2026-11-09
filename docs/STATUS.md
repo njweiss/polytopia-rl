@@ -84,7 +84,7 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 ## Waiting on the owner
 
-1. Nothing: M15 phase A is running in `../polytopia_rl-m15` (V1-V5 confirmed 2026-11-07).
+1. Nothing: M15 phase B is running in `../polytopia_rl-m15` (tests ca3d45d approved, Q42-Q46 accepted 2026-11-09).
 2. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
 
 ## Open questions
@@ -106,6 +106,7 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | M15 tests (ca3d45d) approved; Q42-Q46 accepted as recommended (17f0287 on milestone-15); phase B started in the worktree. |
 | 2026-11-07 | M15 V1-V5 confirmed; phase A started in worktree ../polytopia_rl-m15 (Rust built in the worktree, extension unpacked to target/pyext). |
 | 2026-11-06 | M15 brief (v2 foundation) drafted; v2 plan M15-M21 recorded in it. |
 | 2026-11-02 | v2 rules draft approved by the owner (8 proposals; Super Unit disband refund 5). |
