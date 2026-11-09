@@ -6,9 +6,7 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 use crate::combat::{resolve_attack, Combatant};
-use crate::data::{
-    Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
-};
+use crate::data::{techs, Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_UNITS};
 use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
 };
@@ -42,8 +40,8 @@ pub enum ActionError {
 /// The current player's legal actions in canonical order. With a pending reward: only the
 /// lowest-id pending city's ChooseReward, in menu order. Otherwise: units by ascending id (per unit
 /// Move (row-major), Attack (row-major), Capture, Recover, Promote); Train per city by ascending id in
-/// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; Research in `ALL_TECHS`
-/// order; then EndTurn. Empty once there is an outcome.
+/// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; Research in
+/// `techs(config.ruleset)` order; then EndTurn. Empty once there is an outcome.
 pub fn legal_actions(state: &State) -> Vec<Action> {
     let mut out = Vec::new();
     if state.outcome.is_some() {
@@ -73,7 +71,7 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
             }
         }
     }
-    for tech in ALL_TECHS {
+    for &tech in techs(state.config.ruleset) {
         if research_legal(state, tech) {
             out.push(Action::Research { tech });
         }
@@ -147,6 +145,10 @@ fn pending_city(state: &State) -> Option<CityId> {
 
 /// Train legality apart from the pending-reward block (checked by the callers).
 fn train_legal(state: &State, city: CityId, kind: UnitType) -> bool {
+    // The v2 units are trained from milestone 19 on (docs/MILESTONE_15 V4).
+    if !ALL_UNITS.contains(&kind) {
+        return false;
+    }
     let Some(c) = state.cities.iter().find(|c| c.id == city) else {
         return false;
     };
@@ -164,6 +166,10 @@ fn train_legal(state: &State, city: CityId, kind: UnitType) -> bool {
 
 /// Site-action legality apart from the pending-reward block (checked by the callers).
 fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
+    // The v2 site actions take effect from milestone 17 on (docs/MILESTONE_15 V4).
+    if !ALL_SITE_ACTIONS.contains(&action) {
+        return false;
+    }
     if at.row >= state.size || at.col >= state.size {
         return false;
     }
@@ -197,6 +203,9 @@ fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
 
 /// Research legality apart from the pending-reward block (checked by the callers).
 fn research_legal(state: &State, tech: Tech) -> bool {
+    if !techs(state.config.ruleset).contains(&tech) {
+        return false;
+    }
     let me = &state.players[state.current as usize];
     !me.techs.contains(tech)
         && state
