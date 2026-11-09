@@ -27,7 +27,7 @@ Append entries below. Format:
   covers v2 research. Encoded in `crates/sim-tools/tests/v2_digest.rs`
   (`v2_techs_are_part_of_the_digest`, and the reference encoder's `techset_bits` now folds all 16
   techs).
-- Owner answer:
+- Owner answer: accepted as recommended (owner, 2026-11-09).
 
 ## Q43: how the Rust `Env` refuses v2
 
@@ -39,7 +39,7 @@ Append entries below. Format:
   caller and earlier test); C) a new `Env::try_new -> Result`.
 - Agent's pick and why: A, no signature change and the existing precedent. Encoded in
   `crates/sim-env/tests/v2_hash.rs` (`env_refuses_v2_naming_milestone_20`, via `catch_unwind`).
-- Owner answer:
+- Owner answer: accepted as recommended (owner, 2026-11-09).
 
 ## Q44: the Python `ruleset` keyword
 
@@ -50,7 +50,7 @@ Append entries below. Format:
   (nothing to refuse).
 - Agent's pick and why: A, the smallest surface that makes the refusal testable; the stub already
   parses it. Encoded in `python/tests/rl/test_ruleset.py`.
-- Owner answer:
+- Owner answer: accepted as recommended (owner, 2026-11-09).
 
 ## Q45: `Combatant.attack` as `f32`
 
@@ -63,7 +63,7 @@ Append entries below. Format:
 - Agent's pick and why: A, so the 3.5 reaches the spec formulas unrounded. The stub makes the change;
   `crates/sim-core/tests/combat_golden.rs` literals became `2.0`-style (a type adjustment) and
   `v2_tables.rs::the_knights_attack_is_not_truncated_in_combat` checks Knight vs Warrior = (10, 3).
-- Owner answer:
+- Owner answer: accepted as recommended (owner, 2026-11-09).
 
 ## Q46: shape of the v2 building table and of the v2 test entry point
 
@@ -79,4 +79,4 @@ Append entries below. Format:
   unknown unit/tech/site-action rows (bad variant names) are tested in all three. The entry point is
   `Tables::from_json_v2(units, techs, site_actions, buildings, monuments, rules)` with the v1 files
   always embedded.
-- Owner answer:
+- Owner answer: accepted as recommended (owner, 2026-11-09).
