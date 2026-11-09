@@ -117,6 +117,17 @@ pub fn embedded_v2_data_files() -> Vec<(&'static str, &'static str)> {
 pub fn rules_hash_for(ruleset: Ruleset) -> String {
     match ruleset {
         Ruleset::V1 => rules_hash(),
-        Ruleset::V2 => unimplemented!("milestone 15: rules_hash_for(V2)"),
+        Ruleset::V2 => {
+            let mut bytes = rules_canonical(&embedded_data_files(), RULES_VERSION);
+            for (name, contents) in embedded_v2_data_files() {
+                bytes.extend_from_slice(name.as_bytes());
+                bytes.push(0);
+                bytes.extend_from_slice(contents.as_bytes());
+            }
+            bytes.extend_from_slice(b"RULESET");
+            bytes.push(0);
+            bytes.extend_from_slice(b"v2");
+            hex64(fnv1a64(&bytes))
+        }
     }
 }

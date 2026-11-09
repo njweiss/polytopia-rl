@@ -6,7 +6,7 @@ use sim_core::map::MapParams;
 use sim_core::rng::Rng;
 use sim_core::score::score;
 use sim_core::setup::new_game_from_seed;
-use sim_core::state::{Config, Outcome, PlayerId, State};
+use sim_core::state::{Config, Outcome, PlayerId, Ruleset, State};
 use sim_core::view::PlayerView;
 use sim_tools::replay::record_game;
 
@@ -123,6 +123,11 @@ impl Env {
             cfg.map.size >= MapParams::MIN_SIZE,
             "Env::new: map size {} is below MapParams::MIN_SIZE",
             cfg.map.size
+        );
+        assert!(
+            cfg.config.ruleset == Ruleset::V1,
+            "Env::new: ruleset {:?} is not supported until milestone 20 (the observation is v1 only)",
+            cfg.config.ruleset
         );
         let opponent = match cfg.opponent {
             Opponent::TwoSeat => None,

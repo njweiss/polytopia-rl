@@ -113,6 +113,11 @@ impl PyEnv {
             "v2" => Ruleset::V2,
             other => return Err(PyValueError::new_err(format!("unknown ruleset {other:?}"))),
         };
+        if ruleset != Ruleset::V1 {
+            return Err(PyValueError::new_err(format!(
+                "ruleset {ruleset:?} is not supported until milestone 20 (the observation is v1 only)"
+            )));
+        }
         let bot = |kind| Opponent::Bot {
             kind,
             epsilon: opponent_epsilon,
