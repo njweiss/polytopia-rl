@@ -43,7 +43,9 @@ v1 is one tribe (Imperius), 1v1, an 11x11 land-only map, four unit types, and a 
 | Other tribes | none yet | Needs per-tribe spawn modifiers |
 | Lighthouses | lighthouses | Corner tiles are plain land in v1, and the Explorer's lighthouse bonus is ignored |
 
-**Config values (not hard-coded):** turn cap (30, see Termination), score weights, `max_city_level` (unset means no cap), map size, full-observability flag, auto-recover (off by default).
+**v2:** the config value `ruleset` (`v1` by default, or `v2`) selects the rules. v2 adds Roads, Persist, lighthouses, monuments and the other content in v2 rules; water, ports, naval units, ruins and other tribes stay out (v3 candidates). Under `v1` every rule in this tab is unchanged.
+
+**Config values (not hard-coded):** turn cap (30, see Termination), score weights, `max_city_level` (unset means no cap), ruleset (v1 or v2), map size, full-observability flag, auto-recover (off by default).
 
 ## Data tables
 
@@ -124,7 +126,7 @@ The sim holds full ground truth. Each player's observation is a function of that
 | City | owner, tile, level, population, workshop flag, park count, wall flag, border-growth-used flag, pending reward, is-capital |
 | Unit | id, type, owner, position, health, max health, origin city (nullable), kills, veteran flag, promotion-available flag, phase, last direction (one value, see Movement) |
 
-**Unit phase****s**.
+**Unit phases**.
 
 | Phase | Meaning | Legal next actions |
 | --- | --- | --- |
@@ -499,7 +501,7 @@ The sim is finished as a solid prototype before RL starts, which is the owner's 
 9. **Python interface.** PyO3 bindings, observation and mask encoders, benchmark of steps per second. Gate: a random agent runs thousands of games from Python.
 10. **RL.** PPO against the bots, then self-play. Flat-action baseline as a stretch experiment.
 
-Status as of 2026-10-24: milestones 1 to 10 are done. Milestone 10's PPO agent wins 100% against random and economy and 97.8% against rush (400 games each). Milestone 11, beyond this list, adds the evaluation suite, checkpoint hashes, Elo ratings and snapshot-pool self-play; it is in progress. Each milestone's brief is docs/MILESTONE\_N.md.
+Status as of 2026-11-10: milestones 1 to 15 are done. Milestone 10's PPO agent wins 100% against random and economy and 97.8% against rush (400 games each). Beyond this list, milestone 11 added the evaluation suite, checkpoint hashes, Elo ratings and snapshot-pool self-play; milestones 12 to 14 the multi-seed experiment harness, rollout speed-ups and the capacity ladder (results in docs/RL\_REPORT.md); milestone 15 the v2 foundation. Game v2 continues with milestone 16 (roads), 17 (buildings and tile actions), 18 (monuments and lighthouses), 19 (units, skills and bots), 20 (v2 observation, actions and the damage preview) and 21 (transfer from the v1 policy). Each milestone's brief is docs/MILESTONE\_N.md.
 
 **Working with agents**
 
@@ -536,8 +538,8 @@ Status as of 2026-10-24: milestones 1 to 10 are done. Milestone 10's PPO agent w
 | Pending rewards | Forced and immediate, may cascade. Simultaneous pending rewards resolve by ascending city id, which only matters once roads return. |
 | Resource rates | Follows the Tribes generator's per-tile rolls with the values in terrainProbs.json: forest 0.40, mountain 0.15, and fruit, crop, animal, and metal 0.5, with the outer ring at one third. Imperius multipliers are 1 in that file. |
 | Explorer | Vision radius 1, no mountain bonus. Walk follows the wiki's 15-move fog-seeking algorithm with a 0.5 backtrack penalty. Spawns on the granting city, ignores units and Zone of Control, blocked only by mountains without Climbing. Lighthouses ignored. |
-| Roads | Out of v1, behind a flag |
-| Water, ruins, lighthouses | Out of v1 |
+| Roads | Out of v1; in v2 (v2 rules tab) |
+| Water, ruins, lighthouses | Out of v1. Lighthouses are in v2; water and ruins are v3 candidates |
 | Level cap | None. Parks stack. |
 | Mirrored maps | Rejected because they leak information under fog. Evaluate with swapped sides instead. |
 | Win condition | Capital capture, or higher score at the turn cap |
@@ -564,8 +566,134 @@ Status as of 2026-10-24: milestones 1 to 10 are done. Milestone 10's PPO agent w
 | Self-play | Snapshot pool plus 20% bot games; newest snapshot half the time; snapshot every 1M steps, at most 40; snapshots sample; learner trains on its own seat only (L1 to L4) |
 | Evaluation | Fixed suite of 8 conditions, 200 side-swapped seeds, disjoint seed ranges, win rate by seat always, Elo with random at 0 (K6, L5 to L7, L10) |
 | Versioning | Checkpoints carry obs\_hash and rules\_hash. obs\_hash mismatch refuses to load; rules changes in code bump RULES\_VERSION by hand (L9). |
-| Damage preview | To be added later as an observation feature, not an action: a deliberate, documented exception to hidden techs, with an obs\_hash bump |
+| Damage preview | In v2 (milestone 20) as an observation feature, not an action: a deliberate, documented exception to hidden techs, with an obs\_hash bump |
+| Ruleset | Config value v1 (default) or v2, left out of v1 JSON so v1 stays byte-identical. v2 data in data/v2/; digest and rules\_hash change only under v2; the env refuses v2 until milestone 20; attack is f32 (Q42 to Q46). |
 
 ### Open questions
 
 None open. Agents record new questions in docs/QUESTIONS.md; once the owner answers one, it is merged into this spec. Open question 1 (turn cap) closed at 30 on 2026-10-24; open question 2 (RL library) closed by milestone 10.
+
+# Game v2 rules
+
+Nov 2, 2026 · @Nicholas Weiss
+
+The v2 ruleset is the v1 spec (other tab) plus the additions below, all approved by the owner (2026-11-02). Under ruleset v1 none of this applies. Milestone 15 built the foundation (ruleset flag, tables, tech tree); the remaining rules land in milestones 16 to 20, and until milestone 20 the RL environment refuses v2.
+
+## Scope
+
+v2 is v1 plus seven land technologies, their units, buildings and actions, three monuments, lighthouses and the damage preview (owner, 2026-11-01). The map stays an 11x11 land map with two Imperius players.
+
+- **In v2:** Roads, Free Spirit, Trade, Chivalry, Mathematics, Construction, Smithery; Swordsman, Catapult, Knight; road, sawmill, windmill, forge, market; burn forest, disband, destroy; Park of Fortune, Gate of Power, Eye of God; lighthouses on the four corners; the damage preview as an observation feature.
+- **Not in v2:** water, ports and naval units, ruins, the other techs and monuments. Candidates for v3 (owner, 2026-11-02).
+- **Ruleset flag:** a config value `ruleset` = `v1` | `v2`. Under `v1` every rule, table entry and test of v1 is unchanged; v2 entries in the data tables are ignored. The flag is part of `rules_hash` (owner, 2026-11-02).
+
+**Data and versioning** (milestone 15; Q42 to Q46):
+
+- v2 data lives in `data/v2/` (units, techs, site\_actions, buildings, monuments, rules), loaded on top of the v1 tables. Every v2 entry appears exactly once, a prerequisite always has a lower tier, and building adjacency names must exist.
+- `ruleset` is left out of the config JSON under v1, so v1 files, replays and hashes are byte-identical. `rules_hash` under v2 also covers the `data/v2` files and the ruleset; v1's stays `a8b52b91eae34503`.
+- The state digest appends a ruleset byte under v2 only and hashes all 16 tech bits (Q42).
+- Unit attack is `f32`, in the tables and in combat, so the Knight's 3.5 is exact (Q45).
+- Until milestone 20 the RL environment refuses v2: Rust panics, Python raises `ValueError`, both naming milestone 20 (Q43, Q44).
+
+## Technologies
+
+Seven new techs; the cost formula stays `4 + (city count × tier)` (owner, 2026-11-01).
+
+| Tech | Tier | Requires | Unlocks |
+| --- | --- | --- | --- |
+| Roads | 2 | Riding | Road |
+| Free Spirit | 2 | Riding | Disband |
+| Trade | 3 | Roads | Market |
+| Chivalry | 3 | Free Spirit | Knight; Destroy |
+| Mathematics | 3 | Forestry | Catapult; Sawmill |
+| Construction | 3 | Farming | Windmill; Burn forest |
+| Smithery | 3 | Mining | Swordsman; Forge |
+
+The Technology score term (100 × tier) applies to the new techs unchanged.
+
+## Units
+
+In-game values from the owner (2026-11-01/02).
+
+| Unit | Cost (stars) | Health | Attack | Defense | Movement | Range | Skills | Unlocked by |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Swordsman | 5 | 15 | 3 | 3 | 1 | 1 | Dash, Fortify | Smithery |
+| Catapult | 8 | 10 | 4 | 0 | 1 | 3 | Stiff | Mathematics |
+| Knight | 8 | 10 | 3.5 | 1 | 3 | 1 | Dash, Fortify, Persist | Chivalry |
+
+- **Stiff:** the unit never retaliates. With no Dash, a Catapult cannot attack after moving (owner).
+- **Persist:** each kill by the unit's attack restores a full attack (the phase goes back to allowing an attack), with no limit. It does not restore movement, apart from the kill-move onto the target's tile (owner). Whether an Escape move remains available after a Persist chain is not relevant: the Knight has no Escape.
+- **Ranged:** the Catapult attacks at Chebyshev distance up to 3 and never kill-moves (v1 rule for ranged units).
+- **Score:** units score 5 per star of cost as in v1: Swordsman 25, Catapult 40, Knight 40.
+- **Bots:** the Rush and Economy bots must at least handle the new units and actions legally; whether they use them is part of the units milestone (owner, 2026-11-02).
+
+## Roads and city connections
+
+A road is a building (Roads tech, 3 stars) that halves movement on roads and forms city connections (owner).
+
+- **Where:** any tile except mountains (v2 has no water). It does not remove terrain features, and it may share a tile with another building or a city. In your own territory, the usual site-action rules apply (no enemy unit on the tile). In neutral territory, any explored, unoccupied tile, including under a neutral village. Never in enemy territory. (owner)
+- **Lifetime:** roads cannot be destroyed. A road under a neutral village disappears when the village is captured. (owner)
+- **Movement:** a step between two tiles that both have a road, or a road and a city, costs 0.5 movement and ignores the forest stop; Zone of Control still applies. Costs round up: a unit with 0.5 movement left can still enter a tile that costs 1 (or more). The final tile needs no road, and an obstacle on the final tile does not block the move. Roads in neutral territory work for both players; roads in enemy territory work for neither. (owner)
+- **City connection:** a city is connected when roads link it to its owner's capital; the path may pass through the owner's cities. When a city becomes connected, it and the capital each gain +1 population; when the connection is lost, both lose it again. (owner)
+- **Who acts:** building a road is a site action on the tile (owner, 2026-11-02); a road in neutral territory is a site action of a tile the player does not own, which v1's actor slots do not have yet (a design point for the observation milestone).
+
+## Buildings and tile actions
+
+The economy buildings take their level from the improvements next to them, and their output follows that level as it changes (owner, from namu.moe).
+
+| Building | Tech | Cost | Placed | Effect per level | Cap |
+| --- | --- | --- | --- | --- | --- |
+| Sawmill | Mathematics | 5 | field next to a lumber hut | +1 population per adjacent lumber hut | one per city |
+| Windmill | Construction | 5 | field next to a farm | +1 population per adjacent farm | one per city |
+| Forge | Smithery | 5 | field next to a mine | +2 population per adjacent mine | one per city |
+| Market | Trade | 5 | field next to a sawmill, windmill or forge | +1 star per turn per level of the adjacent sawmills, windmills and forges | 8 stars; one per city |
+
+- **Adjacent** means the 8 surrounding tiles (owner, 2026-11-02).
+- **Levels update:** when a neighbor is added, changes level or goes away, the building's level and its population or income change at once; the population goes to (or leaves) the city that owns the building's tile (owner).
+- **Burn forest** (Construction, 3 stars): a forest tile with no improvement becomes field with crop (owner). An animal on it is forfeited, as with Clear forest (owner, 2026-11-02).
+- **Disband** (Free Spirit): removes one of the player's units and refunds half its cost, rounded down (owner). Legal in any phase, like Promote, and it is not a kill (owner, 2026-11-02). A Super Unit counts as worth 10 stars and refunds 5 (owner, 2026-11-02).
+- **Destroy** (Chivalry): removes any building except a road on the player's territory, with no refund; the population and score the building gave are removed too (owner). Destroying an improvement next to an economy building lowers that building's level (follows from the level rule).
+
+## Monuments
+
+v2 has three monuments; each is free, gives its city +3 population and its owner 400 score, and is placed on any field tile in one of the player's cities' territory that has no building. A player may place each monument once per game, after completing its task (owner, 2026-11-01/02).
+
+| Monument | Task (unlocks it) |
+| --- | --- |
+| Park of Fortune | one of the player's cities reaches level 5 (by growth or capture) |
+| Gate of Power | the player has killed 10 enemy units |
+| Eye of God | the player has discovered all four lighthouses (active from the start) |
+
+- The other monuments' tasks are impractical in v2 and are left out (owner).
+- Placing a monument is a site action on the target tile (owner, 2026-11-02). Kills count as in v1 (attack or retaliation, the Super Unit included) (owner, 2026-11-02).
+- A monument is a building: Destroy removes it with its population and score, and it cannot be placed again (namu.moe: a destroyed monument cannot be rebuilt; owner, 2026-11-02).
+
+## Lighthouses and the Explorer
+
+A lighthouse stands on each of the map's four corner tiles (owner, 2026-11-01).
+
+- Lighthouse tiles are always field, never carry a resource, village or city, and can be occupied by units (owner).
+- They start fogged for both players, even when the capital's starting vision would cover them (owner).
+- The first time a player removes the fog over a lighthouse, by a unit's vision or the Explorer, that player's capital gains +1 population. Each player gets this once per lighthouse (owner).
+- **Explorer:** v2's Explorer no longer ignores lighthouses. New walk step 3b: a candidate whose uncovered fog tiles include a lighthouse gets +3.5, added after the cap of 4 on the fog count, so a candidate that uncovers one fog tile hiding a lighthouse (4.5) beats every candidate without one (owner, 2026-11-02).
+
+## Population loss, score and the damage preview
+
+- **Population loss:** a city's level never goes down. Its population may fall below the current level's threshold, even below zero, and must grow back past it before the next level-up. Population is lost when a building that gave it is destroyed or loses levels, and when a city connection is lost (owner, 2026-11-02).
+- **Score:** v1's terms continue (units, territory, exploration, cities, parks, techs). New: monuments 400 each. Roads and the economy buildings score only through the population they give (owner, 2026-11-02). The city term's surplus population is never negative: below the threshold it counts as 0 (owner, 2026-11-02).
+- **Damage preview:** an observation feature, not an action. For each attack the observer could make, the attack result and the retaliation from the combat formula, using the defender's true defense bonus. It is a deliberate, documented exception to the hidden-tech rule and bumps `obs_hash`. Its encoding is decided in the observation milestone (owner, earlier decision).
+
+## Proposals and sources
+
+The orchestrator's proposals, all approved by the owner on 2026-11-02 (the Super Unit's refund changed to 5):
+
+- [x] `ruleset` flag v1 / v2, and in `rules_hash`
+- [x] road building as a site action, including on neutral tiles
+- [x] "adjacent" = the 8 surrounding tiles
+- [x] Burn forest forfeits an animal on the tile
+- [x] Disband legal in any phase, not a kill; the Super Unit refunds 5 (worth 10 stars)
+- [x] Bots handle the new units and actions legally; how much they use them is decided in the units milestone
+- [x] Monument placement as a site action; kills counted as in v1; a destroyed monument cannot be placed again
+- [x] No separate score for roads and economy buildings; surplus population floored at 0 in the score
+
+**Sources:** the owner's in-game values and rulings (authoritative); [namu.moe: The Battle of Polytopia](https://namu.moe/w/polytopia) (secondary; its tech tree is an older layout); [Pocket Gamer unit list](https://www.pocketgamer.com/the-battle-of-polytopia/the-battle-of-polytopia-cheats-and-tips-list-of-every-unit-and-tribe/) and [West Games damage calculator](https://west-games.com/polytopia-damage-calculator/) (checked, superseded by the owner's values). The Fandom wiki could not be read automatically. Working notes: `docs/V2_RULES_NOTES.md` in the repo.
