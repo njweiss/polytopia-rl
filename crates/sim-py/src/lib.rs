@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sim_core::data::{ALL_REWARDS, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS};
 use sim_core::map::MapParams;
-use sim_core::state::{Config, Outcome};
+use sim_core::state::{Config, Outcome, Ruleset};
 use sim_env::actions::{arg_len, num_actors, ActionType, Factored};
 use sim_env::env::{AgentSeat, Env, EnvConfig, EnvError, Opponent, RewardConfig, StepOut};
 use sim_env::hash::{obs_hash, rules_hash};
@@ -85,6 +85,7 @@ impl PyEnv {
         gamma = 1.0,
         potential_scale = 1000.0,
         max_agent_actions = 5000,
+        ruleset = "v1",
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -99,11 +100,22 @@ impl PyEnv {
         gamma: f32,
         potential_scale: f32,
         max_agent_actions: u32,
+        ruleset: &str,
     ) -> PyResult<PyEnv> {
         if size < MapParams::MIN_SIZE {
             return Err(PyValueError::new_err(format!(
                 "map size {size} is below {}",
                 MapParams::MIN_SIZE
+            )));
+        }
+        let ruleset = match ruleset {
+            "v1" => Ruleset::V1,
+            "v2" => Ruleset::V2,
+            other => return Err(PyValueError::new_err(format!("unknown ruleset {other:?}"))),
+        };
+        if ruleset != Ruleset::V1 {
+            return Err(PyValueError::new_err(format!(
+                "ruleset {ruleset:?} is not supported until milestone 20 (the observation is v1 only)"
             )));
         }
         let bot = |kind| Opponent::Bot {
@@ -141,6 +153,7 @@ impl PyEnv {
             config: Config {
                 full_observability,
                 turn_cap,
+                ruleset,
                 ..Config::default()
             },
             opponent,

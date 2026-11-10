@@ -98,11 +98,30 @@ impl Default for ScoreWeights {
     }
 }
 
+/// Which rules a game plays (docs/MILESTONE_15 "Ruleset flag").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Ruleset {
+    #[default]
+    V1,
+    V2,
+}
+
+impl Ruleset {
+    fn is_v1(&self) -> bool {
+        *self == Ruleset::V1
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     pub full_observability: bool,
     pub turn_cap: u32,
     pub score_weights: ScoreWeights,
+    /// Omitted from the JSON when `V1`, so v1 configs and replay files are unchanged; a JSON
+    /// without it is `V1`.
+    #[serde(default, skip_serializing_if = "Ruleset::is_v1")]
+    pub ruleset: Ruleset,
 }
 
 impl Default for Config {
@@ -111,6 +130,7 @@ impl Default for Config {
             full_observability: false,
             turn_cap: 30,
             score_weights: ScoreWeights::default(),
+            ruleset: Ruleset::V1,
         }
     }
 }

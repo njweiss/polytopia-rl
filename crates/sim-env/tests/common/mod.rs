@@ -94,6 +94,8 @@ pub fn unit_i(u: UnitType) -> usize {
         UnitType::Archer => 2,
         UnitType::Defender => 3,
         UnitType::SuperUnit => 4,
+        // The v1 observation never sees a v2 unit (docs/MILESTONE_15 V5).
+        UnitType::Swordsman | UnitType::Catapult | UnitType::Knight => unreachable!("v2 unit"),
     }
 }
 

@@ -6,9 +6,7 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 use crate::combat::{resolve_attack, Combatant};
-use crate::data::{
-    Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
-};
+use crate::data::{techs, Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_UNITS};
 use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
 };
@@ -42,8 +40,8 @@ pub enum ActionError {
 /// The current player's legal actions in canonical order. With a pending reward: only the
 /// lowest-id pending city's ChooseReward, in menu order. Otherwise: units by ascending id (per unit
 /// Move (row-major), Attack (row-major), Capture, Recover, Promote); Train per city by ascending id in
-/// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; Research in `ALL_TECHS`
-/// order; then EndTurn. Empty once there is an outcome.
+/// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; Research in
+/// `techs(config.ruleset)` order; then EndTurn. Empty once there is an outcome.
 pub fn legal_actions(state: &State) -> Vec<Action> {
     let mut out = Vec::new();
     if state.outcome.is_some() {
@@ -73,7 +71,7 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
             }
         }
     }
-    for tech in ALL_TECHS {
+    for &tech in techs(state.config.ruleset) {
         if research_legal(state, tech) {
             out.push(Action::Research { tech });
         }
@@ -147,6 +145,10 @@ fn pending_city(state: &State) -> Option<CityId> {
 
 /// Train legality apart from the pending-reward block (checked by the callers).
 fn train_legal(state: &State, city: CityId, kind: UnitType) -> bool {
+    // The v2 units are trained from milestone 19 on (docs/MILESTONE_15 V4).
+    if !ALL_UNITS.contains(&kind) {
+        return false;
+    }
     let Some(c) = state.cities.iter().find(|c| c.id == city) else {
         return false;
     };
@@ -164,6 +166,10 @@ fn train_legal(state: &State, city: CityId, kind: UnitType) -> bool {
 
 /// Site-action legality apart from the pending-reward block (checked by the callers).
 fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
+    // The v2 site actions take effect from milestone 17 on (docs/MILESTONE_15 V4).
+    if !ALL_SITE_ACTIONS.contains(&action) {
+        return false;
+    }
     if at.row >= state.size || at.col >= state.size {
         return false;
     }
@@ -185,6 +191,8 @@ fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
         }
         SiteAction::Farm => t.resource == Some(Resource::Crop) && t.improvement.is_none(),
         SiteAction::Mine => t.resource == Some(Resource::Metal) && t.improvement.is_none(),
+        // Its effect is milestone 17's; never legal before (docs/MILESTONE_15 V4).
+        SiteAction::BurnForest => false,
     };
     state.city(owner_city).owner == state.current
         && !enemy_here
@@ -195,6 +203,9 @@ fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
 
 /// Research legality apart from the pending-reward block (checked by the callers).
 fn research_legal(state: &State, tech: Tech) -> bool {
+    if !techs(state.config.ruleset).contains(&tech) {
+        return false;
+    }
     let me = &state.players[state.current as usize];
     !me.techs.contains(tech)
         && state
@@ -307,7 +318,7 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
     let a = state.unit(attacker_id).expect("living attacker").clone();
     let d = state.unit(defender_id).expect("living defender").clone();
     let (sa, sd) = (state.tables.unit(a.kind), state.tables.unit(d.kind));
-    let combatant = |u: &Unit, attack: u32, defense: u32| Combatant {
+    let combatant = |u: &Unit, attack: f32, defense: u32| Combatant {
         attack,
         defense,
         health: u.health,
@@ -486,6 +497,7 @@ fn apply_site(state: &mut State, at: Pos, action: SiteAction) {
         }
         SiteAction::Farm => t.improvement = Some(Improvement::Farm),
         SiteAction::Mine => t.improvement = Some(Improvement::Mine),
+        SiteAction::BurnForest => unreachable!("BurnForest is never legal before milestone 17"),
     }
     let owner_city = t.owner_city.expect("legal site actions are on owned tiles");
     state.city_mut(owner_city).population += info.population;

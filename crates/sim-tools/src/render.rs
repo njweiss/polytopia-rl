@@ -112,6 +112,10 @@ fn cell(state: &State, view: View, pos: Pos) -> String {
                 UnitType::Archer => 'A',
                 UnitType::Defender => 'D',
                 UnitType::SuperUnit => 'S',
+                // Never trained before milestone 19, which picks their glyphs.
+                UnitType::Swordsman | UnitType::Catapult | UnitType::Knight => {
+                    unimplemented!("v2 unit glyphs")
+                }
             };
             if u.owner == 0 {
                 c

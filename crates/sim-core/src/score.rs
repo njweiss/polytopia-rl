@@ -1,6 +1,6 @@
 //! Score, derived on demand from state (spec: "Score"; docs/MILESTONE_6 "Score").
 
-use crate::data::{UnitType, ALL_TECHS};
+use crate::data::UnitType;
 use crate::economy::cumulative_population_for_level;
 use crate::state::{PlayerId, State};
 
@@ -53,7 +53,7 @@ pub fn score_breakdown(state: &State, player: PlayerId) -> ScoreBreakdown {
         .sum();
     let parks: u32 = own_cities().map(|c| c.parks).sum();
     let techs = state.players[player as usize].techs;
-    let tiers: u32 = ALL_TECHS
+    let tiers: u32 = crate::data::techs(state.config.ruleset)
         .iter()
         .filter(|&&t| techs.contains(t))
         .map(|&t| state.tables.tech(t).tier)
