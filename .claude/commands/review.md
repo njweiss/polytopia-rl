@@ -8,6 +8,7 @@ Print the report in the chat.
 Inputs: CLAUDE.md, docs/SPEC.md, docs/MILESTONE_$ARGUMENTS.md, and `git diff main...HEAD`.
 
 Produce, in this order:
+
 1. **Traceability table.** For every rule in the brief's "In scope" list and in the spec sections
    it touches: the code that implements it (file:line) and the test that covers it. Mark each row
    COVERED, UNTESTED (code but no test) or MISSING (no code).
