@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 and `3501282` for Q39-Q41.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 and `70c79e4` for Q42-Q46.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -48,3 +48,8 @@ spec section, or the brief when the answer is an implementation detail.
 | Q39 | 2026-10-28 | Where the cost columns live | `ExperimentReport.cost`: arm -> {params, sps}; None for unreadable runs; also a Cost table in `report.md` | M14 brief; `experiment.py` |
 | Q40 | 2026-10-28 | Names with a reference | per-run `elo_vs_ref`/`elo_vs_ref_mean`, opponent "ref"; with both fields set, `init_checkpoint` only starts training | M14 brief; `experiment.py` |
 | Q41 | 2026-10-28 | A missing `init_from` source | The launcher reports it itself (`FAILED ... does not exist`), skips that run, others continue | M14 brief; `experiment.py` |
+| Q42 | 2026-11-09 | v2 techs in the state digest | The digest hashes the whole `u16` TechSet (all 16 bits); v1 sets are unchanged | M15 brief; `digest.rs` |
+| Q43 | 2026-11-09 | How the Rust `Env` refuses v2 | `Env::new` panics naming milestone 20 (like a too-small map) | M15 brief; `sim-env` |
+| Q44 | 2026-11-09 | The Python `ruleset` keyword | `Env(ruleset="v1")`; `"v2"` raises `ValueError` naming milestone 20; any other value raises `ValueError` | M15 brief; `sim-py` |
+| Q45 | 2026-11-09 | `Combatant.attack` type | `f32` (so the Knight's 3.5 is not truncated); `Combatant` loses `Eq` | M15 brief; `combat.rs` |
+| Q46 | 2026-11-09 | v2 building table shape and test entry point | `adjacent` as names checked against known ones; `Tables::from_json_v2(units, techs, site_actions, buildings, monuments, rules)`; unknown fields rejected in the three new formats only | M15 brief; `data.rs` |
