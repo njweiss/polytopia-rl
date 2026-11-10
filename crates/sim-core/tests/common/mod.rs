@@ -301,6 +301,8 @@ pub fn exp_site_info(a: SiteAction) -> (u32, Tech, u32, u32) {
         SiteAction::ClearForest => (0, Tech::Forestry, 0, 1),
         SiteAction::Farm => (5, Tech::Farming, 2, 0),
         SiteAction::Mine => (5, Tech::Mining, 2, 0),
+        // docs/MILESTONE_15 "Data files" (v2 only).
+        SiteAction::BurnForest => (3, Tech::Construction, 0, 0),
     }
 }
 
@@ -365,6 +367,8 @@ pub fn exp_site_legal(s: &State, q: Pos, a: SiteAction) -> bool {
         }
         SiteAction::Farm => t.resource == Some(Resource::Crop) && t.improvement.is_none(),
         SiteAction::Mine => t.resource == Some(Resource::Metal) && t.improvement.is_none(),
+        // Never legal before milestone 17 (docs/MILESTONE_15 V4).
+        SiteAction::BurnForest => false,
     };
     if !cond {
         return false;
@@ -431,6 +435,7 @@ pub fn exp_after(prev: &State, a: &Action) -> State {
                 }
                 SiteAction::Farm => t.improvement = Some(Improvement::Farm),
                 SiteAction::Mine => t.improvement = Some(Improvement::Mine),
+                SiteAction::BurnForest => unreachable!("never legal before milestone 17"),
             }
             let owner = t.owner_city.unwrap();
             let c = exp_city_mut(&mut s, owner);
@@ -824,6 +829,9 @@ pub fn exp_unit_cost(kind: UnitType) -> Option<u32> {
         UnitType::Warrior => Some(2),
         UnitType::Rider | UnitType::Archer | UnitType::Defender => Some(3),
         UnitType::SuperUnit => None,
+        // docs/MILESTONE_15 "Data files" (v2 only).
+        UnitType::Swordsman => Some(5),
+        UnitType::Catapult | UnitType::Knight => Some(8),
     }
 }
 
@@ -832,6 +840,9 @@ pub fn exp_tier(tech: Tech) -> u32 {
     match tech {
         Tech::Climbing | Tech::Hunting | Tech::Organization | Tech::Riding => 1,
         Tech::Archery | Tech::Forestry | Tech::Farming | Tech::Strategy | Tech::Mining => 2,
+        // docs/MILESTONE_15 "Data files" (v2 only).
+        Tech::Roads | Tech::FreeSpirit => 2,
+        Tech::Trade | Tech::Chivalry | Tech::Mathematics | Tech::Construction | Tech::Smithery => 3,
     }
 }
 

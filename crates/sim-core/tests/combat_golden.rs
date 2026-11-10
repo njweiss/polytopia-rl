@@ -108,7 +108,7 @@ fn wiki_calculator_cases() {
 fn case_1_is_an_exact_half_tie_and_rounds_up() {
     // attackForce = defenseForce = 2, so damage is exactly 2/4 * 2 * 4.5 = 4.5 -> 5 (not 4).
     let w = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 2,
         health: 10,
         max_health: 10,
@@ -122,13 +122,13 @@ fn case_1_is_an_exact_half_tie_and_rounds_up() {
 fn compute_damage_matches_hand_calculation() {
     // Case 3 by hand: aF=2, dF=3, total=5 -> round(3.6)=4, round(8.1)=8.
     let w = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 2,
         health: 10,
         max_health: 10,
     };
     let d = Combatant {
-        attack: 1,
+        attack: 1.0,
         defense: 3,
         health: 15,
         max_health: 15,
@@ -153,13 +153,13 @@ fn round_half_up_pins_the_tie_rule() {
 fn no_retaliation_when_attacker_is_out_of_defender_range() {
     // Archer shoots a Warrior from 2 tiles away: Warrior (range 1) cannot hit back.
     let archer = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 1,
         health: 10,
         max_health: 10,
     };
     let warrior = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 2,
         health: 10,
         max_health: 10,
@@ -172,13 +172,13 @@ fn no_retaliation_when_attacker_is_out_of_defender_range() {
 #[test]
 fn no_retaliation_when_defender_dies() {
     let w = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 2,
         health: 10,
         max_health: 10,
     };
     let nearly_dead = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 2,
         health: 1,
         max_health: 10,
@@ -192,13 +192,13 @@ fn no_retaliation_when_defender_dies() {
 fn attacker_health_floors_at_zero_on_retaliation_kill() {
     // Golden case 2 shape: a 6/10 Warrior takes 6 retaliation and must floor at 0 (no underflow).
     let w6 = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 2,
         health: 6,
         max_health: 10,
     };
     let w10 = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 2,
         health: 10,
         max_health: 10,
@@ -211,19 +211,19 @@ fn attacker_health_floors_at_zero_on_retaliation_kill() {
 fn damage_uses_pre_attack_health_for_both_forces() {
     // Same defender at 15/15 vs 11/15 must change the numbers via health ratio only.
     let rider = Combatant {
-        attack: 2,
+        attack: 2.0,
         defense: 1,
         health: 15,
         max_health: 15,
     };
     let full = Combatant {
-        attack: 1,
+        attack: 1.0,
         defense: 3,
         health: 15,
         max_health: 15,
     };
     let hurt = Combatant {
-        attack: 1,
+        attack: 1.0,
         defense: 3,
         health: 11,
         max_health: 15,

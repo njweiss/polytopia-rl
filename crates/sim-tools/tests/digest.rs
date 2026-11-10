@@ -13,8 +13,8 @@ use sim_core::map::{MapParams, Resource, Terrain};
 use sim_core::rng::Rng;
 use sim_core::setup::new_game_from_seed;
 use sim_core::state::{
-    City, CityId, Config, Dir, Improvement, Outcome, Phase, PlayerState, ScoreWeights, State,
-    TechSet, TileState, Unit, UnitId,
+    City, CityId, Config, Dir, Improvement, Outcome, Phase, PlayerState, Ruleset, ScoreWeights,
+    State, TechSet, TileState, Unit, UnitId,
 };
 use sim_core::testing::StateBuilder;
 use sim_tools::digest::state_digest;
@@ -71,6 +71,7 @@ fn rich_state() -> State {
             full_observability: false,
             turn_cap: 30,
             score_weights: ScoreWeights::default(),
+            ruleset: Ruleset::V1,
         })
         .rng(Rng::new(99))
         .build();
@@ -206,6 +207,7 @@ fn single_field_edits() -> Vec<Edit> {
         full_observability: _,
         turn_cap: _,
         score_weights: _,
+        ruleset: _,
     } = &s.config;
     let ScoreWeights {
         unit_per_star: _,

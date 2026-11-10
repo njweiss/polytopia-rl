@@ -1,8 +1,8 @@
 //! State digest (docs/MILESTONE_7 "State digest").
 
-use sim_core::data::ALL_TECHS;
+use sim_core::data::techs;
 use sim_core::grid::Pos;
-use sim_core::state::{Outcome, State};
+use sim_core::state::{Outcome, Ruleset, State};
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -85,6 +85,10 @@ pub fn state_digest(state: &State) -> u64 {
     ] {
         h.u32(v);
     }
+    // Only under v2, so v1 digests are unchanged (docs/MILESTONE_15 "Ruleset flag").
+    if c.ruleset == Ruleset::V2 {
+        h.u8(1);
+    }
 
     h.len(state.tiles.len());
     for t in &state.tiles {
@@ -137,7 +141,8 @@ pub fn state_digest(state: &State) -> u64 {
 
     for pl in &state.players {
         h.u32(pl.stars);
-        let bits = ALL_TECHS
+        // All 16 techs, so v2 research is covered (docs/QUESTIONS.md Q42); a v1 set has no v2 bits.
+        let bits = techs(Ruleset::V2)
             .iter()
             .filter(|&&t| pl.techs.contains(t))
             .fold(0u16, |acc, &t| acc | 1 << t as u16);
