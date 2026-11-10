@@ -72,6 +72,8 @@ Milestone 12 (closed 2026-10-26):
 | M10 | CleanRL-style PPO, curriculum, 20M steps | `latest.pt`: 100% vs random and economy, 97.8% vs rush (seat 1 96.0%) |
 | M11 | hashes, checkpoints, suite, losses, Elo, tournament, snapshot-pool self-play | 11b passed: 0.675 vs M10, worst suite drop -3.0 pp (passes from ~18M on) |
 | M12 | batched suite, seed-varied maps, multi-seed experiment harness, Welch | 12b: see above; `pbot40` best against rush, not significant |
+| M12c, M13, M13b, M14 | LR schedule experiment, interleaved rollout, stacked snapshot forward, capacity ladder | merged; see RL_REPORT 12c, 13a, 13b, 14b |
+| M15 | v2 foundation: ruleset flag, data/v2 tables, v2 tech research, hashes; v1 byte-identical | merged 70c79e4; review: no blocking findings, 2 nits (below) |
 
 **Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
 worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
@@ -84,28 +86,31 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 ## Waiting on the owner
 
-1. Nothing: M15 phase B is running in `../polytopia_rl-m15` (tests ca3d45d approved, Q42-Q46 accepted 2026-11-09).
+1. Go-ahead for the M16 brief (roads).
 2. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q42). Q1-Q41 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q47). Q1-Q46 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
   (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (rev 394).
-- `.git/tests-lock` points at `99f499b` (M14's test commit).
+- `.git/tests-lock` points at `ca3d45d` (M15's test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
-1. Gate 13a: profile fixture before/after, 2M smoke run, concurrency 1-4, re-profile, RL_REPORT section.
-2. Orchestrator: from the re-profile, a second speed step or straight to the M14 brief (scaling ladder,
-   10M runs annealed to zero, `p_bot` 0.4).
-3. Small safeguard for the opening-turn truncation hang (raise instead of looping) in the next milestone.
+1. Merge the v2 rules (Claude Doc tab "v2 rules (draft)", `docs/V2_RULES_NOTES.md`) into the master spec
+   and `docs/SPEC.md`; M15 implemented the foundation without the spec carrying v2 yet.
+2. M16 brief (roads). Include the M15 review nit: `StateBuilder::config` (sim-core/src/testing.rs) must
+   also set the tables of the config's ruleset, or v2 tests can index v2 techs in v1 tables.
+3. Renderer: list v2 techs in `polytopia show` (render.rs tech panel iterates `ALL_TECHS`); M19 or M20.
+   Still deferred: opening-turn truncation hang safeguard, experiment.py simplify pass.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-11-09 | M15 merged (70c79e4), gate green (577 cargo, 26 + 368 pytest), worktree removed; Q42-Q46 to DECISIONS.md. Review: no blocking findings; nits StateBuilder tables (M16) and renderer v2 techs (M19/M20). |
 | 2026-11-09 | M15 tests (ca3d45d) approved; Q42-Q46 accepted as recommended (17f0287 on milestone-15); phase B started in the worktree. |
 | 2026-11-07 | M15 V1-V5 confirmed; phase A started in worktree ../polytopia_rl-m15 (Rust built in the worktree, extension unpacked to target/pyext). |
 | 2026-11-06 | M15 brief (v2 foundation) drafted; v2 plan M15-M21 recorded in it. |
