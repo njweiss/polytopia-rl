@@ -6,6 +6,7 @@ target/
 **/*.rs.bk
 
 .vscode
+.claude
 
 *.pyc
 __pycache__/
