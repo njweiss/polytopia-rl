@@ -93,14 +93,13 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 - `QUESTIONS.md`: none open (next number Q47). Q1-Q46 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
-  (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (rev 394).
+  (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (main tab rev 400, "v2 rules" tab rev 22, appended to SPEC.md).
 - `.git/tests-lock` points at `ca3d45d` (M15's test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
-1. Merge the v2 rules (Claude Doc tab "v2 rules (draft)", `docs/V2_RULES_NOTES.md`) into the master spec
-   and `docs/SPEC.md`; M15 implemented the foundation without the spec carrying v2 yet.
+1. Owner review of the v2 spec merge (Claude Doc rev 400 main tab, rev 22 "v2 rules" tab).
 2. M16 brief (roads). Include the M15 review nit: `StateBuilder::config` (sim-core/src/testing.rs) must
    also set the tables of the config's ruleset, or v2 tests can index v2 techs in v1 tables.
 3. Renderer: list v2 techs in `polytopia show` (render.rs tech panel iterates `ALL_TECHS`); M19 or M20.
@@ -110,6 +109,7 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 | Date | Change |
 | --- | --- |
+| 2026-11-10 | v2 rules merged into the spec: draft tab renamed "v2 rules" (approved lead, M15 data/versioning section), main tab scope/config/status/decision rows updated; SPEC.md synced (main + v2). |
 | 2026-11-09 | M15 merged (70c79e4), gate green (577 cargo, 26 + 368 pytest), worktree removed; Q42-Q46 to DECISIONS.md. Review: no blocking findings; nits StateBuilder tables (M16) and renderer v2 techs (M19/M20). |
 | 2026-11-09 | M15 tests (ca3d45d) approved; Q42-Q46 accepted as recommended (17f0287 on milestone-15); phase B started in the worktree. |
 | 2026-11-07 | M15 V1-V5 confirmed; phase A started in worktree ../polytopia_rl-m15 (Rust built in the worktree, extension unpacked to target/pyext). |

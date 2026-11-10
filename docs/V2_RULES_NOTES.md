@@ -1,4 +1,6 @@
-# v2 rules: working notes (merged into the spec at milestone 15)
+# v2 rules: working notes (merged into the spec on 2026-11-10)
+
+Historical notes. The rulebook is `docs/SPEC.md` ("Game v2 rules") and the Claude Doc tab "v2 rules".
 
 Owner rulings collected while drafting the v2 spec. Sources: the owner's in-game values and rulings
 (authoritative), [namu.moe](https://namu.moe/w/polytopia) (secondary, partly an older game version).
