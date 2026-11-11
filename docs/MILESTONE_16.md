@@ -147,20 +147,20 @@ Each tile's record gets one trailing byte, `road` (0 or 1), and each city's reco
 - **R1:** the action is a new `Action::BuildRoad { at }`, not a `SiteAction` variant. A `SiteAction` would
   need a row in `data/v2/site_actions.json` that duplicates `road_cost` and `road_tech` from `rules.json`,
   and its legality (neutral tiles allowed) differs from every site action. It is still "a site action" in
-  the spec's sense and goes to the site slot in M20.
+  the spec's sense and goes to the site slot in M20. - Confirmed (owner, 2026-11-11)
 - **R2:** a city tile counts as a road for its owner: for movement ("a road and a city") and as a link in
   a connection path. A step from city to city also costs 0.5. A road cannot be built on a city tile (it
-  would change nothing).
+  would change nothing). - Confirmed (owner, 2026-11-11)
 - **R3:** connections are recomputed after every action under v2, in ascending city id order (gains are
   given after losses within each city). Recomputing everything is simplest and costs little on an 11x11
-  map; it also catches every way a connection breaks.
+  map; it also catches every way a connection breaks. - Confirmed (owner, 2026-11-11)
 - **R4:** no signed population type yet. In M16 every population loss reverses an earlier +1 to the same
   city, so it cannot go below 0; the subtraction is checked and panics if that ever fails. The signed type
-  stays with M17, where building loss first allows otherwise (M15 V3).
+  stays with M17, where building loss first allows otherwise (M15 V3). - Confirmed (owner, 2026-11-11)
 - **R5:** no rules-version bump: v1 rules are unchanged, so the v1 `rules_hash` (and every v1 checkpoint)
-  stays valid. No v2 checkpoint can exist until M20, which introduces a v2 rules version.
+  stays valid. No v2 checkpoint can exist until M20, which introduces a v2 rules version. - Confirmed (owner, 2026-11-11)
 - **R6:** a connected city that the other player captures: its old connection is lost first (the city and
-  the old owner's capital each lose 1), then it may connect to its new owner's capital (each gain 1).
+  the old owner's capital each lose 1), then it may connect to its new owner's capital (each gain 1). - Confirmed (owner, 2026-11-11)
 
 ## Changes to earlier tests
 
