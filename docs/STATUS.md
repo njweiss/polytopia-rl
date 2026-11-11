@@ -86,7 +86,7 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 ## Waiting on the owner
 
-1. Go-ahead for the M16 brief (roads).
+1. M16 brief (roads, `docs/MILESTONE_16.md`): confirm or overrule clarifications R1-R6, then phase A.
 2. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
 
 ## Open questions
@@ -100,8 +100,7 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 ## Next three actions
 
 1. Owner review of the v2 spec merge (Claude Doc rev 400 main tab, rev 22 "v2 rules" tab).
-2. M16 brief (roads). Include the M15 review nit: `StateBuilder::config` (sim-core/src/testing.rs) must
-   also set the tables of the config's ruleset, or v2 tests can index v2 techs in v1 tables.
+2. M16 phase A in a worktree once R1-R6 are confirmed (the brief includes the StateBuilder fix).
 3. Renderer: list v2 techs in `polytopia show` (render.rs tech panel iterates `ALL_TECHS`); M19 or M20.
    Still deferred: opening-turn truncation hang safeguard, experiment.py simplify pass.
 
@@ -109,6 +108,7 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 | Date | Change |
 | --- | --- |
+| 2026-11-11 | M16 brief (roads and city connections) drafted; clarifications R1-R6 for the owner. |
 | 2026-11-10 | v2 rules merged into the spec: draft tab renamed "v2 rules" (approved lead, M15 data/versioning section), main tab scope/config/status/decision rows updated; SPEC.md synced (main + v2). |
 | 2026-11-09 | M15 merged (70c79e4), gate green (577 cargo, 26 + 368 pytest), worktree removed; Q42-Q46 to DECISIONS.md. Review: no blocking findings; nits StateBuilder tables (M16) and renderer v2 techs (M19/M20). |
 | 2026-11-09 | M15 tests (ca3d45d) approved; Q42-Q46 accepted as recommended (17f0287 on milestone-15); phase B started in the worktree. |
