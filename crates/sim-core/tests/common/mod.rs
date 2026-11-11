@@ -938,6 +938,7 @@ pub fn exp_capture(s: &mut State, unit: UnitId) {
             wall: false,
             border_growth_used: false,
             pending_reward: false,
+            connected_to: None,
         });
         let t = tile_mut(s, at);
         t.village = false;
@@ -1282,7 +1283,7 @@ pub fn pick_weighted(rng: &mut Rng, legal: &[Action]) -> Action {
             | Action::Recover { .. }
             | Action::Promote { .. } => groups[0].push(a),
             Action::Train { .. } => groups[1].push(a),
-            Action::Site { .. } => groups[2].push(a),
+            Action::Site { .. } | Action::BuildRoad { .. } => groups[2].push(a),
             Action::Research { .. } => groups[3].push(a),
             Action::ChooseReward { .. } => rewards.push(a),
             Action::EndTurn => {}

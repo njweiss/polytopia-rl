@@ -205,6 +205,7 @@ pub fn digest_bytes(s: &State) -> Vec<u8> {
             city,
             owner_city,
             unit,
+            road: _,
         } = t;
         e.u8(terrain_index(*terrain));
         e.opt_u8(resource.map(resource_index));
@@ -264,6 +265,7 @@ pub fn digest_bytes(s: &State) -> Vec<u8> {
             wall,
             border_growth_used,
             pending_reward,
+            connected_to: _,
         } = c;
         e.u32(id.0);
         e.u8(*owner);

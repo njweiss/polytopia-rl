@@ -123,6 +123,9 @@ pub fn encode_action(state: &State, action: &Action) -> Factored {
         ),
         Action::Research { tech } => (3 * n, ActionType::Research, tech as usize),
         Action::EndTurn => (3 * n, ActionType::EndTurn, 0),
+        Action::BuildRoad { .. } => {
+            unimplemented!("milestone 16: BuildRoad has no slot before M20")
+        }
     };
     Factored { actor, kind, arg }
 }

@@ -9,6 +9,7 @@ pub mod grid;
 pub mod map;
 pub mod movement;
 pub mod rng;
+pub mod roads;
 pub mod score;
 pub mod setup;
 pub mod spawn;

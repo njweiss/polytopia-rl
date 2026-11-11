@@ -32,6 +32,7 @@ impl StateBuilder {
             city: None,
             owner_city: None,
             unit: None,
+            road: false,
         };
         StateBuilder {
             state: State {
@@ -101,6 +102,7 @@ impl StateBuilder {
             wall: false,
             border_growth_used: false,
             pending_reward: false,
+            connected_to: None,
         };
         edit(&mut city);
         self.state.cities.push(city);

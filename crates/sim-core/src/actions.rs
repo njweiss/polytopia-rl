@@ -30,6 +30,7 @@ pub enum Action {
     Research { tech: Tech },
     ChooseReward { city: CityId, reward: Reward },
     EndTurn,
+    BuildRoad { at: Pos }, // v2 only (docs/MILESTONE_16 "BuildRoad legality")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +98,7 @@ pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
         Action::Research { tech } => apply_research(state, tech),
         Action::ChooseReward { city, reward } => apply_choose_reward(state, city, reward),
         Action::EndTurn => apply_end_turn(state),
+        Action::BuildRoad { .. } => unimplemented!("milestone 16: BuildRoad apply"),
     }
     Ok(())
 }
@@ -122,6 +124,7 @@ fn is_legal(state: &State, action: &Action) -> bool {
         Action::Research { tech } => return research_legal(state, tech),
         Action::ChooseReward { .. } => return false,
         Action::EndTurn => return true,
+        Action::BuildRoad { .. } => unimplemented!("milestone 16: BuildRoad legality"),
     };
     let Some(u) = state.unit(id) else {
         return false;
@@ -422,6 +425,7 @@ fn found_city(state: &mut State, at: Pos, owner: PlayerId) -> CityId {
         wall: false,
         border_growth_used: false,
         pending_reward: false,
+        connected_to: None,
     });
     let i = state.index(at);
     state.tiles[i].village = false;

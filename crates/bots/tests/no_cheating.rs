@@ -217,6 +217,7 @@ fn try_twin(s: &State, v: PlayerId, rng: &mut Rng) -> Option<State> {
                 wall: false,
                 border_growth_used: false,
                 pending_reward: false,
+                connected_to: None,
             });
             t.tiles[i].city = Some(id);
             t.tiles[i].village = false;
