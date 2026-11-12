@@ -121,6 +121,8 @@ Under `V1` there are no roads, so every step is a normal step and the result equ
     capital each gain 1; `connected_to = Some(capital)`.
   - After all cities: the level-up check for every city whose population rose, in ascending id order (the
     existing one-level-at-a-time rule with pending rewards).
+- The update is skipped when the action ended the game (`outcome` is set), so after a capital capture
+  no population changes from connections (Q48, owner answer C).
 - Population loss: a city's level never goes down. A loss can never take population below 0 here, because
   every loss reverses an earlier +1 to the same city (R4).
 - Ways a connection breaks in v2 so far: a city on the path, or the city itself, is captured by the other
@@ -168,6 +170,10 @@ Allowed only where a type changes: struct literals of `TileState` and `City` gai
 `connected_to: None` (or destructuring patterns gain `..`/the field), and exhaustive matches on `Action`
 gain a `BuildRoad` arm. No expected value may change; no test may be removed or weakened. Each such edit
 is listed in the phase A commit message.
+
+One owner-approved exception (Q47, answer A): in `crates/sim-tools/tests/v2_digest.rs`, `expected_v2_digest`
+changes to the M16 v2 encoding (trailing `road` byte per tile, trailing `connected_to` per city). Its
+v1 expectations and every other value stay unchanged.
 
 ## Tests (phase A guidance)
 

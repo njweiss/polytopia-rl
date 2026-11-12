@@ -34,7 +34,7 @@ Append entries below. Format:
 - Agent's pick and why: A. The brief's per-record encoding is simpler and fixed-width per record,
   and no v2 replay file or checkpoint exists yet (R5), so nothing persisted depends on the M15 v2
   digest. This needs an owner-approved phase A edit before phase B can reach a green check.
-- Owner answer:
+- Owner answer: A (owner, 2026-11-12). Phase A updates `expected_v2_digest` in `v2_digest.rs` to the M16 encoding; v1 expectations unchanged.
 
 ## Q48: connections when a player owns two capitals (a capital capture)
 
@@ -46,4 +46,4 @@ Append entries below. Format:
   connection update once the game has an outcome.
 - Agent's pick and why: A (simplest, deterministic). The tests do not pin it: the playout property
   test skips terminal states, and no scripted test captures a capital.
-- Owner answer:
+- Owner answer: C (owner, 2026-11-12). The connection update is skipped once the game has an outcome; phase A adds a test that pins it.
