@@ -17,7 +17,7 @@ use sim_core::map::MapParams;
 use sim_core::rng::Rng;
 use sim_core::roads::is_connected;
 use sim_core::setup::new_game_from_seed;
-use sim_core::state::{City, CityId, Config, PlayerId, Ruleset, State, UnitId};
+use sim_core::state::{City, CityId, Config, Outcome, PlayerId, Ruleset, State, UnitId};
 use sim_core::testing::StateBuilder;
 
 fn v2_config() -> Config {
@@ -294,6 +294,49 @@ fn capturing_the_connected_city_moves_its_connection_to_the_new_owner() {
     assert_eq!(pops(&s), vec![5, 6, 1]);
     assert_eq!(city(&s, 2).connected_to, Some(CityId(1)));
     assert!(is_connected(&s, CityId(2)));
+}
+
+// ---------------------------------------------------------------- terminal states
+
+/// Q48 (owner answer C): the update is skipped once the action ended the game. Player 1's capital
+/// (city 1) on (4,4) owns rows 3-5 x cols 3-5. Player 0's city 2 on (7,7) reaches city 0 only along
+/// the diagonal roads (2,2), (3,3), (5,5), (6,6), two of them in city 1's land, so it is not
+/// connected. Player 1's city 3 on (1,7) is linked to city 1 by roads (2,6) and (3,5). A player 0
+/// Warrior stands on city 1. After both end the turn (city 3 connects: 5, 6, 0, 1), player 0
+/// captures city 1 and wins. Run on that state, the update would connect city 2 (the diagonal is
+/// now player 0's) and drop city 3's connection (player 1 has no capital); skipped, every city
+/// keeps its population and `connected_to` (a capture changes neither, spec "Capture").
+#[test]
+fn no_connection_changes_after_a_capital_capture_ends_the_game() {
+    let mut s = with_roads(
+        board(p(4, 4), |b| {
+            b.city(0, p(7, 7))
+                .city(1, p(1, 7))
+                .unit(0, UnitType::Warrior, p(4, 4))
+        }),
+        &[p(2, 2), p(3, 3), p(5, 5), p(6, 6), p(2, 6), p(3, 5)],
+    );
+    assert_eq!(owner_of_tile(&s, p(3, 3)), Some(1));
+    assert_eq!(owner_of_tile(&s, p(5, 5)), Some(1));
+    act(&mut s, Action::EndTurn);
+    assert_eq!(pops(&s), vec![5, 6, 0, 1]);
+    assert_eq!(city(&s, 2).connected_to, None);
+    assert_eq!(city(&s, 3).connected_to, Some(CityId(1)));
+    act(&mut s, Action::EndTurn);
+    let prev = s.clone();
+
+    let w = unit_on(&s, p(4, 4));
+    act(&mut s, Action::Capture { unit: w });
+    assert_eq!(s.outcome, Some(Outcome::Win(0)));
+    assert_eq!(city(&s, 1).owner, 0);
+    // A non-skipped update would see a path for city 2 now.
+    assert!(exp_connected(&s, CityId(2)));
+    assert_eq!(pops(&s), pops(&prev));
+    for (c, c0) in s.cities.iter().zip(&prev.cities) {
+        assert_eq!(c.connected_to, c0.connected_to, "city {}", c.id.0);
+        assert_eq!(c.level, c0.level, "city {}", c.id.0);
+        assert_eq!(c.pending_reward, c0.pending_reward, "city {}", c.id.0);
+    }
 }
 
 // ---------------------------------------------------------------- village capture

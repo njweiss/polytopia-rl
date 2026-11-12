@@ -43,18 +43,61 @@ fn v2_config(turn_cap: u32) -> Config {
     }
 }
 
-/// The brief's v2 digest: the v1 stream with the ruleset byte inserted after the `Config`.
+/// The brief's v2 digest: the v1 stream with the ruleset byte inserted after the `Config`, and
+/// since milestone 16 a trailing `road` byte per tile record and a trailing `connected_to` option
+/// per city record (docs/QUESTIONS.md Q47, owner answer A; the same walk as
+/// `road_digest.rs::expected_v2_bytes`, record sizes from docs/MILESTONE_7 "State digest").
 fn expected_v2_digest(s: &State) -> u64 {
     let mut v1 = s.clone();
     v1.config.ruleset = Ruleset::V1;
-    let mut bytes = digest_bytes(&v1);
+    let b = digest_bytes(&v1);
     // Sanity on the offset: the bytes just before it are `tech_per_tier`, little-endian.
     assert_eq!(
-        bytes[CONFIG_END - 4..CONFIG_END],
+        b[CONFIG_END - 4..CONFIG_END],
         s.config.score_weights.tech_per_tier.to_le_bytes()
     );
-    bytes.insert(CONFIG_END, 1);
-    fnv1a64(&bytes)
+    let opt_len = |some: bool, payload: usize| if some { 1 + payload } else { 1 };
+    let mut out = b[..CONFIG_END].to_vec();
+    out.push(1);
+    let mut i = CONFIG_END;
+    let copy = |out: &mut Vec<u8>, i: &mut usize, n: usize| {
+        out.extend_from_slice(&b[*i..*i + n]);
+        *i += n;
+    };
+    copy(&mut out, &mut i, 4);
+    for t in &s.tiles {
+        let n = 1
+            + opt_len(t.resource.is_some(), 1)
+            + opt_len(t.improvement.is_some(), 1)
+            + 1
+            + opt_len(t.city.is_some(), 4)
+            + opt_len(t.owner_city.is_some(), 4)
+            + opt_len(t.unit.is_some(), 4);
+        copy(&mut out, &mut i, n);
+        out.push(t.road as u8);
+    }
+    let units: usize = s
+        .units
+        .iter()
+        .map(|u| 16 + opt_len(u.origin.is_some(), 4) + 7 + opt_len(u.last_dir.is_some(), 2))
+        .sum();
+    copy(&mut out, &mut i, 4 + units);
+    copy(&mut out, &mut i, 4);
+    for c in &s.cities {
+        // Sanity on the walk: each city record starts with its id.
+        assert_eq!(b[i..i + 4], c.id.0.to_le_bytes(), "record offsets");
+        copy(&mut out, &mut i, 24);
+        match c.connected_to {
+            None => out.push(0),
+            Some(k) => {
+                out.push(1);
+                out.extend_from_slice(&k.0.to_le_bytes());
+            }
+        }
+    }
+    let rest = b.len() - i;
+    copy(&mut out, &mut i, rest);
+    fnv1a64(&out)
 }
 
 fn scripted() -> Vec<State> {
