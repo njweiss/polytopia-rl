@@ -47,3 +47,19 @@ Append entries below. Format:
 - Agent's pick and why: A (simplest, deterministic). The tests do not pin it: the playout property
   test skips terminal states, and no scripted test captures a capital.
 - Owner answer: C (owner, 2026-11-12). The connection update is skipped once the game has an outcome; phase A adds a test that pins it.
+
+## Q49: a level-up reward for the opponent's city during the current player's turn
+
+- Needed for: spec "Forced rewards" (SPEC.md: "If any city has a pending reward, the only legal action
+  is that city's Choose reward") with milestone 16 "Neutral roads work for both" (found by /review 16).
+- Ambiguity: player P builds a road on a neutral tile that completes player Q's connection. Q's city
+  and capital each gain +1 during P's turn; if that crosses a threshold, Q's city levels up with
+  `pending_reward = true` while P is moving. Read literally, the spec would block P on a reward P
+  cannot choose.
+- What the M16 code does: only the current player's pending rewards block (`pending_city` looks at
+  the current player's cities). Q chooses the reward at the start of Q's turn. If P captures that city
+  first, P inherits the open reward and must choose it at once.
+- Options: A. keep the code's behaviour and write it into the spec (rewards block only their owner;
+  a captured city keeps its pending reward). B. as A, but a capture clears the pending reward.
+- Orchestrator's pick: A (matches the code, no new rule). Needs a scripted test in a later phase A.
+- Owner answer:
