@@ -5,6 +5,10 @@
 //! `Config` bytes end at offset 55: size 1 + turn 4 + current 1 + two rng outputs 8 +
 //! full_observability 1 + turn_cap 4 + nine score weights 36.
 //!
+//! Since milestone 16 (docs/QUESTIONS.md Q47, owner answer A) the v2 encoding also appends a
+//! `road` byte to every tile record and a `connected_to` option to every city record;
+//! `expected_v2_digest` inserts those too. v1 digests are unchanged.
+//!
 //! v2 techs in the digest: docs/QUESTIONS.md Q42 (the `TechSet` is its whole `u16`, bits 9 to 15
 //! included).
 

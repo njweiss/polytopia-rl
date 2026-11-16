@@ -538,7 +538,7 @@ fn pick_growing(s: &State, legal: &[Action], rng: &mut Rng) -> Action {
 
 /// Random v2 games where both players start with Roads and extra stars and build roads often.
 /// Every step: `connected_to`, population and level follow the replayed update (terminal states
-/// skipped: a capital capture leaves one player with two capitals, see docs/QUESTIONS.md Q47), and
+/// skipped: a capital capture leaves one player with two capitals, see docs/QUESTIONS.md Q48), and
 /// `road` only ever goes from false to true except under a captured village. Then the action log
 /// replays to the identical sequence of states.
 #[test]
