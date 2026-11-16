@@ -198,8 +198,10 @@ impl StateBuilder {
         self
     }
 
-    /// With `full_observability`, `build` marks every tile explored for both players.
+    /// Also sets the tables of the config's ruleset. With `full_observability`, `build` marks every
+    /// tile explored for both players.
     pub fn config(mut self, config: Config) -> StateBuilder {
+        self.state.tables = Tables::shared_for(config.ruleset);
         self.state.config = config;
         self
     }

@@ -242,6 +242,6 @@ pub fn action_label(action: &Action) -> String {
         Action::Research { tech } => format!("Research {}", snake(&tech)),
         Action::ChooseReward { city, reward } => format!("Reward c{} {}", city.0, snake(&reward)),
         Action::EndTurn => "End turn".to_string(),
-        Action::BuildRoad { .. } => unimplemented!("milestone 16: BuildRoad label"),
+        Action::BuildRoad { at } => format!("Build road ({},{})", at.row, at.col),
     }
 }

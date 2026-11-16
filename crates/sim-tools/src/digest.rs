@@ -86,7 +86,8 @@ pub fn state_digest(state: &State) -> u64 {
         h.u32(v);
     }
     // Only under v2, so v1 digests are unchanged (docs/MILESTONE_15 "Ruleset flag").
-    if c.ruleset == Ruleset::V2 {
+    let v2 = c.ruleset == Ruleset::V2;
+    if v2 {
         h.u8(1);
     }
 
@@ -99,6 +100,10 @@ pub fn state_digest(state: &State) -> u64 {
         h.opt_u32(t.city.map(|c| c.0));
         h.opt_u32(t.owner_city.map(|c| c.0));
         h.opt_u32(t.unit.map(|u| u.0));
+        // Only under v2 (docs/MILESTONE_16 "Digest").
+        if v2 {
+            h.bool(t.road);
+        }
     }
 
     h.len(state.units.len());
@@ -137,6 +142,9 @@ pub fn state_digest(state: &State) -> u64 {
         h.bool(c.wall);
         h.bool(c.border_growth_used);
         h.bool(c.pending_reward);
+        if v2 {
+            h.opt_u32(c.connected_to.map(|k| k.0));
+        }
     }
 
     for pl in &state.players {

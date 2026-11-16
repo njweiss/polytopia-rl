@@ -4,7 +4,8 @@
 use crate::data::{Skill, Tech};
 use crate::grid::{all_tiles, chebyshev, neighbors, Pos};
 use crate::map::Terrain;
-use crate::state::{PlayerId, State, UnitId};
+use crate::roads::road_usable;
+use crate::state::{PlayerId, Ruleset, State, UnitId};
 
 /// Whether `player`'s techs allow standing on `p`'s terrain: mountains need Climbing.
 pub(crate) fn terrain_allows(state: &State, player: PlayerId, p: Pos) -> bool {
@@ -17,13 +18,21 @@ pub(crate) fn terrain_allows(state: &State, player: PlayerId, p: Pos) -> bool {
 /// Tiles the unit could move to with its full movement budget, row-major, excluding its own
 /// tile. Ignores the unit's phase.
 ///
-/// Breadth-first by step count. Whether a tile can be entered and whether it stops further
-/// movement depend only on the tile, so the fewest steps to a tile leaves the most budget there.
+/// Counted in half-points (docs/MILESTONE_16 "Road movement"): the budget is `2 x movement`; under
+/// v2 a step between two tiles `road_usable` for the owner costs `2 x road_step_cost`, every other
+/// step 2, floored at 0, and a step needs at least 1 left. Arriving next to an enemy, or on a
+/// forest or mountain by a non-road step, stops the unit (the start tile is exempt). Under v1
+/// every step is a normal step. The search keeps, per tile, the most budget left on arrival
+/// without a stop; more budget there reaches a superset of tiles.
 pub fn reachable_tiles(state: &State, unit: UnitId) -> Vec<Pos> {
     let Some(u) = state.unit(unit) else {
         return Vec::new();
     };
-    let budget = state.tables.unit(u.kind).movement;
+    let budget = 2 * state.tables.unit(u.kind).movement;
+    let road_cost = match state.config.ruleset {
+        Ruleset::V1 => None,
+        Ruleset::V2 => Some((2.0 * state.tables.v2_rules().road_step_cost) as u32),
+    };
     let enemies: Vec<Pos> = state
         .units
         .iter()
@@ -36,35 +45,40 @@ pub fn reachable_tiles(state: &State, unit: UnitId) -> Vec<Pos> {
             && state.tile(q).unit.is_none()
             && terrain_allows(state, u.owner, q)
     };
-    let stops = |q: Pos| {
-        matches!(state.tile(q).terrain, Terrain::Forest | Terrain::Mountain)
-            || enemies.iter().any(|&e| chebyshev(e, q) == 1)
-    };
+    let zoc = |q: Pos| enemies.iter().any(|&e| chebyshev(e, q) == 1);
+    let rough = |q: Pos| matches!(state.tile(q).terrain, Terrain::Forest | Terrain::Mountain);
 
-    let mut seen = vec![false; state.tiles.len()];
-    seen[state.index(u.pos)] = true;
-    let mut frontier = vec![u.pos];
-    for _ in 0..budget {
-        let mut next = Vec::new();
-        for &from in &frontier {
-            // The start tile is exempt from forest, mountain and ZoC stops.
-            if from != u.pos && stops(from) {
+    let mut reached = vec![false; state.tiles.len()];
+    // The most budget left on a non-stopping arrival at each tile.
+    let mut best: Vec<Option<u32>> = vec![None; state.tiles.len()];
+    best[state.index(u.pos)] = Some(budget);
+    let mut stack = vec![(u.pos, budget)];
+    while let Some((from, left)) = stack.pop() {
+        if left < 1 || best[state.index(from)] != Some(left) {
+            continue;
+        }
+        for q in neighbors(state.size, from) {
+            if !enterable(q) {
                 continue;
             }
-            for q in neighbors(state.size, from) {
-                let i = state.index(q);
-                if !seen[i] && enterable(q) {
-                    seen[i] = true;
-                    next.push(q);
-                }
+            let road_step = road_cost
+                .filter(|_| road_usable(state, u.owner, from) && road_usable(state, u.owner, q));
+            let rest = left.saturating_sub(road_step.unwrap_or(2));
+            let i = state.index(q);
+            reached[i] = true;
+            if zoc(q) || (rough(q) && road_step.is_none()) {
+                continue;
+            }
+            if best[i].is_none_or(|b| rest > b) {
+                best[i] = Some(rest);
+                stack.push((q, rest));
             }
         }
-        frontier = next;
     }
-    seen[state.index(u.pos)] = false;
+    reached[state.index(u.pos)] = false;
 
     all_tiles(state.size)
-        .filter(|&q| seen[state.index(q)])
+        .filter(|&q| reached[state.index(q)])
         .collect()
 }
 
