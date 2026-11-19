@@ -5,6 +5,11 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
+**Milestone 16 (v2 roads, road movement, city connections) merged into `main` (`9af6590`, 2026-11-19),
+`pixi run check` green (625 cargo, 26 + 368 pytest).** Tests `2ef0f2d`, `7580470`, `b8f127f` (owner-approved
+Q47 edit of the M15 v2-digest expectation); implementation `58d4810`. `/review 16`: merge, no defects;
+one spec gap (Q49, answered A). Next: the M17 brief. v1 identity holds (hashes, fixture).
+
 **Milestone 14 closed (2026-10-31): no capacity gap.** Phase 2 (self-play) `elo_vs_ref` vs the M10
 checkpoint: w32b4 152, w64b4 147, w128b4 75, w64b8 -118; rush_e0 0.957 / 0.944 / 0.856 / 0.703. Larger was
 worse at fixed hyperparameters (P3); likely an optimization effect (LR tuned for 64x4, no normalization in
@@ -74,6 +79,7 @@ Milestone 12 (closed 2026-10-26):
 | M12 | batched suite, seed-varied maps, multi-seed experiment harness, Welch | 12b: see above; `pbot40` best against rush, not significant |
 | M12c, M13, M13b, M14 | LR schedule experiment, interleaved rollout, stacked snapshot forward, capacity ladder | merged; see RL_REPORT 12c, 13a, 13b, 14b |
 | M15 | v2 foundation: ruleset flag, data/v2 tables, v2 tech research, hashes; v1 byte-identical | merged 70c79e4; review: no blocking findings, 2 nits (below) |
+| M16 | v2 roads, road movement (half-points), city connections; v1 byte-identical | merged 9af6590; review: no defects, Q49 spec gap answered, 3 nits (next actions) |
 
 **Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
 worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
@@ -86,21 +92,23 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 ## Waiting on the owner
 
-1. Nothing: M16 phase A is running in `../polytopia_rl-m16` (R1-R6 confirmed 2026-11-11).
+1. Nothing: next is the M17 brief.
 2. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q47). Q1-Q46 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q50). Q1-Q49 are in `docs/DECISIONS.md`.
 - Spec open questions: none. The Claude Doc master spec
-  (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (main tab rev 400, "v2 rules" tab rev 22, appended to SPEC.md).
-- `.git/tests-lock` points at `ca3d45d` (M15's test commit).
+  (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (main tab rev 400, "v2 rules" tab rev 23 with the Q48/Q49 rules, appended to SPEC.md).
+- `.git/tests-lock` points at `b8f127f` (M16's last test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
 1. Owner review of the v2 spec merge (Claude Doc rev 400 main tab, rev 22 "v2 rules" tab).
-2. M16 phase A in a worktree once R1-R6 are confirmed (the brief includes the StateBuilder fix).
+2. M17 brief. Carry over from M16: a scripted test for Q49 (opponent's reward pending during the
+   current turn; captured city keeps it); a load-time check that `2 * road_step_cost` is a positive
+   integer (review nit); optionally a debug assert that `capital_of` is unique outside terminal states.
 3. Renderer: list v2 techs in `polytopia show` (render.rs tech panel iterates `ALL_TECHS`); M19 or M20.
    Still deferred: opening-turn truncation hang safeguard, experiment.py simplify pass.
 
@@ -108,6 +116,8 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 
 | Date | Change |
 | --- | --- |
+| 2026-11-19 | M16 merged (9af6590), gate green (625 cargo, 26 + 368 pytest), worktree removed; Q47-Q49 to DECISIONS.md; Q48/Q49 rules added to SPEC.md and the Claude Doc "v2 rules" tab (rev 23). README.md added. |
+| 2026-11-12 | M16 Q47 A (M15 v2-digest expectation updated, owner-approved) and Q48 C; tests approved and locked at b8f127f; phase B and /review 16 run. |
 | 2026-11-11 | M16 R1-R6 confirmed; phase A started in worktree ../polytopia_rl-m16. |
 | 2026-11-11 | M16 brief (roads and city connections) drafted; clarifications R1-R6 for the owner. |
 | 2026-11-10 | v2 rules merged into the spec: draft tab renamed "v2 rules" (approved lead, M15 data/versioning section), main tab scope/config/status/decision rows updated; SPEC.md synced (main + v2). |

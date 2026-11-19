@@ -635,6 +635,8 @@ A road is a building (Roads tech, 3 stars) that halves movement on roads and for
 - **Lifetime:** roads cannot be destroyed. A road under a neutral village disappears when the village is captured. (owner)
 - **Movement:** a step between two tiles that both have a road, or a road and a city, costs 0.5 movement and ignores the forest stop; Zone of Control still applies. Costs round up: a unit with 0.5 movement left can still enter a tile that costs 1 (or more). The final tile needs no road, and an obstacle on the final tile does not block the move. Roads in neutral territory work for both players; roads in enemy territory work for neither. (owner)
 - **City connection:** a city is connected when roads link it to its owner's capital; the path may pass through the owner's cities. When a city becomes connected, it and the capital each gain +1 population; when the connection is lost, both lose it again. (owner)
+- **Game over:** connections are not updated after the action that ends the game, so a capital capture changes no population through connections (owner, 2026-11-12, Q48).
+- **Rewards on the other player's turn:** a road (even a neutral one the other player builds) can connect a city and level it up during the other player's turn. A pending reward blocks only its owner, who chooses it at the start of their turn; a city captured with a pending reward keeps it, and the capturer must choose it at once (owner, 2026-11-19, Q49).
 - **Who acts:** building a road is a site action on the tile (owner, 2026-11-02); a road in neutral territory is a site action of a tile the player does not own, which v1's actor slots do not have yet (a design point for the observation milestone).
 
 ## Buildings and tile actions

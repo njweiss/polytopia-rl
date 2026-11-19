@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 and `70c79e4` for Q42-Q46.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 and `9af6590` for Q47-Q49.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -53,3 +53,6 @@ spec section, or the brief when the answer is an implementation detail.
 | Q44 | 2026-11-09 | The Python `ruleset` keyword | `Env(ruleset="v1")`; `"v2"` raises `ValueError` naming milestone 20; any other value raises `ValueError` | M15 brief; `sim-py` |
 | Q45 | 2026-11-09 | `Combatant.attack` type | `f32` (so the Knight's 3.5 is not truncated); `Combatant` loses `Eq` | M15 brief; `combat.rs` |
 | Q46 | 2026-11-09 | v2 building table shape and test entry point | `adjacent` as names checked against known ones; `Tables::from_json_v2(units, techs, site_actions, buildings, monuments, rules)`; unknown fields rejected in the three new formats only | M15 brief; `data.rs` |
+| Q47 | 2026-11-12 | M15 v2-digest tests vs the M16 digest | The v2 digest appends a `road` byte per tile and a `connected_to` option per city; the M15 `expected_v2_digest` was updated (owner-approved test edit); v1 unchanged | M16 brief; `digest.rs`, `v2_digest.rs` |
+| Q48 | 2026-11-12 | Connections when a player owns two capitals | The connection update is skipped once the game has an outcome | M16 brief; `actions.rs` |
+| Q49 | 2026-11-19 | Opponent's level-up reward during the current turn | A pending reward blocks only its owner (chosen at the start of their turn); a captured city keeps its pending reward and the capturer must choose it | Spec "Forced rewards"; `actions.rs` (test pending) |
