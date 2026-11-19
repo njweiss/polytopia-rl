@@ -228,6 +228,7 @@ fn single_field_edits() -> Vec<Edit> {
         city: _,
         owner_city: _,
         unit: _,
+        road: _,
     } = &s.tiles[0];
     let Unit {
         id: _,
@@ -255,6 +256,7 @@ fn single_field_edits() -> Vec<Edit> {
         wall: _,
         border_growth_used: _,
         pending_reward: _,
+        connected_to: _,
     } = &s.cities[0];
     let PlayerState {
         stars: _,

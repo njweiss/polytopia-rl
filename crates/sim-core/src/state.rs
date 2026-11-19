@@ -166,6 +166,9 @@ pub struct City {
     pub border_growth_used: bool,
     /// A level-up reward the owner must choose before anything else (D9).
     pub pending_reward: bool,
+    /// The capital whose connection this city holds (docs/MILESTONE_16 "City connections");
+    /// `None` for capitals, unconnected cities, and always under v1.
+    pub connected_to: Option<CityId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -191,6 +194,8 @@ pub struct TileState {
     pub owner_city: Option<CityId>,
     /// Occupant.
     pub unit: Option<UnitId>,
+    /// A road (docs/MILESTONE_16 "Road tiles"); always false under v1.
+    pub road: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

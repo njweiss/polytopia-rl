@@ -32,6 +32,7 @@ impl StateBuilder {
             city: None,
             owner_city: None,
             unit: None,
+            road: false,
         };
         StateBuilder {
             state: State {
@@ -101,6 +102,7 @@ impl StateBuilder {
             wall: false,
             border_growth_used: false,
             pending_reward: false,
+            connected_to: None,
         };
         edit(&mut city);
         self.state.cities.push(city);
@@ -196,8 +198,10 @@ impl StateBuilder {
         self
     }
 
-    /// With `full_observability`, `build` marks every tile explored for both players.
+    /// Also sets the tables of the config's ruleset. With `full_observability`, `build` marks every
+    /// tile explored for both players.
     pub fn config(mut self, config: Config) -> StateBuilder {
+        self.state.tables = Tables::shared_for(config.ruleset);
         self.state.config = config;
         self
     }

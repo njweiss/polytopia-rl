@@ -123,6 +123,8 @@ pub fn encode_action(state: &State, action: &Action) -> Factored {
         ),
         Action::Research { tech } => (3 * n, ActionType::Research, tech as usize),
         Action::EndTurn => (3 * n, ActionType::EndTurn, 0),
+        // v2 only; the env supports v1 until M20 gives it a slot.
+        Action::BuildRoad { .. } => panic!("BuildRoad has no action slot before milestone 20"),
     };
     Factored { actor, kind, arg }
 }

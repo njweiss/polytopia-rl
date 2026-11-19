@@ -14,9 +14,12 @@ use crate::explorer::explorer_walk;
 use crate::grid::{all_tiles, chebyshev, within, Pos};
 use crate::map::{Resource, Terrain};
 use crate::movement::{defense_bonus, reachable_tiles, terrain_allows};
+use crate::roads::update_connections;
 use crate::score::score;
 use crate::spawn::spawn_super_unit;
-use crate::state::{City, CityId, Dir, Improvement, Outcome, Phase, PlayerId, State, Unit, UnitId};
+use crate::state::{
+    City, CityId, Dir, Improvement, Outcome, Phase, PlayerId, Ruleset, State, Unit, UnitId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Action {
@@ -30,6 +33,7 @@ pub enum Action {
     Research { tech: Tech },
     ChooseReward { city: CityId, reward: Reward },
     EndTurn,
+    BuildRoad { at: Pos }, // v2 only (docs/MILESTONE_16 "BuildRoad legality")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,8 +44,9 @@ pub enum ActionError {
 /// The current player's legal actions in canonical order. With a pending reward: only the
 /// lowest-id pending city's ChooseReward, in menu order. Otherwise: units by ascending id (per unit
 /// Move (row-major), Attack (row-major), Capture, Recover, Promote); Train per city by ascending id in
-/// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; Research in
-/// `techs(config.ruleset)` order; then EndTurn. Empty once there is an outcome.
+/// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; under v2 BuildRoad
+/// row-major; Research in `techs(config.ruleset)` order; then EndTurn. Empty once there is an
+/// outcome.
 pub fn legal_actions(state: &State) -> Vec<Action> {
     let mut out = Vec::new();
     if state.outcome.is_some() {
@@ -71,6 +76,13 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
             }
         }
     }
+    if state.config.ruleset == Ruleset::V2 {
+        for at in all_tiles(state.size) {
+            if road_legal(state, at) {
+                out.push(Action::BuildRoad { at });
+            }
+        }
+    }
     for &tech in techs(state.config.ruleset) {
         if research_legal(state, tech) {
             out.push(Action::Research { tech });
@@ -81,7 +93,8 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
 }
 
 /// Applies a legal action. Any action not in `legal_actions(state)` returns `Err(Illegal)` and
-/// leaves `state` completely unchanged.
+/// leaves `state` completely unchanged. Under v2, city connections update after every action
+/// that leaves the game without an outcome (docs/MILESTONE_16 "City connections", Q48).
 pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
     if !is_legal(state, action) {
         return Err(ActionError::Illegal);
@@ -97,6 +110,12 @@ pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
         Action::Research { tech } => apply_research(state, tech),
         Action::ChooseReward { city, reward } => apply_choose_reward(state, city, reward),
         Action::EndTurn => apply_end_turn(state),
+        Action::BuildRoad { at } => apply_build_road(state, at),
+    }
+    if state.config.ruleset == Ruleset::V2 && state.outcome.is_none() {
+        for city in update_connections(state) {
+            level_up_check(state, city);
+        }
     }
     Ok(())
 }
@@ -122,6 +141,7 @@ fn is_legal(state: &State, action: &Action) -> bool {
         Action::Research { tech } => return research_legal(state, tech),
         Action::ChooseReward { .. } => return false,
         Action::EndTurn => return true,
+        Action::BuildRoad { at } => return road_legal(state, at),
     };
     let Some(u) = state.unit(id) else {
         return false;
@@ -199,6 +219,31 @@ fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
         && me.techs.contains(info.tech)
         && me.stars >= info.cost
         && condition
+}
+
+/// BuildRoad legality apart from the pending-reward block (checked by the callers); never legal
+/// under v1 (docs/MILESTONE_16 "BuildRoad legality").
+fn road_legal(state: &State, at: Pos) -> bool {
+    if state.config.ruleset != Ruleset::V2 || at.row >= state.size || at.col >= state.size {
+        return false;
+    }
+    let rules = state.tables.v2_rules();
+    let me = &state.players[state.current as usize];
+    if !me.techs.contains(rules.road_tech) || me.stars < rules.road_cost {
+        return false;
+    }
+    let t = state.tile(at);
+    if t.road || t.city.is_some() || t.terrain == Terrain::Mountain {
+        return false;
+    }
+    let occupant = t.unit.and_then(|id| state.unit(id));
+    match t.owner_city {
+        Some(c) if state.city(c).owner == state.current => {
+            occupant.is_none_or(|u| u.owner == state.current)
+        }
+        Some(_) => false,
+        None => state.is_explored(state.current, at) && occupant.is_none(),
+    }
 }
 
 /// Research legality apart from the pending-reward block (checked by the callers).
@@ -422,9 +467,12 @@ fn found_city(state: &mut State, at: Pos, owner: PlayerId) -> CityId {
         wall: false,
         border_growth_used: false,
         pending_reward: false,
+        connected_to: None,
     });
     let i = state.index(at);
     state.tiles[i].village = false;
+    // The road under a captured village disappears; the city tile counts as a road anyway.
+    state.tiles[i].road = false;
     state.tiles[i].city = Some(id);
     for q in within(state.size, at, 1) {
         let i = state.index(q);
@@ -502,6 +550,13 @@ fn apply_site(state: &mut State, at: Pos, action: SiteAction) {
     let owner_city = t.owner_city.expect("legal site actions are on owned tiles");
     state.city_mut(owner_city).population += info.population;
     level_up_check(state, owner_city);
+}
+
+fn apply_build_road(state: &mut State, at: Pos) {
+    let cost = state.tables.v2_rules().road_cost;
+    state.players[state.current as usize].stars -= cost;
+    let i = state.index(at);
+    state.tiles[i].road = true;
 }
 
 fn apply_research(state: &mut State, tech: Tech) {

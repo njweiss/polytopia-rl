@@ -26,6 +26,7 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
             city: None,
             owner_city: None,
             unit: None,
+            road: false,
         })
         .collect();
 
@@ -48,6 +49,7 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
             wall: false,
             border_growth_used: false,
             pending_reward: false,
+            connected_to: None,
         });
         let health = tables.unit(UnitType::Warrior).health;
         units.push(Unit {

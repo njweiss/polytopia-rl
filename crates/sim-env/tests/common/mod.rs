@@ -493,6 +493,7 @@ pub fn my_encode(s: &State, a: &Action) -> (usize, ActionType, usize) {
             TECHS.iter().position(|&t| t == tech).unwrap(),
         ),
         Action::EndTurn => (3 * n, ActionType::EndTurn, 0),
+        Action::BuildRoad { .. } => panic!("BuildRoad has no v1 action slot"),
     }
 }
 

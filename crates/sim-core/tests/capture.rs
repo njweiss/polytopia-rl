@@ -69,6 +69,7 @@ fn new_city(id: u32, owner: u8, pos: Pos) -> City {
         wall: false,
         border_growth_used: false,
         pending_reward: false,
+        connected_to: None,
     }
 }
 
