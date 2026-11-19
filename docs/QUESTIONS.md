@@ -62,4 +62,4 @@ Append entries below. Format:
 - Options: A. keep the code's behaviour and write it into the spec (rewards block only their owner;
   a captured city keeps its pending reward). B. as A, but a capture clears the pending reward.
 - Orchestrator's pick: A (matches the code, no new rule). Needs a scripted test in a later phase A.
-- Owner answer:
+- Owner answer: A (owner, 2026-11-19). Rewards block only their owner; a captured city keeps its pending reward. Test in a later phase A.
