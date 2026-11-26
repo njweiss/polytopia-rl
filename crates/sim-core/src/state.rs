@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::{Building, Tables, Tech, UnitType};
+use crate::data::{Building, Monument, Tables, Tech, UnitType};
 use crate::grid::Pos;
 use crate::map::{Resource, Terrain};
 use crate::rng::Rng;
@@ -60,6 +60,36 @@ impl TechSet {
 
     pub fn insert(&mut self, tech: Tech) {
         self.0 |= 1 << tech as u16;
+    }
+}
+
+/// Set of v2 monuments (bitset indexed by `Monument as usize`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct MonumentSet(u8);
+
+impl MonumentSet {
+    pub fn new() -> MonumentSet {
+        MonumentSet(0)
+    }
+
+    pub fn from_slice(monuments: &[Monument]) -> MonumentSet {
+        let mut set = MonumentSet::new();
+        for &m in monuments {
+            set.insert(m);
+        }
+        set
+    }
+
+    pub fn contains(&self, m: Monument) -> bool {
+        self.0 & (1 << m as u8) != 0
+    }
+
+    pub fn insert(&mut self, m: Monument) {
+        self.0 |= 1 << m as u8;
+    }
+
+    pub fn bits(&self) -> u8 {
+        self.0
     }
 }
 
@@ -200,6 +230,10 @@ pub struct TileState {
     pub building: Option<Building>,
     /// Synced building level (0 when `None` or under v1).
     pub building_level: u8,
+    /// Corner lighthouse (docs/MILESTONE_18); always `false` under v1.
+    pub lighthouse: bool,
+    /// A placed monument (docs/MILESTONE_18); always `None` under v1.
+    pub monument: Option<Monument>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,6 +242,14 @@ pub struct PlayerState {
     pub techs: TechSet,
     /// Row-major, length `size * size`. Never shrinks.
     pub explored: Vec<bool>,
+    /// Combat kills (attack or retaliation); always `0` under v1.
+    pub kills: u32,
+    /// 4-bit mask indexed by `corner_index` (`0..4`); always `0` under v1.
+    pub lighthouses_discovered: u8,
+    /// Permanently unlocked monuments; always empty under v1.
+    pub monuments_unlocked: MonumentSet,
+    /// Permanently placed monuments (not cleared on `Destroy`); always empty under v1.
+    pub monuments_placed: MonumentSet,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -231,6 +231,8 @@ fn single_field_edits() -> Vec<Edit> {
         road: _,
         building: _,
         building_level: _,
+        lighthouse: _,
+        monument: _,
     } = &s.tiles[0];
     let Unit {
         id: _,
@@ -264,6 +266,10 @@ fn single_field_edits() -> Vec<Edit> {
         stars: _,
         techs: _,
         explored: _,
+        kills: _,
+        lighthouses_discovered: _,
+        monuments_unlocked: _,
+        monuments_placed: _,
     } = &s.players[0];
 
     // Tile indices on the 5x5 rich board: (0,1) = 1 forest+animal, (0,4) = 4 village,

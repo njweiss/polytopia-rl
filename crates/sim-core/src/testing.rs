@@ -1,13 +1,13 @@
 //! Test support: `StateBuilder` assembles scripted boards as plain data. It applies no game rules
 //! beyond what each method says (no vision, no legality checks).
 
-use crate::data::{Building, Tables, Tech, UnitType};
+use crate::data::{Building, Monument, Tables, Tech, UnitType};
 use crate::grid::{within, Pos};
 use crate::map::{Resource, Terrain};
 use crate::rng::Rng;
 use crate::state::{
-    City, CityId, Config, Improvement, Phase, PlayerId, PlayerState, State, TechSet, TileState,
-    Unit, UnitId,
+    City, CityId, Config, Improvement, MonumentSet, Phase, PlayerId, PlayerState, State, TechSet,
+    TileState, Unit, UnitId,
 };
 
 /// Defaults: every tile Field with nothing on it, nothing explored, no techs, 0 stars, turn 0,
@@ -23,6 +23,10 @@ impl StateBuilder {
             stars: 0,
             techs: TechSet::new(),
             explored: vec![false; n],
+            kills: 0,
+            lighthouses_discovered: 0,
+            monuments_unlocked: MonumentSet::new(),
+            monuments_placed: MonumentSet::new(),
         };
         let tile = TileState {
             terrain: Terrain::Field,
@@ -35,6 +39,8 @@ impl StateBuilder {
             road: false,
             building: None,
             building_level: 0,
+            lighthouse: false,
+            monument: None,
         };
         StateBuilder {
             state: State {
@@ -76,6 +82,25 @@ impl StateBuilder {
 
     pub fn building(mut self, p: Pos, building: Building) -> StateBuilder {
         self.tile_mut(p).building = Some(building);
+        self
+    }
+
+    pub fn lighthouse(mut self, p: Pos) -> StateBuilder {
+        self.tile_mut(p).lighthouse = true;
+        self
+    }
+
+    pub fn monument(mut self, p: Pos, monument: Monument) -> StateBuilder {
+        self.tile_mut(p).monument = Some(monument);
+        self
+    }
+
+    pub fn player_with(
+        mut self,
+        player: PlayerId,
+        edit: impl FnOnce(&mut PlayerState),
+    ) -> StateBuilder {
+        edit(&mut self.state.players[player as usize]);
         self
     }
 

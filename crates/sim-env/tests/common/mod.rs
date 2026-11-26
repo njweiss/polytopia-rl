@@ -496,7 +496,8 @@ pub fn my_encode(s: &State, a: &Action) -> (usize, ActionType, usize) {
         Action::BuildRoad { .. }
         | Action::BuildBuilding { .. }
         | Action::Disband { .. }
-        | Action::Destroy { .. } => panic!("v2 action has no v1 action slot"),
+        | Action::Destroy { .. }
+        | Action::BuildMonument { .. } => panic!("v2 action has no v1 action slot"),
     }
 }
 

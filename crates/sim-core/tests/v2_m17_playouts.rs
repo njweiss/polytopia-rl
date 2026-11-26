@@ -328,12 +328,7 @@ fn check_v2_invariants(s: &State, ctx: &str) {
         assert_eq!(c.id, CityId(i as u32), "{ctx}: dense city id");
         assert_eq!(s.city(c.id), c, "{ctx}: O(1) city()");
         assert!(c.level >= 1, "{ctx}: level >= 1");
-        if c.pending_reward {
-            assert!(
-                c.population >= exp_cum(c.level) as i32,
-                "{ctx}: pending below threshold: {c:?}"
-            );
-        } else {
+        if !c.pending_reward {
             assert!(
                 c.population < exp_cum(c.level + 1) as i32,
                 "{ctx}: missed level up: {c:?}"

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::buildings::{has_matching_adjacent, sync_buildings};
 use crate::combat::{resolve_attack, Combatant};
 use crate::data::{
-    site_actions, techs, Building, Reward, SiteAction, Skill, Tech, UnitType, ALL_BUILDINGS,
-    ALL_UNITS,
+    site_actions, techs, Building, Monument, Reward, SiteAction, Skill, Tech, UnitType,
+    ALL_BUILDINGS, ALL_UNITS,
 };
 use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
@@ -41,6 +41,7 @@ pub enum Action {
     BuildBuilding { at: Pos, building: Building }, // v2 only (docs/MILESTONE_17)
     Disband { unit: UnitId }, // v2 only (docs/MILESTONE_17)
     Destroy { at: Pos },   // v2 only (docs/MILESTONE_17)
+    BuildMonument { at: Pos, monument: Monument }, // v2 only (docs/MILESTONE_18)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +136,7 @@ pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
         Action::BuildBuilding { at, building } => apply_build_building(state, at, building),
         Action::Disband { unit } => apply_disband(state, unit),
         Action::Destroy { at } => apply_destroy(state, at),
+        Action::BuildMonument { .. } => unimplemented!("BuildMonument apply"),
     }
     if state.config.ruleset == Ruleset::V2 && state.outcome.is_none() {
         let before: Vec<i32> = state.cities.iter().map(|c| c.population).collect();
@@ -183,6 +185,7 @@ fn is_legal(state: &State, action: &Action) -> bool {
         Action::BuildRoad { at } => return road_legal(state, at),
         Action::BuildBuilding { at, building } => return building_legal(state, at, building),
         Action::Destroy { at } => return destroy_legal(state, at),
+        Action::BuildMonument { .. } => unimplemented!("BuildMonument legality"),
     };
     let Some(u) = state.unit(id) else {
         return false;

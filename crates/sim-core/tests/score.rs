@@ -28,6 +28,7 @@ const START: ScoreBreakdown = ScoreBreakdown {
     cities: 100,
     parks: 0,
     techs: 100,
+    monuments: 0,
 };
 
 /// Adds a unit (next id, Fresh, no origin) on the first row-major tile with no unit and no city.
@@ -302,6 +303,7 @@ fn custom_weights_scale_each_term() {
         cities: 11 + 13 * 2 + 17 * 2, // level 3, surplus 7 - 5
         parks: 2 * 19,
         techs: 23 * 2, // Organization and Hunting, tier 1 each
+        monuments: 0,
     };
     assert_eq!(breakdown(&s, 0), want);
     assert_eq!(score(&s, 0), 7 + 27 + 175 + 71 + 38 + 46);

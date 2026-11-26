@@ -208,6 +208,8 @@ pub fn digest_bytes(s: &State) -> Vec<u8> {
             road: _,
             building: _,
             building_level: _,
+            lighthouse: _,
+            monument: _,
         } = t;
         e.u8(terrain_index(*terrain));
         e.opt_u8(resource.map(resource_index));
@@ -286,6 +288,10 @@ pub fn digest_bytes(s: &State) -> Vec<u8> {
             stars,
             techs: _,
             explored,
+            kills: _,
+            lighthouses_discovered: _,
+            monuments_unlocked: _,
+            monuments_placed: _,
         } = pl;
         e.u32(*stars);
         e.u16(techset_bits(s, i));

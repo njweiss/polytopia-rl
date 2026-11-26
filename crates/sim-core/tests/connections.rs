@@ -483,13 +483,20 @@ fn check_update(prev: &State, a: &Action, post: &State, ctx: &str) -> (u32, u32)
         }
         assert_eq!(c.connected_to, conn, "{ctx}: city {i} after {a:?}");
     }
-    if !matches!(
-        a,
-        Action::Site { .. }
-            | Action::ChooseReward { .. }
-            | Action::BuildBuilding { .. }
-            | Action::Destroy { .. }
-    ) {
+    let lighthouse_changed = prev.players[0].lighthouses_discovered
+        != post.players[0].lighthouses_discovered
+        || prev.players[1].lighthouses_discovered != post.players[1].lighthouses_discovered;
+    if !lighthouse_changed
+        && !matches!(
+            a,
+            Action::Site { .. }
+                | Action::ChooseReward { .. }
+                | Action::BuildBuilding { .. }
+                | Action::BuildMonument { .. }
+                | Action::Capture { .. }
+                | Action::Destroy { .. }
+        )
+    {
         for c in &post.cities {
             let i = c.id.0 as usize;
             let (pop0, level0, pending0) = prev
@@ -550,7 +557,7 @@ fn pick_growing(s: &State, legal: &[Action], rng: &mut Rng) -> Action {
 #[test]
 fn random_v2_playouts_follow_the_update_and_replay_identically() {
     let (mut gains, mut losses, mut built) = (0, 0, 0);
-    for seed in 0..30u64 {
+    for seed in 0..45u64 {
         let cfg = Config {
             turn_cap: 30,
             ..v2_config()

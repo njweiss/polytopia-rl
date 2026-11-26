@@ -87,6 +87,14 @@ fn expected_v2_digest(s: &State) -> u64 {
             }
         }
         out.push(t.building_level);
+        out.push(t.lighthouse as u8);
+        match t.monument {
+            None => out.push(0),
+            Some(m) => {
+                out.push(1);
+                out.push(m as u8);
+            }
+        }
     }
     let units: usize = s
         .units
@@ -107,6 +115,14 @@ fn expected_v2_digest(s: &State) -> u64 {
             }
         }
     }
+    for pl in &s.players {
+        copy(&mut out, &mut i, 4 + 2 + 4 + pl.explored.len());
+        out.extend_from_slice(&pl.kills.to_le_bytes());
+        out.push(pl.lighthouses_discovered);
+        out.push(pl.monuments_unlocked.bits());
+        out.push(pl.monuments_placed.bits());
+    }
+    assert_eq!(b[i..i + 4], s.next_unit_id.to_le_bytes(), "player offsets");
     let rest = b.len() - i;
     copy(&mut out, &mut i, rest);
     fnv1a64(&out)

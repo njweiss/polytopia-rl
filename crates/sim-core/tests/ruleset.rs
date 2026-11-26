@@ -78,7 +78,8 @@ fn is_v2_only(a: &Action) -> bool {
         Action::BuildRoad { .. }
         | Action::BuildBuilding { .. }
         | Action::Disband { .. }
-        | Action::Destroy { .. } => true,
+        | Action::Destroy { .. }
+        | Action::BuildMonument { .. } => true,
         _ => false,
     }
 }
@@ -171,10 +172,27 @@ fn new_game_reads_the_tables_of_the_configs_ruleset() {
         assert_eq!(b.tables.ruleset(), Ruleset::V2);
         assert_eq!(*b.tables, Tables::load_for(Ruleset::V2).unwrap());
         assert_eq!(b.config.ruleset, Ruleset::V2);
-        // No other v2 rule is active in milestone 15: the same map, seats and start.
+        // Same map, seats, RNG, cities, units and non-corner tiles as v1; under M18 (Q52 A),
+        // the four corners are Field lighthouses with no resource and start fogged.
+        let n = a.size as usize;
+        let corner_idx = [0, n - 1, (n - 1) * n, n * n - 1];
         let mut b1 = b.clone();
         b1.config.ruleset = Ruleset::V1;
         b1.tables = a.tables.clone();
+        for &ci in &corner_idx {
+            assert!(b1.tiles[ci].lighthouse, "seed {seed} corner {ci}");
+            assert_eq!(
+                b1.tiles[ci].terrain,
+                sim_core::map::Terrain::Field,
+                "seed {seed} corner {ci}"
+            );
+            assert_eq!(b1.tiles[ci].resource, None, "seed {seed} corner {ci}");
+            assert!(!b1.players[0].explored[ci], "seed {seed} corner {ci} P0");
+            assert!(!b1.players[1].explored[ci], "seed {seed} corner {ci} P1");
+            b1.tiles[ci] = a.tiles[ci].clone();
+            b1.players[0].explored[ci] = a.players[0].explored[ci];
+            b1.players[1].explored[ci] = a.players[1].explored[ci];
+        }
         assert_eq!(b1, a, "seed {seed}");
     }
     // Shared once per ruleset per process.

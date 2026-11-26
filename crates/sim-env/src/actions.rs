@@ -125,7 +125,10 @@ pub fn encode_action(state: &State, action: &Action) -> Factored {
         Action::EndTurn => (3 * n, ActionType::EndTurn, 0),
         // v2 only; the env supports v1 until M20 gives it a slot.
         Action::BuildRoad { .. } => panic!("BuildRoad has no action slot before milestone 20"),
-        Action::BuildBuilding { .. } | Action::Disband { .. } | Action::Destroy { .. } => {
+        Action::BuildBuilding { .. }
+        | Action::Disband { .. }
+        | Action::Destroy { .. }
+        | Action::BuildMonument { .. } => {
             panic!("v2 action has no action slot before milestone 20")
         }
     };

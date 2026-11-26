@@ -363,7 +363,7 @@ pub const ALL_BUILDINGS: [Building; 4] = [
     Building::Market,
 ];
 
-const ALL_MONUMENTS: [Monument; 3] = [
+pub const ALL_MONUMENTS: [Monument; 3] = [
     Monument::ParkOfFortune,
     Monument::GateOfPower,
     Monument::EyeOfGod,

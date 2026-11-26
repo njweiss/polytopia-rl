@@ -8,6 +8,7 @@ pub mod economy;
 pub mod explorer;
 pub mod grid;
 pub mod map;
+pub mod monuments;
 pub mod movement;
 pub mod rng;
 pub mod roads;

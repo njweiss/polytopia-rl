@@ -248,5 +248,6 @@ pub fn action_label(action: &Action) -> String {
         }
         Action::Disband { unit } => format!("Disband u{}", unit.0),
         Action::Destroy { at } => format!("Destroy ({},{})", at.row, at.col),
+        Action::BuildMonument { .. } => unimplemented!("BuildMonument label"),
     }
 }

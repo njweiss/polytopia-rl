@@ -13,11 +13,18 @@ pub struct ScoreBreakdown {
     pub cities: u32,
     pub parks: u32,
     pub techs: u32,
+    pub monuments: u32,
 }
 
 impl ScoreBreakdown {
     pub fn total(&self) -> u32 {
-        self.units + self.territory + self.exploration + self.cities + self.parks + self.techs
+        self.units
+            + self.territory
+            + self.exploration
+            + self.cities
+            + self.parks
+            + self.techs
+            + self.monuments
     }
 }
 
@@ -64,6 +71,7 @@ pub fn score_breakdown(state: &State, player: PlayerId) -> ScoreBreakdown {
         cities,
         parks: w.park * parks,
         techs: w.tech_per_tier * tiers,
+        monuments: 0,
     }
 }
 

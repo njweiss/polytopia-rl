@@ -5,7 +5,7 @@ use crate::grid::{chebyshev, Pos};
 use crate::map::{generate_map, GeneratedMap, MapParams, Site};
 use crate::rng::Rng;
 use crate::state::{
-    City, CityId, Config, Phase, PlayerState, State, TechSet, TileState, Unit, UnitId,
+    City, CityId, Config, MonumentSet, Phase, PlayerState, State, TechSet, TileState, Unit, UnitId,
 };
 
 /// Builds the starting state. Draws exactly one value from `rng` (the seat coin flip).
@@ -29,6 +29,8 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
             road: false,
             building: None,
             building_level: 0,
+            lighthouse: false,
+            monument: None,
         })
         .collect();
 
@@ -87,6 +89,10 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
             stars: tables.rules().start_stars,
             techs: TechSet::from_slice(&tables.rules().start_techs),
             explored,
+            kills: 0,
+            lighthouses_discovered: 0,
+            monuments_unlocked: MonumentSet::new(),
+            monuments_placed: MonumentSet::new(),
         });
     }
     let players: [PlayerState; 2] = players.try_into().expect("two players");

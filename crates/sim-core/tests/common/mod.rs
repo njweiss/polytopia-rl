@@ -1287,6 +1287,7 @@ pub fn pick_weighted(rng: &mut Rng, legal: &[Action]) -> Action {
             Action::Site { .. }
             | Action::BuildRoad { .. }
             | Action::BuildBuilding { .. }
+            | Action::BuildMonument { .. }
             | Action::Destroy { .. } => groups[2].push(a),
             Action::Research { .. } => groups[3].push(a),
             Action::ChooseReward { .. } => rewards.push(a),
