@@ -206,6 +206,8 @@ pub fn digest_bytes(s: &State) -> Vec<u8> {
             owner_city,
             unit,
             road: _,
+            building: _,
+            building_level: _,
         } = t;
         e.u8(terrain_index(*terrain));
         e.opt_u8(resource.map(resource_index));
@@ -271,7 +273,7 @@ pub fn digest_bytes(s: &State) -> Vec<u8> {
         e.u8(*owner);
         e.pos(*pos);
         e.u32(*level);
-        e.u32(*population);
+        e.0.extend_from_slice(&population.to_le_bytes());
         e.bool(*is_capital);
         e.bool(*workshop);
         e.u32(*parks);

@@ -135,7 +135,7 @@ pub fn state_digest(state: &State) -> u64 {
         h.u8(c.owner);
         h.pos(c.pos);
         h.u32(c.level);
-        h.u32(c.population);
+        h.bytes(&c.population.to_le_bytes());
         h.bool(c.is_capital);
         h.bool(c.workshop);
         h.u32(c.parks);

@@ -79,6 +79,14 @@ fn expected_v2_digest(s: &State) -> u64 {
             + opt_len(t.unit.is_some(), 4);
         copy(&mut out, &mut i, n);
         out.push(t.road as u8);
+        match t.building {
+            None => out.push(0),
+            Some(b) => {
+                out.push(1);
+                out.push(b as u8);
+            }
+        }
+        out.push(t.building_level);
     }
     let units: usize = s
         .units

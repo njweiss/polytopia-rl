@@ -75,6 +75,10 @@ fn is_v2_only(a: &Action) -> bool {
         Action::Research { tech } => NEW_TECHS.contains(&tech),
         Action::Train { kind, .. } => NEW_UNITS.contains(&kind),
         Action::Site { action, .. } => action == SiteAction::BurnForest,
+        Action::BuildRoad { .. }
+        | Action::BuildBuilding { .. }
+        | Action::Disband { .. }
+        | Action::Destroy { .. } => true,
         _ => false,
     }
 }
@@ -387,20 +391,18 @@ fn under_v2_with_every_tech_no_new_unit_or_burn_forest_is_legal() {
         at: p(1, 2),
         action: SiteAction::ClearForest
     }));
-    // ... but nothing from v2 beyond research.
+    // Milestone 17 unlocked BurnForest under v2, while the 3 new units stay locked until M19.
+    assert!(legal.contains(&Action::Site {
+        at: p(1, 1),
+        action: SiteAction::BurnForest
+    }));
+    assert!(legal.contains(&Action::Site {
+        at: p(1, 2),
+        action: SiteAction::BurnForest
+    }));
     for a in &legal {
         assert!(
             !matches!(a, Action::Train { kind, .. } if NEW_UNITS.contains(kind)),
-            "{a:?}"
-        );
-        assert!(
-            !matches!(
-                a,
-                Action::Site {
-                    action: SiteAction::BurnForest,
-                    ..
-                }
-            ),
             "{a:?}"
         );
     }
@@ -410,15 +412,6 @@ fn under_v2_with_every_tech_no_new_unit_or_burn_forest_is_legal() {
             Action::Train {
                 city: CityId(0),
                 kind,
-            },
-        );
-    }
-    for at in [p(1, 1), p(1, 2)] {
-        assert_illegal(
-            &s,
-            Action::Site {
-                at,
-                action: SiteAction::BurnForest,
             },
         );
     }
@@ -446,7 +439,7 @@ fn random_v2_playouts_research_v2_techs_and_nothing_else() {
             }
             for a in &legal {
                 assert!(
-                    !is_v2_only(a) || matches!(a, Action::Research { .. }),
+                    !matches!(a, Action::Train { kind, .. } if NEW_UNITS.contains(kind)),
                     "{a:?}"
                 );
             }

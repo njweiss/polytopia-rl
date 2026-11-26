@@ -27,6 +27,8 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
             owner_city: None,
             unit: None,
             road: false,
+            building: None,
+            building_level: 0,
         })
         .collect();
 

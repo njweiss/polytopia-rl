@@ -1005,7 +1005,7 @@ fn pending(level: u32, pop: u32) -> State {
     StateBuilder::new(7)
         .city_with(0, p(3, 3), |c| {
             c.level = level;
-            c.population = pop;
+            c.population = pop as i32;
             c.pending_reward = true;
         })
         .stars(0, 10)

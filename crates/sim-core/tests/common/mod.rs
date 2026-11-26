@@ -382,7 +382,7 @@ pub fn exp_site_legal(s: &State, q: Pos, a: SiteAction) -> bool {
 
 /// The level-up check: one level at a time, only while no reward is pending.
 pub fn exp_level_check(c: &mut City) {
-    if !c.pending_reward && c.population >= exp_cum(c.level + 1) {
+    if !c.pending_reward && c.population >= exp_cum(c.level + 1) as i32 {
         c.level += 1;
         c.pending_reward = true;
     }
@@ -439,7 +439,7 @@ pub fn exp_after(prev: &State, a: &Action) -> State {
             }
             let owner = t.owner_city.unwrap();
             let c = exp_city_mut(&mut s, owner);
-            c.population += pop;
+            c.population += pop as i32;
             exp_level_check(c);
         }
         Action::Research { tech } => {
@@ -522,7 +522,7 @@ pub fn check_economy_invariants(s: &State, ctx: &str) {
         assert!(c.level >= 1, "{ctx}: {c:?}");
         if c.pending_reward {
             assert!(
-                c.population >= exp_cum(c.level),
+                c.population >= exp_cum(c.level) as i32,
                 "{ctx}: pending but below its level: {c:?}"
             );
             assert_eq!(
@@ -532,7 +532,7 @@ pub fn check_economy_invariants(s: &State, ctx: &str) {
             assert!(c.level >= 2, "{ctx}: {c:?}");
         } else {
             assert!(
-                c.population < exp_cum(c.level + 1),
+                c.population < exp_cum(c.level + 1) as i32,
                 "{ctx}: missed level-up: {c:?}"
             );
         }
@@ -874,7 +874,7 @@ pub fn exp_score_terms(s: &State, player: PlayerId) -> [u32; 6] {
     let cities = mine
         .iter()
         .map(|c| {
-            let surplus = c.population.saturating_sub(exp_cum(c.level));
+            let surplus = (c.population - exp_cum(c.level) as i32).max(0) as u32;
             w.city_base + w.city_per_level * (c.level - 1) + w.population_surplus * surplus
         })
         .sum();
@@ -1151,7 +1151,7 @@ pub fn random_economy_board(seed: u64) -> State {
             let parks = if level >= 5 { rng.gen_range(3) } else { 0 };
             b = b.city_with(owner, q, |c| {
                 c.level = level;
-                c.population = pop;
+                c.population = pop as i32;
                 c.pending_reward = pending;
                 c.is_capital = k == 0;
                 c.workshop = workshop;
@@ -1281,9 +1281,13 @@ pub fn pick_weighted(rng: &mut Rng, legal: &[Action]) -> Action {
             | Action::Attack { .. }
             | Action::Capture { .. }
             | Action::Recover { .. }
-            | Action::Promote { .. } => groups[0].push(a),
+            | Action::Promote { .. }
+            | Action::Disband { .. } => groups[0].push(a),
             Action::Train { .. } => groups[1].push(a),
-            Action::Site { .. } | Action::BuildRoad { .. } => groups[2].push(a),
+            Action::Site { .. }
+            | Action::BuildRoad { .. }
+            | Action::BuildBuilding { .. }
+            | Action::Destroy { .. } => groups[2].push(a),
             Action::Research { .. } => groups[3].push(a),
             Action::ChooseReward { .. } => rewards.push(a),
             Action::EndTurn => {}

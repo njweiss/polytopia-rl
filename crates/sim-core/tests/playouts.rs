@@ -36,7 +36,7 @@ fn boosted_game(seed: u64) -> State {
     let level = 1 + (seed % 5) as u32;
     for c in &mut s.cities {
         c.level = level;
-        c.population = exp_cum(level + 1) - 1;
+        c.population = (exp_cum(level + 1) - 1) as i32;
     }
     for pl in &mut s.players {
         pl.stars = 10 + (seed % 20) as u32;

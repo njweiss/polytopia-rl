@@ -54,7 +54,7 @@ fn capital_of(state: &State, player: PlayerId) -> Option<CityId> {
 /// the caller's level-up check.
 pub(crate) fn update_connections(state: &mut State) -> Vec<CityId> {
     let amount = state.tables.v2_rules().connection_population;
-    let before: Vec<u32> = state.cities.iter().map(|c| c.population).collect();
+    let before: Vec<i32> = state.cities.iter().map(|c| c.population).collect();
     // `state.cities` is kept in ascending id order.
     for i in 0..state.cities.len() {
         let (id, owner) = (state.cities[i].id, state.cities[i].owner);
@@ -69,8 +69,8 @@ pub(crate) fn update_connections(state: &mut State) -> Vec<CityId> {
         }
         if state.cities[i].connected_to.is_none() && is_connected(state, id) {
             let capital = capital_of(state, owner).expect("a connected city's owner has a capital");
-            state.city_mut(id).population += amount;
-            state.city_mut(capital).population += amount;
+            state.city_mut(id).population += amount as i32;
+            state.city_mut(capital).population += amount as i32;
             state.cities[i].connected_to = Some(capital);
         }
     }
@@ -88,6 +88,6 @@ fn lose(state: &mut State, city: CityId, amount: u32) {
     let c = state.city_mut(city);
     c.population = c
         .population
-        .checked_sub(amount)
+        .checked_sub(amount as i32)
         .expect("a connection loss reverses an earlier gain");
 }

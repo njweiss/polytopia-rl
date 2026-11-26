@@ -6,7 +6,9 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 use crate::combat::{resolve_attack, Combatant};
-use crate::data::{techs, Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_UNITS};
+use crate::data::{
+    techs, Building, Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_UNITS,
+};
 use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
 };
@@ -34,6 +36,9 @@ pub enum Action {
     ChooseReward { city: CityId, reward: Reward },
     EndTurn,
     BuildRoad { at: Pos }, // v2 only (docs/MILESTONE_16 "BuildRoad legality")
+    BuildBuilding { at: Pos, building: Building }, // v2 only (docs/MILESTONE_17)
+    Disband { unit: UnitId }, // v2 only (docs/MILESTONE_17)
+    Destroy { at: Pos },   // v2 only (docs/MILESTONE_17)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +116,9 @@ pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
         Action::ChooseReward { city, reward } => apply_choose_reward(state, city, reward),
         Action::EndTurn => apply_end_turn(state),
         Action::BuildRoad { at } => apply_build_road(state, at),
+        Action::BuildBuilding { .. } | Action::Disband { .. } | Action::Destroy { .. } => {
+            unimplemented!()
+        }
     }
     if state.config.ruleset == Ruleset::V2 && state.outcome.is_none() {
         for city in update_connections(state) {
@@ -142,6 +150,9 @@ fn is_legal(state: &State, action: &Action) -> bool {
         Action::ChooseReward { .. } => return false,
         Action::EndTurn => return true,
         Action::BuildRoad { at } => return road_legal(state, at),
+        Action::BuildBuilding { .. } | Action::Disband { .. } | Action::Destroy { .. } => {
+            unimplemented!()
+        }
     };
     let Some(u) = state.unit(id) else {
         return false;
@@ -512,7 +523,7 @@ fn apply_promote(state: &mut State, id: UnitId) {
 /// One level at a time, and only while no reward is pending; resolving a reward re-runs it.
 fn level_up_check(state: &mut State, id: CityId) {
     let c = state.city_mut(id);
-    if !c.pending_reward && c.population >= cumulative_population_for_level(c.level + 1) {
+    if !c.pending_reward && c.population >= cumulative_population_for_level(c.level + 1) as i32 {
         c.level += 1;
         c.pending_reward = true;
     }
@@ -548,7 +559,7 @@ fn apply_site(state: &mut State, at: Pos, action: SiteAction) {
         SiteAction::BurnForest => unreachable!("BurnForest is never legal before milestone 17"),
     }
     let owner_city = t.owner_city.expect("legal site actions are on owned tiles");
-    state.city_mut(owner_city).population += info.population;
+    state.city_mut(owner_city).population += info.population as i32;
     level_up_check(state, owner_city);
 }
 
@@ -575,7 +586,7 @@ fn apply_choose_reward(state: &mut State, city: CityId, reward: Reward) {
         Reward::Park => state.city_mut(city).parks += 1,
         Reward::Resources => state.players[owner as usize].stars += tables.resources_reward_stars(),
         Reward::PopulationGrowth => {
-            state.city_mut(city).population += tables.population_growth_amount()
+            state.city_mut(city).population += tables.population_growth_amount() as i32
         }
         Reward::BorderGrowth => border_growth(state, city),
         Reward::Explorer => explorer_walk(state, city),

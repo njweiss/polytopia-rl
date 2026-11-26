@@ -195,7 +195,7 @@ fn city_points_follow_level_and_surplus_population() {
         move |s: &mut State| {
             let c = s.cities.iter_mut().find(|c| c.owner == 0).unwrap();
             c.level = level;
-            c.population = population;
+            c.population = population as i32;
         }
     };
     check(5, set(3, 7), start_with(|b| b.cities = 210));

@@ -356,7 +356,7 @@ struct MonumentRow {
     threshold: u32,
 }
 
-const ALL_BUILDINGS: [Building; 4] = [
+pub const ALL_BUILDINGS: [Building; 4] = [
     Building::Sawmill,
     Building::Windmill,
     Building::Forge,

@@ -31,7 +31,7 @@ fn city(s: &State, id: u32) -> &City {
     s.cities.iter().find(|c| c.id == CityId(id)).unwrap()
 }
 
-fn pops(s: &State) -> Vec<u32> {
+fn pops(s: &State) -> Vec<i32> {
     s.cities.iter().map(|c| c.population).collect()
 }
 
@@ -483,7 +483,13 @@ fn check_update(prev: &State, a: &Action, post: &State, ctx: &str) -> (u32, u32)
         }
         assert_eq!(c.connected_to, conn, "{ctx}: city {i} after {a:?}");
     }
-    if !matches!(a, Action::Site { .. } | Action::ChooseReward { .. }) {
+    if !matches!(
+        a,
+        Action::Site { .. }
+            | Action::ChooseReward { .. }
+            | Action::BuildBuilding { .. }
+            | Action::Destroy { .. }
+    ) {
         for c in &post.cities {
             let i = c.id.0 as usize;
             let (pop0, level0, pending0) = prev
@@ -496,7 +502,7 @@ fn check_update(prev: &State, a: &Action, post: &State, ctx: &str) -> (u32, u32)
                 "{ctx}: city {i} population after {a:?}"
             );
             let (level, pending) =
-                if delta[i] > 0 && !pending0 && c.population >= exp_cum(level0 + 1) {
+                if delta[i] > 0 && !pending0 && c.population >= exp_cum(level0 + 1) as i32 {
                     (level0 + 1, true)
                 } else {
                     (level0, pending0)

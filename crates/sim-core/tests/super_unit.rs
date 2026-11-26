@@ -390,7 +390,7 @@ fn pending_with_occupant(level: u32, pop: u32) -> State {
     StateBuilder::new(11)
         .city_with(0, p(5, 5), |c| {
             c.level = level;
-            c.population = pop;
+            c.population = pop as i32;
             c.pending_reward = true;
         })
         .unit_with(0, Warrior, p(5, 5), |u| u.last_dir = Some(E))

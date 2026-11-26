@@ -229,6 +229,8 @@ fn single_field_edits() -> Vec<Edit> {
         owner_city: _,
         unit: _,
         road: _,
+        building: _,
+        building_level: _,
     } = &s.tiles[0];
     let Unit {
         id: _,

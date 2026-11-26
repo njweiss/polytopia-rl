@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::data::{Tables, Tech, UnitType};
+use crate::data::{Building, Tables, Tech, UnitType};
 use crate::grid::Pos;
 use crate::map::{Resource, Terrain};
 use crate::rng::Rng;
@@ -158,7 +158,7 @@ pub struct City {
     pub owner: PlayerId,
     pub pos: Pos,
     pub level: u32,
-    pub population: u32,
+    pub population: i32,
     pub is_capital: bool,
     pub workshop: bool,
     pub parks: u32,
@@ -196,6 +196,10 @@ pub struct TileState {
     pub unit: Option<UnitId>,
     /// A road (docs/MILESTONE_16 "Road tiles"); always false under v1.
     pub road: bool,
+    /// An economy building (docs/MILESTONE_17); always `None` under v1.
+    pub building: Option<Building>,
+    /// Synced building level (0 when `None` or under v1).
+    pub building_level: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

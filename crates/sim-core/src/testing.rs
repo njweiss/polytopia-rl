@@ -1,7 +1,7 @@
 //! Test support: `StateBuilder` assembles scripted boards as plain data. It applies no game rules
 //! beyond what each method says (no vision, no legality checks).
 
-use crate::data::{Tables, Tech, UnitType};
+use crate::data::{Building, Tables, Tech, UnitType};
 use crate::grid::{within, Pos};
 use crate::map::{Resource, Terrain};
 use crate::rng::Rng;
@@ -33,6 +33,8 @@ impl StateBuilder {
             owner_city: None,
             unit: None,
             road: false,
+            building: None,
+            building_level: 0,
         };
         StateBuilder {
             state: State {
@@ -69,6 +71,11 @@ impl StateBuilder {
 
     pub fn improvement(mut self, p: Pos, improvement: Improvement) -> StateBuilder {
         self.tile_mut(p).improvement = Some(improvement);
+        self
+    }
+
+    pub fn building(mut self, p: Pos, building: Building) -> StateBuilder {
+        self.tile_mut(p).building = Some(building);
         self
     }
 
@@ -211,7 +218,17 @@ impl StateBuilder {
         self
     }
 
-    pub fn build(self) -> State {
+    pub fn build(mut self) -> State {
+        for i in 0..self.state.tiles.len() {
+            if self.state.tiles[i].building.is_some() {
+                let p = Pos::new(
+                    (i / self.state.size as usize) as u8,
+                    (i % self.state.size as usize) as u8,
+                );
+                self.state.tiles[i].building_level =
+                    crate::buildings::building_level(&self.state, p) as u8;
+            }
+        }
         if self.state.config.full_observability {
             return self.explore_all().state;
         }

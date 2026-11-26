@@ -130,7 +130,7 @@ fn try_twin(s: &State, v: PlayerId, rng: &mut Rng) -> Option<State> {
         u.last_dir = pick(rng, &dirs);
     }
     for c in t.cities.iter_mut().filter(|c| c.owner == o) {
-        c.population += rng.gen_range(4);
+        c.population += rng.gen_range(4) as i32;
         c.workshop = coin(rng, 0.5);
         c.wall = coin(rng, 0.5);
         c.border_growth_used = coin(rng, 0.5);
