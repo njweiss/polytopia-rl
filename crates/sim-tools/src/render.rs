@@ -243,8 +243,10 @@ pub fn action_label(action: &Action) -> String {
         Action::ChooseReward { city, reward } => format!("Reward c{} {}", city.0, snake(&reward)),
         Action::EndTurn => "End turn".to_string(),
         Action::BuildRoad { at } => format!("Build road ({},{})", at.row, at.col),
-        Action::BuildBuilding { .. } | Action::Disband { .. } | Action::Destroy { .. } => {
-            unimplemented!()
+        Action::BuildBuilding { at, building } => {
+            format!("Build {} ({},{})", snake(&building), at.row, at.col)
         }
+        Action::Disband { unit } => format!("Disband u{}", unit.0),
+        Action::Destroy { at } => format!("Destroy ({},{})", at.row, at.col),
     }
 }

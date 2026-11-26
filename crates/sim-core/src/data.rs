@@ -536,6 +536,17 @@ impl Tables {
             serde_json::from_str(monuments_json).map_err(|e| format!("v2/monuments.json: {e}"))?;
         let rules: RulesV2 =
             serde_json::from_str(rules_json).map_err(|e| format!("v2/rules.json: {e}"))?;
+        let half_cost = 2.0 * rules.road_step_cost;
+        if !half_cost.is_finite()
+            || half_cost <= 0.0
+            || half_cost.fract() != 0.0
+            || (half_cost as f64) > u32::MAX as f64
+        {
+            return Err(format!(
+                "v2/rules.json: road_step_cost ({}) must be a positive half-integer fitting in u32",
+                rules.road_step_cost
+            ));
+        }
 
         let building_names: Vec<String> = ALL_BUILDINGS
             .iter()

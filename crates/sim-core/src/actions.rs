@@ -5,9 +5,11 @@ use std::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
 
+use crate::buildings::{has_matching_adjacent, sync_buildings};
 use crate::combat::{resolve_attack, Combatant};
 use crate::data::{
-    techs, Building, Reward, SiteAction, Skill, Tech, UnitType, ALL_SITE_ACTIONS, ALL_UNITS,
+    site_actions, techs, Building, Reward, SiteAction, Skill, Tech, UnitType, ALL_BUILDINGS,
+    ALL_UNITS,
 };
 use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
@@ -48,10 +50,11 @@ pub enum ActionError {
 
 /// The current player's legal actions in canonical order. With a pending reward: only the
 /// lowest-id pending city's ChooseReward, in menu order. Otherwise: units by ascending id (per unit
-/// Move (row-major), Attack (row-major), Capture, Recover, Promote); Train per city by ascending id in
-/// `ALL_UNITS` order; site actions row-major in `ALL_SITE_ACTIONS` order; under v2 BuildRoad
-/// row-major; Research in `techs(config.ruleset)` order; then EndTurn. Empty once there is an
-/// outcome.
+/// Move (row-major), Attack (row-major), Capture, Recover, Promote, and under v2 Disband); Train
+/// per city by ascending id in `ALL_UNITS` order; site actions row-major in
+/// `site_actions(config.ruleset)` order; under v2 BuildRoad row-major, BuildBuilding row-major in
+/// `ALL_BUILDINGS` order, Destroy row-major; Research in `techs(config.ruleset)` order; then
+/// EndTurn. Empty once there is an outcome.
 pub fn legal_actions(state: &State) -> Vec<Action> {
     let mut out = Vec::new();
     if state.outcome.is_some() {
@@ -75,7 +78,7 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
         }
     }
     for at in all_tiles(state.size) {
-        for action in ALL_SITE_ACTIONS {
+        for &action in site_actions(state.config.ruleset) {
             if site_legal(state, at, action) {
                 out.push(Action::Site { at, action });
             }
@@ -85,6 +88,18 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
         for at in all_tiles(state.size) {
             if road_legal(state, at) {
                 out.push(Action::BuildRoad { at });
+            }
+        }
+        for at in all_tiles(state.size) {
+            for building in ALL_BUILDINGS {
+                if building_legal(state, at, building) {
+                    out.push(Action::BuildBuilding { at, building });
+                }
+            }
+        }
+        for at in all_tiles(state.size) {
+            if destroy_legal(state, at) {
+                out.push(Action::Destroy { at });
             }
         }
     }
@@ -98,8 +113,9 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
 }
 
 /// Applies a legal action. Any action not in `legal_actions(state)` returns `Err(Illegal)` and
-/// leaves `state` completely unchanged. Under v2, city connections update after every action
-/// that leaves the game without an outcome (docs/MILESTONE_16 "City connections", Q48).
+/// leaves `state` completely unchanged. Under v2, buildings (on `Site`, `BuildBuilding`, `Destroy`,
+/// `Capture`) and city connections update after every action that leaves the game without an
+/// outcome (docs/MILESTONE_16 Q48, docs/MILESTONE_17 P4, Q50 C).
 pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
     if !is_legal(state, action) {
         return Err(ActionError::Illegal);
@@ -116,13 +132,27 @@ pub fn apply(state: &mut State, action: &Action) -> Result<(), ActionError> {
         Action::ChooseReward { city, reward } => apply_choose_reward(state, city, reward),
         Action::EndTurn => apply_end_turn(state),
         Action::BuildRoad { at } => apply_build_road(state, at),
-        Action::BuildBuilding { .. } | Action::Disband { .. } | Action::Destroy { .. } => {
-            unimplemented!()
-        }
+        Action::BuildBuilding { at, building } => apply_build_building(state, at, building),
+        Action::Disband { unit } => apply_disband(state, unit),
+        Action::Destroy { at } => apply_destroy(state, at),
     }
     if state.config.ruleset == Ruleset::V2 && state.outcome.is_none() {
-        for city in update_connections(state) {
-            level_up_check(state, city);
+        let before: Vec<i32> = state.cities.iter().map(|c| c.population).collect();
+        if matches!(
+            *action,
+            Action::Site { .. }
+                | Action::BuildBuilding { .. }
+                | Action::Destroy { .. }
+                | Action::Capture { .. }
+        ) {
+            sync_buildings(state);
+        }
+        update_connections(state);
+        for i in 0..state.cities.len() {
+            if state.cities[i].population > before[i] {
+                let id = state.cities[i].id;
+                level_up_check(state, id);
+            }
         }
     }
     Ok(())
@@ -143,16 +173,16 @@ fn is_legal(state: &State, action: &Action) -> bool {
         | Action::Attack { unit, .. }
         | Action::Capture { unit }
         | Action::Recover { unit }
-        | Action::Promote { unit } => unit,
+        | Action::Promote { unit }
+        | Action::Disband { unit } => unit,
         Action::Train { city, kind } => return train_legal(state, city, kind),
         Action::Site { at, action } => return site_legal(state, at, action),
         Action::Research { tech } => return research_legal(state, tech),
         Action::ChooseReward { .. } => return false,
         Action::EndTurn => return true,
         Action::BuildRoad { at } => return road_legal(state, at),
-        Action::BuildBuilding { .. } | Action::Disband { .. } | Action::Destroy { .. } => {
-            unimplemented!()
-        }
+        Action::BuildBuilding { at, building } => return building_legal(state, at, building),
+        Action::Destroy { at } => return destroy_legal(state, at),
     };
     let Some(u) = state.unit(id) else {
         return false;
@@ -197,8 +227,7 @@ fn train_legal(state: &State, city: CityId, kind: UnitType) -> bool {
 
 /// Site-action legality apart from the pending-reward block (checked by the callers).
 fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
-    // The v2 site actions take effect from milestone 17 on (docs/MILESTONE_15 V4).
-    if !ALL_SITE_ACTIONS.contains(&action) {
+    if !site_actions(state.config.ruleset).contains(&action) {
         return false;
     }
     if at.row >= state.size || at.col >= state.size {
@@ -222,8 +251,9 @@ fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
         }
         SiteAction::Farm => t.resource == Some(Resource::Crop) && t.improvement.is_none(),
         SiteAction::Mine => t.resource == Some(Resource::Metal) && t.improvement.is_none(),
-        // Its effect is milestone 17's; never legal before (docs/MILESTONE_15 V4).
-        SiteAction::BurnForest => false,
+        SiteAction::BurnForest => {
+            t.terrain == Terrain::Forest && t.improvement.is_none() && t.building.is_none()
+        }
     };
     state.city(owner_city).owner == state.current
         && !enemy_here
@@ -255,6 +285,81 @@ fn road_legal(state: &State, at: Pos) -> bool {
         Some(_) => false,
         None => state.is_explored(state.current, at) && occupant.is_none(),
     }
+}
+
+/// BuildBuilding legality apart from the pending-reward block (checked by the callers); never
+/// legal under v1 (docs/MILESTONE_17 "BuildBuilding", P1, P2).
+fn building_legal(state: &State, at: Pos, building: Building) -> bool {
+    if state.config.ruleset != Ruleset::V2 || at.row >= state.size || at.col >= state.size {
+        return false;
+    }
+    let info = state.tables.building(building);
+    let me = &state.players[state.current as usize];
+    if !me.techs.contains(info.tech) || me.stars < info.cost {
+        return false;
+    }
+    let t = state.tile(at);
+    let Some(owner_city) = t.owner_city else {
+        return false;
+    };
+    if state.city(owner_city).owner != state.current {
+        return false;
+    }
+    let enemy_here = t
+        .unit
+        .and_then(|id| state.unit(id))
+        .is_some_and(|u| u.owner != state.current);
+    if enemy_here
+        || t.terrain != Terrain::Field
+        || t.city.is_some()
+        || t.improvement.is_some()
+        || t.building.is_some()
+        || t.resource.is_some()
+    {
+        return false;
+    }
+    if info.one_per_city
+        && state
+            .tiles
+            .iter()
+            .any(|ot| ot.owner_city == Some(owner_city) && ot.building == Some(building))
+    {
+        return false;
+    }
+    has_matching_adjacent(state, state.current, at, building)
+}
+
+/// Destroy legality apart from the pending-reward block (checked by the callers); never legal
+/// under v1 (docs/MILESTONE_17 "Destroy").
+fn destroy_legal(state: &State, at: Pos) -> bool {
+    if state.config.ruleset != Ruleset::V2 || at.row >= state.size || at.col >= state.size {
+        return false;
+    }
+    let me = &state.players[state.current as usize];
+    if !me.techs.contains(state.tables.v2_rules().destroy_tech) {
+        return false;
+    }
+    let t = state.tile(at);
+    let Some(owner_city) = t.owner_city else {
+        return false;
+    };
+    if state.city(owner_city).owner != state.current {
+        return false;
+    }
+    let enemy_here = t
+        .unit
+        .and_then(|id| state.unit(id))
+        .is_some_and(|u| u.owner != state.current);
+    !enemy_here && (t.improvement.is_some() || t.building.is_some())
+}
+
+/// Disband legality apart from the pending-reward block (checked by the callers); never legal
+/// under v1 (docs/MILESTONE_17 "Disband").
+fn disband_legal(state: &State, u: &Unit) -> bool {
+    state.config.ruleset == Ruleset::V2
+        && state.players[u.owner as usize]
+            .techs
+            .contains(state.tables.v2_rules().disband_tech)
 }
 
 /// Research legality apart from the pending-reward block (checked by the callers).
@@ -308,6 +413,9 @@ fn push_unit_actions(state: &State, u: &Unit, out: &mut Vec<Action>) {
     }
     if u.promotion_available && !u.veteran {
         out.push(Action::Promote { unit: u.id });
+    }
+    if disband_legal(state, u) {
+        out.push(Action::Disband { unit: u.id });
     }
 }
 
@@ -556,7 +664,10 @@ fn apply_site(state: &mut State, at: Pos, action: SiteAction) {
         }
         SiteAction::Farm => t.improvement = Some(Improvement::Farm),
         SiteAction::Mine => t.improvement = Some(Improvement::Mine),
-        SiteAction::BurnForest => unreachable!("BurnForest is never legal before milestone 17"),
+        SiteAction::BurnForest => {
+            t.terrain = Terrain::Field;
+            t.resource = Some(Resource::Crop);
+        }
     }
     let owner_city = t.owner_city.expect("legal site actions are on owned tiles");
     state.city_mut(owner_city).population += info.population as i32;
@@ -568,6 +679,55 @@ fn apply_build_road(state: &mut State, at: Pos) {
     state.players[state.current as usize].stars -= cost;
     let i = state.index(at);
     state.tiles[i].road = true;
+}
+
+fn apply_build_building(state: &mut State, at: Pos, building: Building) {
+    let cost = state.tables.building(building).cost;
+    state.players[state.current as usize].stars -= cost;
+    let i = state.index(at);
+    state.tiles[i].building = Some(building);
+    state.tiles[i].building_level = 0;
+}
+
+fn apply_disband(state: &mut State, id: UnitId) {
+    let u = state.unit(id).expect("living unit");
+    let (owner, pos, kind) = (u.owner, u.pos, u.kind);
+    let rules = state.tables.v2_rules();
+    let value = state
+        .tables
+        .unit(kind)
+        .cost
+        .unwrap_or(rules.super_unit_value);
+    let refund = value / rules.disband_refund_divisor;
+    state.players[owner as usize].stars += refund;
+    let i = state.index(pos);
+    state.tiles[i].unit = None;
+    state.units.retain(|u| u.id != id);
+}
+
+fn site_action_of(imp: Improvement) -> SiteAction {
+    match imp {
+        Improvement::LumberHut => SiteAction::LumberHut,
+        Improvement::Farm => SiteAction::Farm,
+        Improvement::Mine => SiteAction::Mine,
+    }
+}
+
+fn apply_destroy(state: &mut State, at: Pos) {
+    let i = state.index(at);
+    let owner_city = state.tiles[i]
+        .owner_city
+        .expect("legal destroy is on an owned tile");
+    let loss = if let Some(imp) = state.tiles[i].improvement.take() {
+        state.tables.site_action(site_action_of(imp)).population as i32
+    } else if let Some(b) = state.tiles[i].building.take() {
+        let level = state.tiles[i].building_level as i32;
+        state.tiles[i].building_level = 0;
+        level * state.tables.building(b).population_per_level as i32
+    } else {
+        unreachable!("legal destroy has an improvement or building")
+    };
+    state.city_mut(owner_city).population -= loss;
 }
 
 fn apply_research(state: &mut State, tech: Tech) {

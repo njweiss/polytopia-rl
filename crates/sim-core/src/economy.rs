@@ -1,17 +1,31 @@
 //! Economy helpers (docs/MILESTONE_4 "Start of turn: income", "Research", "Train",
 //! "Population and levels", "Reward menus").
 
+use crate::buildings::market_income;
 use crate::data::{Reward, Tech, UnitType};
-use crate::state::{CityId, PlayerId, State};
+use crate::grid::all_tiles;
+use crate::state::{CityId, PlayerId, Ruleset, State};
 
-/// Sum over the player's cities of `level + (capital ? 1 : 0) + (workshop ? 1 : 0) + parks`.
+/// Sum over the player's cities of `level + (capital ? 1 : 0) + (workshop ? 1 : 0) + parks`,
+/// plus under `V2` any Market income from tiles owned by the player's cities.
 pub fn income(state: &State, player: PlayerId) -> u32 {
-    state
+    let base: u32 = state
         .cities
         .iter()
         .filter(|c| c.owner == player)
         .map(|c| c.level + u32::from(c.is_capital) + u32::from(c.workshop) + c.parks)
-        .sum()
+        .sum();
+    if state.config.ruleset != Ruleset::V2 {
+        return base;
+    }
+    let markets: u32 = all_tiles(state.size)
+        .filter(|&pos| {
+            let t = state.tile(pos);
+            t.building.is_some() && t.owner_city.is_some_and(|c| state.city(c).owner == player)
+        })
+        .map(|pos| market_income(state, pos))
+        .sum();
+    base + markets
 }
 
 /// `L(L+1)/2 - 1`: the cumulative population a city needs for `level` (level 1 -> 0).

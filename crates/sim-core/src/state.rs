@@ -249,10 +249,9 @@ impl State {
     }
 
     pub fn city(&self, id: CityId) -> &City {
-        self.cities
-            .iter()
-            .find(|c| c.id == id)
-            .expect("city ids are never removed")
+        let c = &self.cities[id.0 as usize];
+        debug_assert_eq!(c.id, id);
+        c
     }
 
     pub(crate) fn unit_mut(&mut self, id: UnitId) -> &mut Unit {
@@ -263,10 +262,9 @@ impl State {
     }
 
     pub(crate) fn city_mut(&mut self, id: CityId) -> &mut City {
-        self.cities
-            .iter_mut()
-            .find(|c| c.id == id)
-            .expect("city ids are never removed")
+        let c = &mut self.cities[id.0 as usize];
+        debug_assert_eq!(c.id, id);
+        c
     }
 
     /// Creates a unit at full table health, phase Done, with the next id, on the empty tile `pos`.

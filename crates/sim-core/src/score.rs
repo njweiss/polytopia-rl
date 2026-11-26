@@ -46,7 +46,7 @@ pub fn score_breakdown(state: &State, player: PlayerId) -> ScoreBreakdown {
     let cities = own_cities()
         .map(|c| {
             let surplus =
-                (c.population as u32).saturating_sub(cumulative_population_for_level(c.level));
+                (c.population - cumulative_population_for_level(c.level) as i32).max(0) as u32;
             w.city_base + w.city_per_level * (c.level - 1) + w.population_surplus * surplus
         })
         .sum();
