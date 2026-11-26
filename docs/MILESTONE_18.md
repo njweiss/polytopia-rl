@@ -299,6 +299,11 @@ every edit in the phase A commit message):
 5. **M17 `crates/sim-core/tests/v2_m17_playouts.rs:331`:** relax the overly-strong `if c.pending_reward {
    assert!(c.population >= exp_cum(c.level) as i32); }` check noted in `/review 17` Nit #1 (keeping the
    `else` branch `c.population < exp_cum(c.level + 1) as i32`).
+6. **M15 `crates/sim-core/tests/ruleset.rs:174` (Q52 A):** update `new_game_reads_the_tables_of_the_configs_ruleset`
+   to verify the four corner tiles are fogged `Field` lighthouses with no resource under `V2` while keeping
+   exact equality with `V1` on RNG, seats, cities, units, and all non-corner tiles/explored entries.
+7. **M16 `crates/sim-core/tests/connections.rs:560` (Q53 A):** expand the playout seed range from `0..30` to
+   `0..45` so the vacuity guard `losses > 2` stays unchanged under M18's shifted action draws.
 
 ## Tests (phase A guidance)
 
