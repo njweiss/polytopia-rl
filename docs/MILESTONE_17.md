@@ -5,7 +5,7 @@ Third milestone of game v2. The rules are in `docs/SPEC.md` "Game v2 rules" ("Bu
 economy buildings (`Sawmill`, `Windmill`, `Forge`, `Market`), `BurnForest`, `Disband`, `Destroy`, and
 signed city population (`i32`) with population loss and non-negative score surplus. It also folds in the
 carry-over items from M16 (Q49 scripted test, `road_step_cost` load validation, unique-capital debug assert)
-and two `sim-core` hot-path cleanups ($O(1)$ `State::city`, single-BFS gated `update_connections`).
+and two `sim-core` hot-path cleanups ($O(1)$ `State::city`, single-BFS `update_connections`).
 
 **The hard constraint (as in M15–M16):** under `ruleset: v1` everything is byte-identical: legal actions,
 `apply`, digests, replay files, `Config` JSON, `rules_hash`, `obs_hash`, observations, bots. Every v1
@@ -22,7 +22,7 @@ identity test and replay fixture passes unchanged.
    are legal and work per spec.
 3. `City.population` becomes `i32`: population loss can push population below the current level's threshold
    or below 0 without lowering city level; score surplus floors at 0.
-4. M16 carry-overs and `sim-core` hot-path cleanups (`State::city` $O(1)$, capital-BFS gated
+4. M16 carry-overs and `sim-core` hot-path cleanups (`State::city` $O(1)$, capital-BFS
    `update_connections`) land cleanly without changing any v1 or M16 behavior.
 
 ## Decisions already made (owner)
@@ -42,13 +42,13 @@ identity test and replay fixture passes unchanged.
    `TileState.building_level: u8` (always `None` / `0` under `V1`); $O(1)$ `State::city` / `city_mut`.
 2. `sim_core::buildings` (new module): `building_level`, `market_income`, and internal `sync_buildings`.
 3. `sim_core::actions`: `Action::BuildBuilding`, `Action::Disband`, `Action::Destroy`; `SiteAction::BurnForest`
-   enabled under `V2`; legality, canonical ordering, `apply`, signed `level_up_check`, and gated post-apply
+   enabled under `V2`; legality, canonical ordering, `apply`, signed `level_up_check`, and post-apply
    `sync_buildings` + `update_connections`.
 4. `sim_core::economy` and `sim_core::score`: `income` adds Market stars under `V2`; `score_breakdown`
    floors city surplus population at 0.
 5. `sim_core::data` and `sim_core::roads`: load-time check in `Tables::from_json_v2` that
-   `2.0 * road_step_cost` is a positive integer; single-BFS `update_connections` gated to
-   road/city/territory-changing actions; `roads::lose` uses signed subtraction; `debug_assert!` for unique
+   `2.0 * road_step_cost` is a positive integer; single-BFS `update_connections` (still run after every
+   non-terminal v2 action, Q50 C); `roads::lose` uses signed subtraction; `debug_assert!` for unique
    capital per player outside terminal states.
 6. `sim_core::testing`: `StateBuilder::building(p, b)` helper (optional convenience, sets `building` and
    `building_level`).
@@ -208,9 +208,8 @@ All constants (`cost`, `tech`, `adjacent`, `level_from`, `population_per_level`,
        apply `(new_level as i32 - old_level as i32) * pop_per_level as i32` to `owner_city.population`, set
        `tile.building_level = new_level`.
     2. Pass 2 (`LevelFrom::Levels` buildings, row-major): set `tile.building_level = building_level(state, p) as u8`.
-  - Run `update_connections` on actions that can affect roads, cities, or territory (`BuildRoad`, `Capture`,
-    `ChooseReward { reward: Reward::BorderGrowth, .. }`), implemented via one BFS from each player's capital
-    instead of per-city DFS (exact same connection semantics as M16).
+  - Run `update_connections` after every non-terminal v2 action (Q50 C), implemented via one BFS from each
+    player's capital instead of per-city DFS (exact same connection semantics as M16).
   - Run `level_up_check(state, cid)` in ascending `CityId` order for every city whose population increased
     during `sync_buildings` / `update_connections` (P4).
 - **`StateBuilder::building(p, b)`:** sets `tile.building = Some(b)` without computing `building_level`
@@ -261,9 +260,9 @@ are all unchanged (`data/v2/*.json` files do not change; `RULES_VERSION` is not 
   underlying resource (`Animal`/`Crop`/`Metal`) intact (matching v1's "improvements do not consume
   resources"). — Confirmed (owner, 2026-11-25)
 - **P4 (post-apply sync order):** On non-terminal v2 actions, run `sync_buildings` (on `Site` /
-  `BuildBuilding` / `Destroy` / `Capture`), then `update_connections` (on `BuildRoad` / `Capture` /
-  `BorderGrowth`), then `level_up_check` in ascending `CityId` order for every city whose population rose.
-  — Confirmed (owner, 2026-11-25)
+  `BuildBuilding` / `Destroy` / `Capture`), then `update_connections` (every non-terminal v2 action, Q50 C),
+  then `level_up_check` in ascending `CityId` order for every city whose population rose.
+  — Confirmed (owner, 2026-11-25; Q50 C, 2026-11-26)
 - **P5 (`Action` variants & `legal_actions` order):** Add `BuildBuilding`, `Disband`, `Destroy` to `Action`
   (with `BurnForest` using `Action::Site`), ordered as specified in Rules above. — Confirmed (owner, 2026-11-25)
 - **P6 (allowed edits to earlier tests):** Approve the narrow edits listed under "Changes to earlier tests"
@@ -272,7 +271,7 @@ are all unchanged (`data/v2/*.json` files do not change; `RULES_VERSION` is not 
   zero v1 expectations changed). — Confirmed (owner, 2026-11-25)
 - **P7 (M16 carry-overs & hot-path cleanups):** Fold in the 3 M16 carry-overs (Q49 scripted test,
   `road_step_cost` load check, unique-capital debug assert) and 2 `sim-core` cleanups ($O(1)$ `State::city`,
-  single-BFS gated `update_connections`). — Confirmed (owner, 2026-11-25)
+  single-BFS `update_connections`, Q50 C). — Confirmed (owner, 2026-11-25; Q50 C, 2026-11-26)
 
 ## Changes to earlier tests
 
@@ -291,6 +290,10 @@ every edit in the phase A commit message):
 3. **v2-only digest reference encoders (`crates/sim-tools/tests/v2_digest.rs`, `road_digest.rs`):** append
    `building` (`Option<u8>`) and `building_level` (`u8`) to each tile record in `expected_v2_digest` /
    `expected_v2_bytes` (same precedent as M16 Q47 A; all v1 digest expectations untouched).
+4. **M16 connections playout population guard (`crates/sim-core/tests/connections.rs`, Q51 A):** add
+   `Action::BuildBuilding { .. } | Action::Destroy { .. }` alongside `Site` and `ChooseReward` in
+   `check_update`'s population-delta skip guard (line 486); `connected_to` continues to be checked after
+   every non-terminal action.
 
 ## Tests (phase A guidance)
 
@@ -328,8 +331,8 @@ every edit in the phase A commit message):
    - Q49 scripted test (opponent's pending reward during current turn; captured city keeps it and capturer
      resolves immediately).
    - `Tables::from_json_v2` rejects `road_step_cost` = `0.0`, `-0.5`, `0.3` (non-positive or non-half-integer).
-   - Gated single-BFS `update_connections` matches the brute-force path rule (`is_connected`) after every
-     action across random v2 playouts (including `BorderGrowth` claiming a neutral road tile!).
+   - Single-BFS `update_connections` matches the brute-force path rule (`is_connected`) after every
+     non-terminal v2 action across random v2 playouts (including `BorderGrowth` claiming a neutral road tile!).
 8. **Digest & determinism:** v1 digests unchanged; under `V2`, `building`, `building_level`, and negative
    `City.population` each change the digest; random v2 playouts exercising all M17 actions replay
    identically and maintain the invariant `tile.building_level as u32 == building_level(&s, p)` after every
