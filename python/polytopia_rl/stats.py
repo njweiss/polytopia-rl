@@ -19,6 +19,22 @@ class Welch:
     significant: bool  # p < alpha
 
 
+@dataclass
+class PairedT:
+    mean_a: float
+    mean_b: float
+    diff: float  # mean(b_i - a_i) == mean_b - mean_a
+    sd_diff: float  # sample sd (ddof=1) of d_i = b_i - a_i
+    t: float  # diff / (sd_diff / sqrt(n))
+    df: float  # float(n - 1)
+    p: float  # two-sided: 2 * t_sf(|t|, df)
+    significant: bool  # p < alpha
+
+
+def paired_t(a: Sequence[float], b: Sequence[float], alpha: float = 0.05) -> PairedT:
+    raise NotImplementedError("paired_t not implemented")
+
+
 def welch(a: Sequence[float], b: Sequence[float], alpha: float = 0.05) -> Welch:
     """Welch's t-test of `b` against `a` with sample variances (`ddof=1`). Both variances 0: `t = 0,
     p = 1` if the means are equal, else `t = +-inf, p = 0`. Fewer than 2 values in either raises

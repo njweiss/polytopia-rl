@@ -160,8 +160,8 @@ fn full_observability_explores_everything_for_both() {
     for seed in 0..50 {
         let (s, _, _, _) = start(seed, &cfg);
         assert_eq!(s.config, cfg);
-        for i in 0..2 {
-            assert!(s.players[i].explored.iter().all(|&e| e), "seed {seed}");
+        for p in &s.players {
+            assert!(p.explored.iter().all(|&e| e), "seed {seed}");
         }
     }
 }
