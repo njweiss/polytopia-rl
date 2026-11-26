@@ -5,12 +5,19 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
+**Milestone 17 (v2 economy buildings, tile actions, population loss) merged into `main` (`ba89c28`,
+2026-11-26), `pixi run check` green (652 cargo, 26 + 420 pytest).** Brief `a671de5` (P1–P7 confirmed) +
+`c535b96` (Q50 C, Q51 A); tests `e163730` (27 new Rust tests, 20/20 mutants caught); implementation
+`8b8f5d4`. `/review 17`: merge, no blocking defects, no spec gaps; 4 non-blocking nits noted below. v1
+identity holds (`obs_hash d5f9b1033cfd55ca`, `rules_hash a8b52b91eae34503`, v1 replay fixture OK). Next:
+the M18 brief (monuments and lighthouses).
+
 **Milestone 16b (rollout speedups, harness correctness, paired stats, repo hygiene) merged into `main`
 (`724e821`, 2026-11-25), `pixi run check` green (625 cargo, 26 + 420 pytest).** Brief `af1aba8` (B1–B6
 confirmed); tests `0aafb54` (52 new RL tests, 17/17 mutants caught, plus owner-approved `setup.rs:163`
 Rust 1.100 clippy fix); implementation `6f293a6`. v1 identity holds (`obs_hash d5f9b1033cfd55ca`,
 `rules_hash a8b52b91eae34503`). Pending on the owner's CUDA machine: Gate item 3 (M13a GPU profile fixture
-+ `torch.profiler` sync counts in `docs/RL_REPORT.md`). Next: the M17 brief.
++ `torch.profiler` sync counts in `docs/RL_REPORT.md`).
 
 **Milestone 16 (v2 roads, road movement, city connections) merged into `main` (`9af6590`, 2026-11-19),
 `pixi run check` green (625 cargo, 26 + 368 pytest).** Tests `2ef0f2d`, `7580470`, `b8f127f` (owner-approved
@@ -88,6 +95,7 @@ Milestone 12 (closed 2026-10-26):
 | M15 | v2 foundation: ruleset flag, data/v2 tables, v2 tech research, hashes; v1 byte-identical | merged 70c79e4; review: no blocking findings, 2 nits (below) |
 | M16 | v2 roads, road movement (half-points), city connections; v1 byte-identical | merged 9af6590; review: no defects, Q49 spec gap answered, 3 nits (next actions) |
 | M16b | rollout batching/syncs, `current_player()`, opening-turn safeguard, epoch-mean `target_kl`, batched eval, checked `load_policy`, paired t-test, `experiment.py` simplify, worktree/Mac hygiene | merged 724e821; `pixi run check` green (625 cargo, 26 + 420 pytest); GPU profile gate pending on CUDA machine |
+| M17 | v2 economy buildings (`Sawmill`/`Windmill`/`Forge`/`Market`), `BurnForest`, `Disband`, `Destroy`, signed `i32` population/loss & score floor, M16 carry-overs & `sim-core` hot-path cleanups; v1 byte-identical | merged ba89c28; `pixi run check` green (652 cargo, 26 + 420 pytest); `/review 17`: merge, no defects, 4 nits |
 
 **Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
 worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
@@ -101,30 +109,32 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 ## Waiting on the owner
 
 1. Optional: M16b Gate item 3 (re-run the M13a profile fixture + `torch.profiler` sync counts on the RTX 4060 machine and record in `docs/RL_REPORT.md`).
-2. Next is the M17 brief.
+2. Next is the M18 brief (monuments and lighthouses).
 3. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q50). Q1-Q49 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q52). Q1-Q51 are in `docs/DECISIONS.md`.
 - Spec open questions: none. `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc
   was retired in M16b, B5).
-- `.git/tests-lock` points at `0aafb54` (M16b's test commit).
+- `.git/tests-lock` points at `e163730` (M17's test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
 1. Run M16b Gate item 3 on the CUDA machine (profile fixture + sync counts) and log results in `docs/RL_REPORT.md`.
-2. M17 brief (buildings, tile actions, population loss). Carry over from M16: a scripted test for Q49
-   (opponent's reward pending during the current turn; captured city keeps it); a load-time check that
-   `2 * road_step_cost` is a positive integer (review nit); optionally a debug assert that `capital_of` is
-   unique outside terminal states; plus `update_connections` gating and $O(1)$ `State::city(id)`.
+2. M18 brief (monuments and lighthouses). Carry over from `/review 17` (non-blocking nits): add
+   `disband_refund_divisor == 0` load validation in `Tables::from_json_v2` (`data.rs`); optionally add
+   `Market` missing-tech / `Destroy` on `Market` / capture-raising-level tests; note latent overly-strong
+   `pending_reward` population check in `v2_m17_playouts.rs:331` and `Capture` exclusion in
+   `connections.rs:486` if future playouts trip them.
 3. Renderer: list v2 techs in `polytopia show` (render.rs tech panel iterates `ALL_TECHS`); M19 or M20.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-11-26 | M17 merged (`ba89c28`), `pixi run check` green (652 cargo, 26 + 420 pytest), branch removed; `/review 17` verdict merge (0 blocking defects, 4 nits); Q50–Q51 moved to `DECISIONS.md`; tests locked at `e163730`. |
 | 2026-11-25 | M16b merged (724e821), `pixi run check` green on `osx-arm64` (625 cargo, 26 + 420 pytest), branch removed; tests locked at `0aafb54`; B1–B6 implemented (`docs/SPEC.md` single source of truth, `osx-arm64` pixi target, worktree-safe checks). |
 | 2026-11-19 | M16 merged (9af6590), gate green (625 cargo, 26 + 368 pytest), worktree removed; Q47-Q49 to DECISIONS.md; Q48/Q49 rules added to SPEC.md and the Claude Doc "v2 rules" tab (rev 23). README.md added. |
 | 2026-11-12 | M16 Q47 A (M15 v2-digest expectation updated, owner-approved) and Q48 C; tests approved and locked at b8f127f; phase B and /review 16 run. |
