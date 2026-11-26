@@ -71,8 +71,9 @@ class ExperimentReport:
     # "max"}; metrics are the suite conditions, then the Elo metric (`elo_metric(spec)`) if any.
     tables: dict
     # One dict per (pair of arms in spec order, metric): {"a", "b", "metric", "primary", "mean_a",
-    # "mean_b", "diff", "t", "df", "p", "significant"} from `welch(per_seed[a], per_seed[b])`;
-    # "significant" is a bool for primary metrics and None for exploratory ones.
+    # "mean_b", "diff", "t", "df", "p", "significant", "paired": {"t", "df", "p", "significant"}}
+    # from `welch` and `paired_t` on `(per_seed[a], per_seed[b])`; "significant" is a bool for
+    # primary metrics and None for exploratory ones.
     comparisons: list
     n_flagged: int  # comparisons that carry a significance flag (primary ones)
     elo: dict | None  # player -> Elo from the experiment round robin (None if not played yet)
@@ -175,6 +176,23 @@ def _git_commit() -> str:
         return "unknown"
 
 
+def _start_run(spec, arm, seed, commit: str):
+    """Write `command.txt` and spawn the trainer subprocess, or return `None` if `init_from` is missing."""
+    d = run_dir(spec, arm, seed)
+    os.makedirs(d, exist_ok=True)
+    argv = train_command(spec, arm, seed)
+    with open(os.path.join(d, "command.txt"), "w") as f:
+        f.write(shlex.join(argv) + "\n" + f"git {commit}\n")
+    if spec.init_from is not None and "--resume" not in argv and not os.path.exists(init_source(spec, arm, seed)):
+        print(f"FAILED {d}: init_from source {init_source(spec, arm, seed)} does not exist", file=sys.stderr, flush=True)
+        return None
+    env = dict(os.environ)
+    env.setdefault("OMP_NUM_THREADS", "1")
+    log = open(os.path.join(d, "train.out"), "a")
+    print(f"start {d}: {shlex.join(argv)}", flush=True)
+    return (arm, seed), subprocess.Popen(argv, env=env, stdout=log, stderr=subprocess.STDOUT), log
+
+
 def run(spec, parallel=1) -> None:
     """Train every (arm, seed) not yet done (at most `parallel` subprocesses at once), evaluate the
     last `eval_checkpoints` checkpoints of each finished run, then play the experiment round robin.
@@ -183,8 +201,7 @@ def run(spec, parallel=1) -> None:
     pending = [p for p in pairs if not os.path.exists(os.path.join(run_dir(spec, *p), "ckpt_final.pt"))]
     finished = [p for p in pairs if p not in pending]  # done before this call: evaluate what is missing
     commit = _git_commit()
-    running = []  # (pair, process, log file)
-    failed = []
+    running, failed = [], []
     evaluator = _Evaluator(spec)
     for p in finished:
         evaluator.evaluate(*p)
@@ -192,29 +209,21 @@ def run(spec, parallel=1) -> None:
     def launch():
         while pending and len(running) < parallel:
             arm, seed = pending.pop(0)
-            d = run_dir(spec, arm, seed)
-            os.makedirs(d, exist_ok=True)
-            argv = train_command(spec, arm, seed)
-            with open(os.path.join(d, "command.txt"), "w") as f:
-                f.write(shlex.join(argv) + "\n" + f"git {commit}\n")
-            if spec.init_from is not None and "--resume" not in argv and not os.path.exists(init_source(spec, arm, seed)):
+            proc = _start_run(spec, arm, seed, commit)
+            if proc is None:
                 failed.append((arm, seed))
-                print(f"FAILED {d}: init_from source {init_source(spec, arm, seed)} does not exist", file=sys.stderr, flush=True)
-                continue
-            env = dict(os.environ)
-            env.setdefault("OMP_NUM_THREADS", "1")
-            log = open(os.path.join(d, "train.out"), "a")
-            print(f"start {d}: {shlex.join(argv)}", flush=True)
-            running.append(((arm, seed), subprocess.Popen(argv, env=env, stdout=log, stderr=subprocess.STDOUT), log))
+            else:
+                running.append(proc)
 
     while pending or running:
         launch()
         time.sleep(10)
-        status = [(r, r[1].poll()) for r in running]
-        running[:] = [r for r, code in status if code is None]
-        ok = []
-        for ((arm, seed), _, log), code in status:
+        still, ok = [], []
+        for entry in running:
+            (arm, seed), proc, log = entry
+            code = proc.poll()
             if code is None:
+                still.append(entry)
                 continue
             log.close()
             d = run_dir(spec, arm, seed)
@@ -224,6 +233,7 @@ def run(spec, parallel=1) -> None:
             else:
                 print(f"done {d}", flush=True)
                 ok.append((arm, seed))
+        running = still
         launch()  # refill the free slots before evaluating, so the other trainers keep going
         for arm, seed in ok:
             evaluator.evaluate(arm, seed)
@@ -388,11 +398,54 @@ def _read_run(spec, arm, seed) -> dict:
     }
 
 
+def _build_comparisons(arms: list, metrics: list, tables: dict, primary_metrics: set) -> list[dict]:
+    from polytopia_rl.stats import paired_t, welch
+
+    comparisons = []
+    for a, b in itertools.combinations(arms, 2):
+        for m in metrics:
+            va, vb = tables[m][a]["per_seed"], tables[m][b]["per_seed"]
+            w = welch(va, vb)
+            pt = paired_t(va, vb)
+            primary = m in primary_metrics
+            comparisons.append(
+                {
+                    "a": a,
+                    "b": b,
+                    "metric": m,
+                    "primary": primary,
+                    "mean_a": w.mean_a,
+                    "mean_b": w.mean_b,
+                    "diff": w.diff,
+                    "t": w.t,
+                    "df": w.df,
+                    "p": w.p,
+                    "significant": w.significant if primary else None,
+                    "paired": {
+                        "t": pt.t,
+                        "df": pt.df,
+                        "p": pt.p,
+                        "significant": pt.significant if primary else None,
+                    },
+                }
+            )
+    return comparisons
+
+
+def _read_tournament_elo(spec) -> dict | None:
+    tpath = os.path.join(exp_dir(spec), "tournament.json")
+    if not os.path.exists(tpath):
+        return None
+    with open(tpath) as f:
+        t = json.load(f)
+    if t["players"] != tournament_players(spec):  # not a round robin of only some arms (--only)
+        return None
+    return {name: float(r) for name, r in zip(t["players"], t["ratings"])}
+
+
 def report(spec) -> ExperimentReport:
     """Aggregate the experiment; also writes `runs/exp/{name}/report.md`, `report.json`
     (`dataclasses.asdict` of the result) and `report_curves.png`."""
-    from polytopia_rl.stats import welch
-
     arms, seeds = list(spec.arms), list(spec.seeds)
     runs = [_read_run(spec, arm, seed) for arm in arms for seed in seeds]
     obs = sorted({r["obs_hash"] for r in runs})
@@ -400,40 +453,13 @@ def report(spec) -> ExperimentReport:
         raise ValueError(f"experiment {spec.name}: runs with different obs_hash values {obs}")
     elo_m = elo_metric(spec)
     metrics = list(runs[0]["suite_mean"]) + ([elo_m] if elo_m is not None else [])
+    by_run = {(r["arm"], r["seed"]): r for r in runs}
 
     def value(r, metric):
         return r[f"{metric}_mean"] if metric == elo_m else r["suite_mean"][metric]
 
-    by_run = {(r["arm"], r["seed"]): r for r in runs}
     tables = {m: {arm: _summary([value(by_run[arm, s], m) for s in seeds]) for arm in arms} for m in metrics}
-    comparisons = []
-    if len(seeds) >= 2:
-        for a, b in itertools.combinations(arms, 2):
-            for m in metrics:
-                w = welch(tables[m][a]["per_seed"], tables[m][b]["per_seed"])
-                primary = m in spec.primary
-                comparisons.append(
-                    {
-                        "a": a,
-                        "b": b,
-                        "metric": m,
-                        "primary": primary,
-                        "mean_a": w.mean_a,
-                        "mean_b": w.mean_b,
-                        "diff": w.diff,
-                        "t": w.t,
-                        "df": w.df,
-                        "p": w.p,
-                        "significant": w.significant if primary else None,
-                    }
-                )
-    elo = None
-    tpath = os.path.join(exp_dir(spec), "tournament.json")
-    if os.path.exists(tpath):
-        with open(tpath) as f:
-            t = json.load(f)
-        if t["players"] == tournament_players(spec):  # not a round robin of only some arms (--only)
-            elo = {name: float(r) for name, r in zip(t["players"], t["ratings"])}
+    comparisons = _build_comparisons(arms, metrics, tables, set(spec.primary)) if len(seeds) >= 2 else []
     rep = ExperimentReport(
         name=spec.name,
         arms=arms,
@@ -442,7 +468,7 @@ def report(spec) -> ExperimentReport:
         tables=tables,
         comparisons=comparisons,
         n_flagged=sum(c["primary"] for c in comparisons),
-        elo=elo,
+        elo=_read_tournament_elo(spec),
         obs_hash=obs[0],
         cost={arm: _cost(spec, arm) for arm in arms},
     )
@@ -484,59 +510,102 @@ def _fmt(x, digits=3) -> str:
     return "-" if x is None else f"{x:.{digits}f}"
 
 
+def _flag(sig: bool | None) -> str:
+    if sig is None:
+        return "exploratory"
+    return "significant" if sig else "not detected"
+
+
+def _metric_section(rep: ExperimentReport, metric: str, table: dict, elo_m: str) -> list[str]:
+    digits = 1 if metric == elo_m else 3
+    lines = [
+        f"## {metric}",
+        "",
+        "| arm | " + " | ".join(f"seed {s}" for s in rep.seeds) + " | mean | sd | min to max |",
+        "| --- |" + " --- |" * (len(rep.seeds) + 3),
+    ]
+    for arm, row in table.items():
+        cells = [_fmt(v, digits) for v in row["per_seed"]]
+        lines.append(
+            f"| {arm} | "
+            + " | ".join(cells)
+            + f" | {_fmt(row['mean'], digits)} | {_fmt(row['sd'], digits)} | {_fmt(row['min'], digits)} to {_fmt(row['max'], digits)} |"
+        )
+    lines += ["", "Per checkpoint (step: value):", "", "| arm | seed | checkpoints |", "| --- | --- | --- |"]
+    for r in rep.runs:
+        vals = r[elo_m] if metric == elo_m else r["suite"][metric]
+        lines.append(f"| {r['arm']} | {r['seed']} | " + ", ".join(f"{s}: {_fmt(v, digits)}" for s, v in zip(r["steps"], vals)) + " |")
+    lines.append("")
+    return lines
+
+
+def _comparison_table(comparisons: list[dict], paired: bool = False) -> list[str]:
+    lines = [
+        "| a | b | metric | mean a | mean b | diff | t | df | p | flag |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for c in comparisons:
+        stats = c["paired"] if paired else c
+        lines.append(
+            f"| {c['a']} | {c['b']} | {c['metric']} | {c['mean_a']:.3f} | {c['mean_b']:.3f} | {c['diff']:+.3f} "
+            f"| {stats['t']:+.2f} | {stats['df']:.1f} | {stats['p']:.3f} | {_flag(stats['significant'])} |"
+        )
+    return lines
+
+
+def _cost_section(rep: ExperimentReport) -> list[str]:
+    n_seeds = len(rep.seeds)
+    lines = [
+        "",
+        "## Cost (reported, not tested)",
+        "",
+        "Parameters of the arm's network; training sps: each run's mean over its updates.",
+        "",
+        "| arm | parameters | " + " | ".join(f"sps seed {s}" for s in rep.seeds) + " | sps mean | sps sd |",
+        "| --- | --- |" + " --- |" * (n_seeds + 2),
+    ]
+    for arm, c in rep.cost.items():
+        sps = c["sps"]
+        cells = [_fmt(v, 0) for v in sps["per_seed"]] + [_fmt(sps["mean"], 0), _fmt(sps["sd"], 0)] if sps is not None else ["-"] * (n_seeds + 2)
+        lines.append(f"| {arm} | {'-' if c['params'] is None else c['params']} | " + " | ".join(cells) + " |")
+    return lines
+
+
 def report_markdown(rep: ExperimentReport) -> str:
     n_seeds = len(rep.seeds)
     elo_m = "elo_vs_ref" if "elo_vs_ref" in rep.tables else "elo_vs_init"
+    primary_list = ", ".join(m for m in rep.tables if any(c["metric"] == m and c["primary"] for c in rep.comparisons)) or "none"
     lines = [
         f"# Experiment {rep.name}",
         "",
         f"Arms {', '.join(rep.arms)}; seeds {', '.join(map(str, rep.seeds))}; obs_hash `{rep.obs_hash}`.",
         f"A run's value is the mean over its evaluated checkpoints (suite win rate, or `{elo_m}`).",
         f"With {n_seeds} seeds per arm Welch's test detects only large effects; a primary comparison without a "
-        "flag is \"not detected\", not \"no effect\". Non-primary comparisons are exploratory (no flag).",
+        'flag is "not detected", not "no effect". Non-primary comparisons are exploratory (no flag).',
         "",
     ]
     for metric, table in rep.tables.items():
-        digits = 1 if metric == elo_m else 3
-        lines += [f"## {metric}", "", "| arm | " + " | ".join(f"seed {s}" for s in rep.seeds) + " | mean | sd | min to max |", "| --- |" + " --- |" * (n_seeds + 3)]
-        for arm, row in table.items():
-            cells = [_fmt(v, digits) for v in row["per_seed"]]
-            lines.append(f"| {arm} | " + " | ".join(cells) + f" | {_fmt(row['mean'], digits)} | {_fmt(row['sd'], digits)} | {_fmt(row['min'], digits)} to {_fmt(row['max'], digits)} |")
-        lines += ["", "Per checkpoint (step: value):", "", "| arm | seed | checkpoints |", "| --- | --- | --- |"]
-        for r in rep.runs:
-            vals = r[elo_m] if metric == elo_m else r["suite"][metric]
-            lines.append(f"| {r['arm']} | {r['seed']} | " + ", ".join(f"{s}: {_fmt(v, digits)}" for s, v in zip(r["steps"], vals)) + " |")
-        lines.append("")
+        lines += _metric_section(rep, metric, table, elo_m)
     lines += [
         "## Comparisons (Welch, b minus a)",
         "",
-        f"Flagged comparisons (primary metrics {', '.join(m for m in rep.tables if any(c['metric'] == m and c['primary'] for c in rep.comparisons)) or 'none'}): {rep.n_flagged}.",
+        f"Flagged comparisons (primary metrics {primary_list}): {rep.n_flagged}.",
         "",
-        "| a | b | metric | mean a | mean b | diff | t | df | p | flag |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        *_comparison_table(rep.comparisons, paired=False),
+        "",
+        "## Comparisons (paired t, b minus a)",
+        "",
+        *_comparison_table(rep.comparisons, paired=True),
+        "",
+        "## Round robin of the final weights (exploratory)",
+        "",
     ]
-    for c in rep.comparisons:
-        flag = "exploratory" if c["significant"] is None else ("significant" if c["significant"] else "not detected")
-        lines.append(f"| {c['a']} | {c['b']} | {c['metric']} | {c['mean_a']:.3f} | {c['mean_b']:.3f} | {c['diff']:+.3f} | {c['t']:+.2f} | {c['df']:.1f} | {c['p']:.3f} | {flag} |")
-    lines += ["", "## Round robin of the final weights (exploratory)", ""]
     if rep.elo is None:
         lines.append("Not played yet.")
     else:
         lines += ["| player | Elo |", "| --- | --- |"] + [f"| {name} | {r:.0f} |" for name, r in sorted(rep.elo.items(), key=lambda kv: -kv[1])]
     if rep.cost is not None:
-        lines += [
-            "",
-            "## Cost (reported, not tested)",
-            "",
-            "Parameters of the arm's network; training sps: each run's mean over its updates.",
-            "",
-            "| arm | parameters | " + " | ".join(f"sps seed {s}" for s in rep.seeds) + " | sps mean | sps sd |",
-            "| --- | --- |" + " --- |" * (n_seeds + 2),
-        ]
-        for arm, c in rep.cost.items():
-            sps = c["sps"]
-            cells = [_fmt(v, 0) for v in sps["per_seed"]] + [_fmt(sps["mean"], 0), _fmt(sps["sd"], 0)] if sps is not None else ["-"] * (n_seeds + 2)
-            lines.append(f"| {arm} | {'-' if c['params'] is None else c['params']} | " + " | ".join(cells) + " |")
+        lines += _cost_section(rep)
     lines += ["", "## Runs", "", "| arm | seed | evaluated steps | obs_hash | rules_hash |", "| --- | --- | --- | --- | --- |"]
     for r in rep.runs:
         lines.append(f"| {r['arm']} | {r['seed']} | {', '.join(map(str, r['steps']))} | `{r['obs_hash']}` | `{r['rules_hash']}` |")

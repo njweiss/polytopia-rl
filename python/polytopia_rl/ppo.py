@@ -170,32 +170,36 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
             buffer.actors[ti, si], buffer.kinds[ti, si], buffer.args[ti, si] = out.actors, out.kinds, out.args
             buffer.actor_mask[ti, si], buffer.kind_mask[ti, si], buffer.arg_mask[ti, si] = out.actor_mask, out.kind_mask, out.arg_mask
             buffer.logp[ti, si], buffer.values[ti, si] = out.logp, out.value
-            for r, i in enumerate(acting):
-                actions[i] = (int(out.actors[r]), int(out.kinds[r]), int(out.args[r]))
+            actors_list = out.actors.cpu().tolist()
+            kinds_list = out.kinds.cpu().tolist()
+            args_list = out.args.cpu().tolist()
+            for i, a, k, x in zip(acting, actors_list, kinds_list, args_list):
+                actions[i] = (a, k, x)
         t1 = time.perf_counter()
         done = vec_env.tick(actions)
         stats += vec_env.episode_stats()
         t2 = time.perf_counter()
-        cut = []
-        for tr in done:
-            i = tr.slot
-            buffer.rewards[t[i], i] = tr.reward
-            buffer.terminated[t[i], i] = bool(tr.terminated)
-            buffer.truncated[t[i], i] = bool(tr.truncated)
-            buffer.next_values[t[i], i] = 0.0
-            if tr.truncated:
-                cut.append(tr)
-            else:
+        if done:
+            slots = [tr.slot for tr in done]
+            ti = torch.tensor([t[i] for i in slots], dtype=torch.long, device=device)
+            si = torch.tensor(slots, dtype=torch.long, device=device)
+            buffer.rewards[ti, si] = torch.tensor([tr.reward for tr in done], dtype=torch.float32, device=device)
+            buffer.terminated[ti, si] = torch.tensor([bool(tr.terminated) for tr in done], dtype=torch.bool, device=device)
+            buffer.truncated[ti, si] = torch.tensor([bool(tr.truncated) for tr in done], dtype=torch.bool, device=device)
+            buffer.next_values[ti, si] = 0.0
+            # A truncated episode did not really end: bootstrap from the value of its final
+            # observation (the one before the auto-reset), computed for those slots in one batch.
+            cut = [tr for tr in done if tr.truncated]
+            if cut:
+                fb, fg = tensors(np.stack([tr.final_board for tr in cut]), np.stack([tr.final_globals for tr in cut]))
+                with torch.no_grad():
+                    values = net.value(net.trunk(fb, fg))
+                cut_slots = [tr.slot for tr in cut]
+                cut_ti = torch.tensor([t[i] for i in cut_slots], dtype=torch.long, device=device)
+                cut_si = torch.tensor(cut_slots, dtype=torch.long, device=device)
+                buffer.next_values[cut_ti, cut_si] = values
+            for i in slots:
                 t[i] += 1
-        # A truncated episode did not really end: bootstrap from the value of its final
-        # observation (the one before the auto-reset), computed for those slots in one batch.
-        if cut:
-            fb, fg = tensors(np.stack([tr.final_board for tr in cut]), np.stack([tr.final_globals for tr in cut]))
-            with torch.no_grad():
-                values = net.value(net.trunk(fb, fg))
-            for r, tr in enumerate(cut):
-                buffer.next_values[t[tr.slot], tr.slot] = values[r]
-                t[tr.slot] += 1
         buffer.env_time += t2 - t1
         buffer.policy_time += t1 - t0 + time.perf_counter() - t2
     with torch.no_grad():
@@ -230,6 +234,8 @@ def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Ge
     sums: dict[str, float] = {}
     count = 0
     for _ in range(cfg.update_epochs):
+        epoch_kl = 0.0
+        epoch_mbs = 0
         for idx in minibatch_indices(n, cfg.num_minibatches, generator):
             idx = idx.to(buffer.device)
             ev = net.evaluate(
@@ -258,10 +264,14 @@ def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Ge
                 "clipfrac": out.clipfrac,
             }
             for k, v in step_metrics.items():
-                sums[k] = sums.get(k, 0.0) + v.item()
+                val = v.item()
+                sums[k] = sums.get(k, 0.0) + val
+                if k == "approx_kl":
+                    epoch_kl += val
             count += 1
+            epoch_mbs += 1
         # Optional early stop once the policy has moved too far from the rollout policy.
-        if cfg.target_kl is not None and out.approx_kl.item() > cfg.target_kl:
+        if cfg.target_kl is not None and epoch_kl / epoch_mbs > cfg.target_kl:
             break
 
     metrics = {k: v / count for k, v in sums.items()}

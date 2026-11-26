@@ -64,25 +64,8 @@ CUDA torch build. Training runs are hours long and run by the owner (`scripts/tr
 
 ## Where things stand
 
-(Update this section whenever it changes; the authoritative copy lives in `docs/STATUS.md`.)
-
-- Milestones 1 to 10 are implemented and gated. M1 data/rng/combat, M2 map generation, M3 state/movement/
-  legality, M4 economy and progression, M5 Explorer/Super Unit, M6 capture/win/score, M7 tooling,
-  M8 bots + tournament, M9 Python interface, M10 PPO.
-- M10 result: the CleanRL-style PPO agent (width 64, 4 residual blocks, factored heads) trained 20M steps
-  on a curriculum (random, economy, economy+rush). Greedy, 200 seeds side-swapped (400 games): 100% vs
-  random, 100% vs economy, ~98% vs rush (weakest as seat 1, ~96%). The bots no longer discriminate.
-  The shaping ablation was inconclusive (unshaped beat shaped vs random in the smoke run; the
-  "agent farms score" explanation is an untested hypothesis).
-- M11 (evaluation suite, spec/rules hashes in checkpoints, Elo ratings, loss review, snapshot-pool
-  self-play) is implemented on branch `milestone-11` and passed gate 11a; the 3M smoke self-play run
-  regressed against the bots. Gate 11b (20M self-play, `lr 1e-4`) started 2026-10-24. See STATUS.md.
-- Not yet merged into the spec: clarifications from M2 (C2 to C5) onward, the answered `QUESTIONS.md`
-  entries, the owner's overrule of M4 D4 (improvements do not consume resources), and the M10 results.
-  Doing that merge is an early task for you (see "First tasks").
-- Open spec questions: turn cap value (30/40/50; the current default is 30), harvest-on-improved-tile and
-  Clear-forest-over-hut (asked in the M5 brief, may have been answered since: check `QUESTIONS.md`), and
-  whatever `QUESTIONS.md` still lists as open.
+Current milestone, phase, completed milestones, open questions and next actions live in
+`docs/STATUS.md`. Read `docs/STATUS.md` at the start of each session and update it at the end.
 
 ## Decisions the owner has made (do not relitigate without a reason)
 
@@ -140,8 +123,9 @@ sent to the owner.
 
 ## Lessons from the project so far
 
-- The Claude Doc is the master spec; `docs/SPEC.md` was reconstructed by hand once (not verbatim) and the
-  owner has edited their own copies. Reconcile before relying on either.
+- `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc was retired in M16b).
+  Merge answered `QUESTIONS.md` entries and confirmed brief clarifications directly into `docs/SPEC.md`
+  at the end of each milestone.
 - A spec test wording error ("no unmarked tile remains") and terrain-share figures that were off
   surfaced only when a throwaway reference was run; keep that reference-plus-mutants discipline.
 - Briefs the owner later changed on disk (M7, M9) mean: read the disk version before building on a brief.
@@ -152,17 +136,13 @@ sent to the owner.
 
 ## First tasks for you
 
-1. Read `CLAUDE.md`, `docs/WORKFLOW.md`, `docs/SPEC.md`, `docs/QUESTIONS.md`, every `docs/MILESTONE_*.md`,
-   and `docs/RL_REPORT.md`; run `git log --oneline` and `./scripts/check.sh`.
-2. Create `docs/STATUS.md`: current milestone and phase, what is done, what is blocked on the owner, open
-   questions, next three actions, and a dated change log. Update it at the end of every working session.
-3. Propose the spec merge to the owner: for each answered `QUESTIONS.md` entry and each brief
-   clarification, the exact spec text it changes. The Claude Doc is the master, so produce the edits for
-   the owner (or apply them through the docs tools if you have them), then keep `docs/SPEC.md` in sync.
-   Turn answered entries into a short decisions log (date, question, answer, spec section) and leave only
-   open items in `QUESTIONS.md`.
-4. Ask the owner whether to start M11 now. If yes, give them the commands for the three sessions
-   (`/write-tests 11`, `/implement 11`, `/review 11`) and what to bring back.
+1. Read `CLAUDE.md`, `docs/WORKFLOW.md`, `docs/SPEC.md`, `docs/QUESTIONS.md`, `docs/STATUS.md`, recent
+   `docs/MILESTONE_*.md`, and `docs/RL_REPORT.md`; run `git log --oneline` and `./scripts/check.sh`.
+2. Keep `docs/STATUS.md` updated at the end of every working session: current milestone and phase, what is
+   done, what is blocked on the owner, open questions, next three actions, and a dated change log.
+3. At the end of each milestone, merge answered `QUESTIONS.md` entries and confirmed brief clarifications
+   into `docs/SPEC.md`, move answered entries to `docs/DECISIONS.md` as one line each, and leave only open
+   items in `QUESTIONS.md`.
 
 ## Working agreements
 

@@ -22,6 +22,12 @@ from polytopia_rl.vec_env import EpisodeStat, SyncVecEnv, VecState, VecStep, age
 BOT_OPPONENTS = ("economy", "rush")
 
 
+def _current_player(env) -> int:
+    if hasattr(env, "current_player"):
+        return env.current_player()
+    return env.info()["current_player"]
+
+
 @dataclass
 class Transition:
     """A learner transition completed during `SelfPlayVecEnv.tick` (docs/MILESTONE_13 "Ticks")."""
@@ -208,7 +214,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         self._policies = {k: v for k, v in self._policies.items() if k in live}
 
     def _opponent_to_move(self, i: int) -> bool:
-        return isinstance(self._opp[i], Entry) and self._ended[i] is None and self.envs[i].info()["current_player"] != self._seed[i] % 2
+        return isinstance(self._opp[i], Entry) and self._ended[i] is None and _current_player(self.envs[i]) != self._seed[i] % 2
 
     def _advance(self, slots) -> None:
         """Play the snapshot opponents of `slots` in rounds until each slot is over or on the
@@ -291,7 +297,7 @@ class SelfPlayVecEnv(SyncVecEnv):
 
     def learner_slots(self) -> list[int]:
         """Slots whose learner is to move, ascending (docs/MILESTONE_13 "Ticks")."""
-        return [i for i, env in enumerate(self.envs) if self._ended[i] is None and env.info()["current_player"] == self._seed[i] % 2]
+        return [i for i, env in enumerate(self.envs) if self._ended[i] is None and _current_player(env) == self._seed[i] % 2]
 
     def tick(self, learner_actions: dict[int, tuple[int, int, int]]) -> list[Transition]:
         """Apply one learner action to every slot in `learner_actions` (all must be in
@@ -345,6 +351,11 @@ class SelfPlayVecEnv(SyncVecEnv):
             elif self._before[i] is not None and (self._ended[i] is not None or not self._opponent_to_move(i)):
                 reward = self._snapshot_reward(i, self._before[i])
                 self._before[i] = None
+            elif self._ended[i] is not None:
+                # Episode ended during the opponent's opening turn before the learner ever acted.
+                self._stats.append(self._episode_stat(i))
+                self._reset(i)
+                continue
             else:
                 continue
             self._ret[i] += float(reward)

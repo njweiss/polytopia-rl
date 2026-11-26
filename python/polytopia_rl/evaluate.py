@@ -158,6 +158,7 @@ def net_policy(net, generator=None, device="cpu"):
 
 def main(argv: list[str] | None = None) -> None:
     from polytopia_rl.checkpoint import describe, load_net
+    from polytopia_rl.selfplay import net_batch_policy
     from polytopia_rl.train import resolve_device
 
     p = argparse.ArgumentParser(description="Side-swapped evaluation of a checkpoint.")
@@ -170,7 +171,14 @@ def main(argv: list[str] | None = None) -> None:
     cfg = ck.cfg
     print(describe(a.checkpoint, ck), flush=True)
     for opponent in a.opponents.split(","):
-        res = evaluate(net_policy(net, device=device), opponent, a.seeds, env_kwargs_of(cfg), greedy=True)
+        res = evaluate(
+            net_policy(net, device=device),
+            opponent,
+            a.seeds,
+            env_kwargs_of(cfg),
+            greedy=True,
+            batch_fn=net_batch_policy(net, torch.Generator().manual_seed(0), greedy=True, device=device),
+        )
         print(
             f"{opponent:8s} games {res.games}  W-L-D {res.wins}-{res.losses}-{res.draws}  "
             f"win rate {res.win_rate:.3f} [{res.wilson_lo:.3f}, {res.wilson_hi:.3f}]  "

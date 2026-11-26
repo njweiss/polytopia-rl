@@ -26,7 +26,7 @@ import numpy as np
 import polytopia_sim
 import torch
 
-from polytopia_rl.checkpoint import describe, load_checkpoint, save_checkpoint
+from polytopia_rl.checkpoint import describe, load_checkpoint, load_net, save_checkpoint
 from polytopia_rl.config import PPOConfig, load_config
 from polytopia_rl.curriculum import StageHistory, next_stage
 from polytopia_rl.evaluate import env_kwargs_of, evaluate, net_policy
@@ -297,7 +297,14 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                 opponents = list(dict.fromkeys(cfg.stages[stage]["opponents"]))
                 erow = {"global_step": global_step, "stage": stage}
                 for opp in opponents:
-                    res = evaluate(net_policy(net, device=device), opp, cfg.eval_seeds, env_kwargs_of(cfg), greedy=True)
+                    res = evaluate(
+                        net_policy(net, device=device),
+                        opp,
+                        cfg.eval_seeds,
+                        env_kwargs_of(cfg),
+                        greedy=True,
+                        batch_fn=net_batch_policy(net, torch.Generator().manual_seed(0), greedy=True, device=device),
+                    )
                     erow[opp] = {k: v for k, v in dataclasses.asdict(res).items() if k != "per_game"}
                 efile.write(json.dumps(erow) + "\n")
                 efile.flush()
@@ -399,12 +406,10 @@ def finish_selfplay(net, pool, cfg, spec, run_dir, device) -> None:
 
 
 def load_policy(path: str, device: str = "cpu"):
-    """`(PolicyNet, PPOConfig)` from a checkpoint."""
-    ck = torch.load(path, map_location=device, weights_only=False)
-    cfg = PPOConfig.from_json(ck["config"])
-    net = PolicyNet(env_spec(cfg), width=cfg.width, blocks=cfg.blocks).to(device)
-    net.load_state_dict(ck["model"])
-    return net, cfg
+    """`(PolicyNet, PPOConfig)` from a checkpoint (enforces `obs_hash`, warns on `rules_hash` or
+    unstamped checkpoints)."""
+    net, ck = load_net(path, device=device)
+    return net, ck.cfg
 
 
 def main(argv: list[str] | None = None) -> None:

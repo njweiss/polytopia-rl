@@ -32,7 +32,34 @@ class PairedT:
 
 
 def paired_t(a: Sequence[float], b: Sequence[float], alpha: float = 0.05) -> PairedT:
-    raise NotImplementedError("paired_t not implemented")
+    """Two-sided paired t-test of `b - a` with sample sd (`ddof=1`). Zero variance in the
+    differences: `t = 0, p = 1` if `diff == 0`, else `t = +-inf, p = 0`. Mismatched lengths or
+    fewer than 2 pairs raise `ValueError`."""
+    if len(a) != len(b) or len(a) < 2:
+        raise ValueError(f"paired t-test needs equal lengths of at least 2 (got {len(a)} and {len(b)})")
+    fa = [float(x) for x in a]
+    fb = [float(x) for x in b]
+    d = [y - x for x, y in zip(fa, fb)]
+    mean_a, mean_b = statistics.mean(fa), statistics.mean(fb)
+    diff = statistics.mean(d)
+    sd_diff = statistics.stdev(d)
+    df = float(len(d) - 1)
+    if sd_diff == 0.0:
+        t = 0.0 if diff == 0.0 else math.copysign(math.inf, diff)
+        p = 1.0 if diff == 0.0 else 0.0
+    else:
+        t = diff / (sd_diff / math.sqrt(len(d)))
+        p = 2 * t_sf(abs(t), df)
+    return PairedT(
+        mean_a=mean_a,
+        mean_b=mean_b,
+        diff=diff,
+        sd_diff=sd_diff,
+        t=t,
+        df=df,
+        p=p,
+        significant=bool(p < alpha),
+    )
 
 
 def welch(a: Sequence[float], b: Sequence[float], alpha: float = 0.05) -> Welch:

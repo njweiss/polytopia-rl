@@ -35,16 +35,12 @@ def sample(logits: Tensor, mask: Tensor, generator: torch.Generator, greedy: boo
 
 def log_prob(logits: Tensor, mask: Tensor, index: Tensor, check: bool = True) -> Tensor:
     """(B,) log-probability of `index` under the masked distribution."""
-    if not check:
-        raise NotImplementedError("log_prob(check=False) not implemented")
-    logp = torch.log_softmax(masked_logits(logits, mask), dim=-1)
+    logp = torch.log_softmax(masked_logits(logits, mask, check=check), dim=-1)
     return logp.gather(-1, index.long().unsqueeze(-1)).squeeze(-1)
 
 
 def entropy(logits: Tensor, mask: Tensor, check: bool = True) -> Tensor:
     """(B,) exact entropy of the masked distribution (0 when one option is valid)."""
-    if not check:
-        raise NotImplementedError("entropy(check=False) not implemented")
-    logp = torch.log_softmax(masked_logits(logits, mask), dim=-1)
+    logp = torch.log_softmax(masked_logits(logits, mask, check=check), dim=-1)
     # Masked entries have p = 0; drop them explicitly so 0 * (-1e9) never enters the sum.
     return -torch.where(mask, logp.exp() * logp, torch.zeros_like(logp)).sum(dim=-1)

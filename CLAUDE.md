@@ -36,5 +36,9 @@ exact test output summary. Do not claim done without running it.
 
 ## Layout
 - `crates/sim-core`: the simulator library (no Python, no I/O beyond embedded data).
+- `crates/sim-tools`: renderer, digest, replay log, HTML viewer, CLI (`polytopia`).
+- `crates/bots`: bot trait, Random/Rush/Economy bots, match runner.
+- `crates/sim-env`: observation encoding, factored action space, masks, `Env`, reward.
+- `crates/sim-py`: PyO3 bindings (`polytopia_sim`).
+- `python/polytopia_rl/`: PPO trainer, self-play, evaluation suite, experiment harness.
 - `data/`: rules tables (JSON). `docs/`: spec, milestone briefs, open questions.
-- Future crates (not yet): `sim-py` (PyO3), `bots`, `render`.

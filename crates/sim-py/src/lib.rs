@@ -276,9 +276,7 @@ impl PyEnv {
     }
 
     fn current_player(&self) -> PyResult<u8> {
-        Err(pyo3::exceptions::PyNotImplementedError::new_err(
-            "current_player not implemented",
-        ))
+        Ok(self.env()?.view().current())
     }
 
     fn replay_json(&self) -> PyResult<String> {

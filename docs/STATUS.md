@@ -98,8 +98,8 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 ## Open questions
 
 - `QUESTIONS.md`: none open (next number Q50). Q1-Q49 are in `docs/DECISIONS.md`.
-- Spec open questions: none. The Claude Doc master spec
-  (https://claude.ai/artifact/3yVekWM5SAoUVxjZVmomTm) and `docs/SPEC.md` are in sync (main tab rev 400, "v2 rules" tab rev 23 with the Q48/Q49 rules, appended to SPEC.md).
+- Spec open questions: none. `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc
+  was retired in M16b, B5).
 - `.git/tests-lock` points at `b8f127f` (M16's last test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
