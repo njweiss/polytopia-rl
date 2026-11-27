@@ -8,7 +8,9 @@ use crate::grid::{all_tiles, Pos};
 use crate::map::{Resource, Terrain};
 use crate::movement::reachable_tiles;
 use crate::score::score;
-use crate::state::{City, CityId, Improvement, Phase, PlayerId, State, TechSet, Unit, UnitId};
+use crate::state::{
+    City, CityId, Improvement, Phase, PlayerId, Ruleset, State, TechSet, Unit, UnitId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CityView {
@@ -70,6 +72,10 @@ impl<'a> PlayerView<'a> {
 
     pub fn turn_cap(&self) -> u32 {
         self.state.config.turn_cap
+    }
+
+    pub fn ruleset(&self) -> Ruleset {
+        todo!("milestone 19")
     }
 
     pub fn current(&self) -> PlayerId {

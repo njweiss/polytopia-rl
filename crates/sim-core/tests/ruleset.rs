@@ -409,7 +409,7 @@ fn under_v2_with_every_tech_no_new_unit_or_burn_forest_is_legal() {
         at: p(1, 2),
         action: SiteAction::ClearForest
     }));
-    // Milestone 17 unlocked BurnForest under v2, while the 3 new units stay locked until M19.
+    // Milestone 17 unlocked BurnForest and milestone 19 unlocked the 3 new units under v2.
     assert!(legal.contains(&Action::Site {
         at: p(1, 1),
         action: SiteAction::BurnForest
@@ -418,24 +418,18 @@ fn under_v2_with_every_tech_no_new_unit_or_burn_forest_is_legal() {
         at: p(1, 2),
         action: SiteAction::BurnForest
     }));
-    for a in &legal {
-        assert!(
-            !matches!(a, Action::Train { kind, .. } if NEW_UNITS.contains(kind)),
-            "{a:?}"
-        );
-    }
     for kind in NEW_UNITS {
-        assert_illegal(
-            &s,
-            Action::Train {
+        assert!(
+            legal.contains(&Action::Train {
                 city: CityId(0),
                 kind,
-            },
+            }),
+            "{kind:?} should be legal to train under v2"
         );
     }
 }
 
-/// Random v2 games: research follows the rule, v2 techs get researched, nothing else from v2.
+/// Random v2 games: research follows the rule and v2 techs get researched.
 #[test]
 fn random_v2_playouts_research_v2_techs_and_nothing_else() {
     let mut researched_v2 = 0;
@@ -454,12 +448,6 @@ fn random_v2_playouts_research_v2_techs_and_nothing_else() {
                 .any(|a| matches!(a, Action::ChooseReward { .. }))
             {
                 assert_eq!(research_in(&legal), expected_research(&s), "seed {seed}");
-            }
-            for a in &legal {
-                assert!(
-                    !matches!(a, Action::Train { kind, .. } if NEW_UNITS.contains(kind)),
-                    "{a:?}"
-                );
             }
             let a = pick(&mut rng, &legal);
             if matches!(a, Action::Research { tech } if NEW_TECHS.contains(&tech)) {
