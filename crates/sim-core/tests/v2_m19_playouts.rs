@@ -7,6 +7,7 @@ mod common;
 use common::{all_pos, exp_cum, exp_supported};
 use sim_core::actions::{apply, legal_actions, Action};
 use sim_core::data::{Skill, Tech, UnitType};
+use sim_core::grid::chebyshev;
 use sim_core::map::MapParams;
 use sim_core::rng::Rng;
 use sim_core::score::{score, score_breakdown};
@@ -40,8 +41,8 @@ fn v2_config(turn_cap: u32) -> Config {
     }
 }
 
-/// Biased random policy that strongly favors v2 unit training and Persist follow-up attacks so
-/// multi-seed playouts thoroughly exercise M19 mechanics.
+/// Biased random policy that favors v2 unit training, enemy-directed movement, and Persist
+/// follow-up attacks so multi-seed playouts thoroughly exercise M19 mechanics (Q55 A).
 fn pick_m19(s: &State, legal: &[Action], rng: &mut Rng) -> Action {
     // Always prioritize follow-up attacks from a Persist unit currently in Phase::Moved.
     let persist_attacks: Vec<Action> = legal
@@ -75,16 +76,48 @@ fn pick_m19(s: &State, legal: &[Action], rng: &mut Rng) -> Action {
             )
         })
         .collect();
-    if !priority.is_empty() && rng.gen_range(3) != 0 {
+    if !priority.is_empty() && rng.gen_range(4) != 0 {
         return priority[rng.gen_range(priority.len() as u32) as usize];
+    }
+
+    // Bias moves toward enemy units/cities so v2 armies engage and trigger Persist/Stiff combat.
+    let targets: Vec<_> = s
+        .units
+        .iter()
+        .filter(|u| u.owner != s.current)
+        .map(|u| u.pos)
+        .chain(
+            s.cities
+                .iter()
+                .filter(|c| c.owner != s.current)
+                .map(|c| c.pos),
+        )
+        .collect();
+    let closing_moves: Vec<Action> = legal
+        .iter()
+        .copied()
+        .filter(|a| {
+            let Action::Move { unit, to } = *a else {
+                return false;
+            };
+            let Some(u) = s.unit(unit) else {
+                return false;
+            };
+            let d_now = targets.iter().map(|&t| chebyshev(u.pos, t)).min();
+            let d_new = targets.iter().map(|&t| chebyshev(to, t)).min();
+            matches!((d_now, d_new), (Some(a), Some(b)) if b < a)
+        })
+        .collect();
+    if !closing_moves.is_empty() && rng.gen_range(4) != 0 {
+        return closing_moves[rng.gen_range(closing_moves.len() as u32) as usize];
     }
 
     let others: Vec<Action> = legal
         .iter()
         .copied()
-        .filter(|a| *a != Action::EndTurn)
+        .filter(|a| !matches!(a, Action::EndTurn | Action::Disband { .. }))
         .collect();
-    if others.is_empty() || (legal.contains(&Action::EndTurn) && rng.gen_range(8) == 0) {
+    if others.is_empty() || (legal.contains(&Action::EndTurn) && rng.gen_range(6) == 0) {
         return Action::EndTurn;
     }
     others[rng.gen_range(others.len() as u32) as usize]
