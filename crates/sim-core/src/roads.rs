@@ -42,7 +42,7 @@ pub fn is_connected(state: &State, city: CityId) -> bool {
 }
 
 /// `player`'s capital: its lowest-id city with `is_capital` (unique outside terminal states).
-fn capital_of(state: &State, player: PlayerId) -> Option<CityId> {
+pub(crate) fn capital_of(state: &State, player: PlayerId) -> Option<CityId> {
     debug_assert!(
         state.outcome.is_some()
             || state

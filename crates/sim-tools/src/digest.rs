@@ -100,11 +100,14 @@ pub fn state_digest(state: &State) -> u64 {
         h.opt_u32(t.city.map(|c| c.0));
         h.opt_u32(t.owner_city.map(|c| c.0));
         h.opt_u32(t.unit.map(|u| u.0));
-        // Only under v2 (docs/MILESTONE_16 "Digest", docs/MILESTONE_17 "Digest").
+        // Only under v2 (docs/MILESTONE_16 "Digest", docs/MILESTONE_17 "Digest",
+        // docs/MILESTONE_18 "Digest").
         if v2 {
             h.bool(t.road);
             h.opt_u8(t.building.map(|b| b as u8));
             h.u8(t.building_level);
+            h.bool(t.lighthouse);
+            h.opt_u8(t.monument.map(|m| m as u8));
         }
     }
 
@@ -160,6 +163,12 @@ pub fn state_digest(state: &State) -> u64 {
         h.len(pl.explored.len());
         for &e in &pl.explored {
             h.bool(e);
+        }
+        if v2 {
+            h.u32(pl.kills);
+            h.u8(pl.lighthouses_discovered);
+            h.u8(pl.monuments_unlocked.bits());
+            h.u8(pl.monuments_placed.bits());
         }
     }
 

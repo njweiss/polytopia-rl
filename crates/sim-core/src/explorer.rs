@@ -7,7 +7,7 @@ use crate::actions::reveal_within;
 use crate::grid::{all_tiles, neighbors, Pos};
 use crate::movement::terrain_allows;
 use crate::rng::Rng;
-use crate::state::{CityId, State};
+use crate::state::{CityId, Ruleset, State};
 
 /// Moves the explorer makes before it disappears.
 pub const EXPLORER_MOVES: u32 = 15;
@@ -48,13 +48,22 @@ pub fn explorer_walk(state: &mut State, city: CityId) {
             .collect();
 
         let next = if let Some(dmin) = candidates.iter().map(|&(_, d, _)| d).min() {
+            let v2_bonus = (state.config.ruleset == Ruleset::V2)
+                .then(|| state.tables.v2_rules().explorer_lighthouse_bonus);
             let score = |q: Pos, f: u32| {
-                let base = f.min(FOG_CAP) as f32;
+                let mut s = f.min(FOG_CAP) as f32;
                 if visited[state.index(q)] {
-                    base - VISITED_PENALTY
-                } else {
-                    base
+                    s -= VISITED_PENALTY;
                 }
+                if let Some(bonus) = v2_bonus {
+                    let has_fog_lighthouse = neighbors(n, q)
+                        .chain(std::iter::once(q))
+                        .any(|t| !state.is_explored(owner, t) && state.tile(t).lighthouse);
+                    if has_fog_lighthouse {
+                        s += bonus;
+                    }
+                }
+                s
             };
             let nearest: Vec<(Pos, f32)> = candidates
                 .iter()

@@ -547,6 +547,9 @@ impl Tables {
                 rules.road_step_cost
             ));
         }
+        if rules.disband_refund_divisor == 0 {
+            return Err("v2/rules.json: disband_refund_divisor must be non-zero".into());
+        }
 
         let building_names: Vec<String> = ALL_BUILDINGS
             .iter()

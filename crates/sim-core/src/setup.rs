@@ -2,10 +2,12 @@
 
 use crate::data::{Tables, UnitType};
 use crate::grid::{chebyshev, Pos};
-use crate::map::{generate_map, GeneratedMap, MapParams, Site};
+use crate::map::{generate_map, GeneratedMap, MapParams, Site, Terrain};
+use crate::monuments::corners;
 use crate::rng::Rng;
 use crate::state::{
-    City, CityId, Config, MonumentSet, Phase, PlayerState, State, TechSet, TileState, Unit, UnitId,
+    City, CityId, Config, MonumentSet, Phase, PlayerState, Ruleset, State, TechSet, TileState,
+    Unit, UnitId,
 };
 
 /// Builds the starting state. Draws exactly one value from `rng` (the seat coin flip).
@@ -95,7 +97,21 @@ pub fn new_game(map: &GeneratedMap, config: &Config, mut rng: Rng) -> State {
             monuments_placed: MonumentSet::new(),
         });
     }
-    let players: [PlayerState; 2] = players.try_into().expect("two players");
+    let mut players: [PlayerState; 2] = players.try_into().expect("two players");
+
+    if config.ruleset == Ruleset::V2 {
+        for q in corners(map.size) {
+            let idx = q.row as usize * n + q.col as usize;
+            let t = &mut tiles[idx];
+            t.lighthouse = true;
+            t.terrain = Terrain::Field;
+            t.resource = None;
+            if !config.full_observability {
+                players[0].explored[idx] = false;
+                players[1].explored[idx] = false;
+            }
+        }
+    }
 
     State {
         size: map.size,

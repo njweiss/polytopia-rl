@@ -2,7 +2,7 @@
 
 use crate::data::UnitType;
 use crate::economy::cumulative_population_for_level;
-use crate::state::{PlayerId, State};
+use crate::state::{PlayerId, Ruleset, State};
 
 /// One player's score by term, each already multiplied by its weight.
 #[derive(Debug, PartialEq, Eq)]
@@ -64,6 +64,18 @@ pub fn score_breakdown(state: &State, player: PlayerId) -> ScoreBreakdown {
         .filter(|&&t| techs.contains(t))
         .map(|&t| state.tables.tech(t).tier)
         .sum();
+    let monuments = if state.config.ruleset == Ruleset::V2 {
+        let count = state
+            .tiles
+            .iter()
+            .filter(|t| {
+                t.monument.is_some() && t.owner_city.is_some_and(|c| state.city(c).owner == player)
+            })
+            .count() as u32;
+        count * state.tables.v2_rules().monument_score
+    } else {
+        0
+    };
     ScoreBreakdown {
         units,
         territory: w.territory_per_tile * tiles,
@@ -71,7 +83,7 @@ pub fn score_breakdown(state: &State, player: PlayerId) -> ScoreBreakdown {
         cities,
         parks: w.park * parks,
         techs: w.tech_per_tier * tiers,
-        monuments: 0,
+        monuments,
     }
 }
 
