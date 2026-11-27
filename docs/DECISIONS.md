@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 and `9af6590` for Q47-Q49.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 `9af6590` for Q47-Q49 `ba89c28` for Q50-Q51 and `83c4003` for Q52-Q54.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -58,3 +58,6 @@ spec section, or the brief when the answer is an implementation detail.
 | Q49 | 2026-11-19 | Opponent's level-up reward during the current turn | A pending reward blocks only its owner (chosen at the start of their turn); a captured city keeps its pending reward and the capturer must choose it | Spec "Forced rewards"; `actions.rs`, `v2_m17_playouts.rs` |
 | Q50 | 2026-11-26 | Gated `update_connections` vs M16 `connections.rs` tests triggering via `EndTurn` | Option C: single-BFS speedup only, keep `update_connections` running after every non-terminal v2 action (no action-kind gating; 7 M16 tests in `connections.rs` untouched) | M17 brief; `roads.rs`, `actions.rs` |
 | Q51 | 2026-11-26 | `connections.rs::check_update` population assertion on M17 `BuildBuilding` / `Destroy` | Option A: add `Action::BuildBuilding { .. } \| Action::Destroy { .. }` to line 486's population-delta skip guard alongside `Site` and `ChooseReward` (`connected_to` still checked after every action) | M17 brief; `connections.rs` |
+| Q52 | 2026-11-26 | M15 `ruleset.rs::new_game_reads_the_tables_of_the_configs_ruleset` whole-state V2 == V1 start check | Option A: verify RNG, seats, cities, units, and non-corner tiles/explored match `V1` while checking the four corners are fogged `Field` lighthouses with no resource under `V2` | M18 brief; `ruleset.rs` |
+| Q53 | 2026-11-26 | M16 `connections.rs` playout vacuity guard (`losses > 2`) drops to 2 under M18 | Option A: initially expand seed range `0..30` -> `0..45` keeping `losses > 2` (later superseded by Q54 B) | M18 brief; `connections.rs` |
+| Q54 | 2026-11-27 | M16 `connections.rs` expanded range `0..45` (Q53 A) still has `losses == 2` under M18 | Option B: relax vacuity guard on line 611 from `losses > 2` to `losses >= 2` and restore seed range to `0..30` | M18 brief; `connections.rs` |
