@@ -33,3 +33,13 @@ Append entries below. Format:
   - B: Relax the vacuity guard from `losses > 2` to `losses >= 2`.
 - Agent's pick and why: Option A — preserves every assertion threshold intact while exercising more v2 playout seeds (~4–5s).
 - Owner answer: A (owner, 2026-11-26) — expand seed range `0..30` -> `0..45` in `connections.rs`, keeping `losses > 2` unchanged.
+
+## Q54: M16 `connections.rs` expanded range `0..45` (Q53 A) still has `losses == 2` under M18
+
+- Needed for: Milestone 18 and `crates/sim-core/tests/connections.rs` (`random_v2_playouts_follow_the_update_and_replay_identically`, lines 560 and 611).
+- Ambiguity: Q53 A expanded `connections.rs` from `0..30` to `0..45` to satisfy the vacuity guard `assert!(losses > 2, "only {losses} connections lost")`. With M18 implemented (all 28 new M18 tests, all other Rust tests, all 26 Python tests, all 420 RL tests, v1 hashes, and replay fixture passing), every `check_update` and replay assertion in `connections.rs` passes across `0..45` (`built = 3426 > 1000`, `gains = 91 > 30`), but seeds `30..45` happen to incur 0 connection losses, leaving `losses == 2` (from seeds 13 and 19, identical to `0..30`). Extending the scan shows the next connection losses occur at seed 77 (3rd loss) and seed 98 (4th loss). Because `.git/tests-lock` (`c890971`) locks `crates/*/tests/`, `connections.rs` cannot be edited in Phase B without owner approval and a test-lock update.
+- Options:
+  - A: Expand the seed range in `crates/sim-core/tests/connections.rs` from `0..45` to `0..80` (3 losses, ~8–9s debug) or `0..100` (4 losses, ~10–11s debug), keeping `losses > 2` unchanged.
+  - B: Relax the vacuity guard on line 611 from `losses > 2` to `losses >= 2` (keeping `0..30` or `0..45` fast at ~3–5s; dedicated unit tests in `connections.rs` cover every connection-loss case and 2 playout losses still verify non-vacuity).
+- Agent's pick and why: Option A (`0..80`) to stay consistent with Q53 A's preference for keeping `losses > 2` intact, or Option B (`losses >= 2`) if faster debug test runtime (~3–5s vs ~9s) is preferred.
+- Owner answer: B (owner, 2026-11-27) — relax vacuity guard on line 611 from `losses > 2` to `losses >= 2` and restore seed range to `0..30`.

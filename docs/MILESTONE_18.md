@@ -302,8 +302,8 @@ every edit in the phase A commit message):
 6. **M15 `crates/sim-core/tests/ruleset.rs:174` (Q52 A):** update `new_game_reads_the_tables_of_the_configs_ruleset`
    to verify the four corner tiles are fogged `Field` lighthouses with no resource under `V2` while keeping
    exact equality with `V1` on RNG, seats, cities, units, and all non-corner tiles/explored entries.
-7. **M16 `crates/sim-core/tests/connections.rs:560` (Q53 A):** expand the playout seed range from `0..30` to
-   `0..45` so the vacuity guard `losses > 2` stays unchanged under M18's shifted action draws.
+7. **M16 `crates/sim-core/tests/connections.rs:611` (Q53 A, superseded by Q54 B):** keep seed range `0..30`
+   and relax the playout vacuity guard from `losses > 2` to `losses >= 2` under M18's shifted action draws.
 
 ## Tests (phase A guidance)
 
