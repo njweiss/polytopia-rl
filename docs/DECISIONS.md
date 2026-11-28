@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 `9af6590` for Q47-Q49 `ba89c28` for Q50-Q51 `83c4003` for Q52-Q54 and `4190c8a` for Q55.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 `9af6590` for Q47-Q49 `ba89c28` for Q50-Q51 `83c4003` for Q52-Q54 `4190c8a` for Q55 and `c966bea` for Q56-Q57.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -62,3 +62,5 @@ spec section, or the brief when the answer is an implementation detail.
 | Q53 | 2026-11-26 | M16 `connections.rs` playout vacuity guard (`losses > 2`) drops to 2 under M18 | Option A: initially expand seed range `0..30` -> `0..45` keeping `losses > 2` (later superseded by Q54 B) | M18 brief; `connections.rs` |
 | Q54 | 2026-11-27 | M16 `connections.rs` expanded range `0..45` (Q53 A) still has `losses == 2` under M18 | Option B: relax vacuity guard on line 611 from `losses > 2` to `losses >= 2` and restore seed range to `0..30` | M18 brief; `connections.rs` |
 | Q55 | 2026-11-27 | `v2_m19_playouts` random policy never triggers a Persist chain follow-up (`persist_chains == 0`) | Option A: calibrate `pick_m19` to bias enemy-directed moves and avoid `Disband` spam while keeping the 11x11 map and all invariant/vacuity assertions intact | M19 brief; `v2_m19_playouts.rs` |
+| Q56 | 2026-11-27 | Phase A tests assert Warrior vs Warrior forest Archery strictly increases retaliation (`5 > 5`) | Option A: use Swordsman attacking Warrior on forest (`dealt` 8 -> 7, `retaliation` 4 -> 5) in `v2_view.rs` and `v2_env.rs` | M20 brief; `v2_view.rs`, `v2_env.rs` |
+| Q57 | 2026-11-27 | Phase A test `encode_board_v2_damage_preview_aggregation_and_zero_cases` puts own Archer in range of Target 1 | Option A: relocate `u2` (and Target 2/3/4, `u3`) so `u2` is at distance 3 from Target 1 while keeping distance 2 from Target 2 and Target 4 | M20 brief; `v2_env.rs` |

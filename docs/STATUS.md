@@ -5,13 +5,21 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
+**Milestone 20 (v2 observation, factored action space, Env/Python support, and damage preview) merged
+into `main` (`c966bea`, 2026-11-27), `pixi run check` green (742 cargo, 33 + 425 pytest).** Brief
+`4bda847` (O1–O7 confirmed); tests `e47af57` (29 new Rust/Python/RL tests) + `13b27cd` (Q56 A, Q57 A);
+implementation `1b4992e` (incl. `/review 20` Nit #1 zero-alloc `PyEnv::observation` dims). `/review 20`:
+merge, 0 blocking defects, 0 spec gaps. Hashes (`size=11`): v1 `obs_hash d5f9b1033cfd55ca` / `rules_hash
+a8b52b91eae34503` (byte-identical, replay fixture OK); v2 `obs_hash c15247decc21ae4f` / `rules_hash
+ed271736a688e86d`. Full v2 RL pipeline (sim, PyO3, PolicyNet, VecEnv, PPO, eval, checkpoints) is now
+live. Next: the M21 brief (v1 -> v2 policy transfer: warm-start & distillation).
+
 **Milestone 19 (v2 units, skills, bots and renderer) merged into `main` (`4190c8a`, 2026-11-27),
 `pixi run check` green (725 cargo, 26 + 420 pytest).** Brief `c1bee6b` (U1–U6 confirmed); tests
 `d5c2c02` (45 new Rust tests across `sim-core`, `bots`, `sim-tools`, all 12 mutant groups covered) +
 `008e2ad` (Q55 A); implementation `7dd94b4`. `/review 19`: merge, 0 blocking defects, 0 spec gaps, 3
 non-blocking nits. v1 identity holds (`obs_hash d5f9b1033cfd55ca`, `rules_hash a8b52b91eae34503`, v1
-replay fixture OK). All v2 game rules are now complete. Next: the M20 brief (v2 observation, factored
-action space, `Env` support, and damage preview).
+replay fixture OK).
 
 **Milestone 18 (v2 monuments, lighthouses and the v2 Explorer) merged into `main` (`83c4003`,
 2026-11-27), `pixi run check` green (680 cargo, 26 + 420 pytest).** Brief `728df83` (M1–M7 confirmed) +
@@ -112,6 +120,7 @@ Milestone 12 (closed 2026-10-26):
 | M17 | v2 economy buildings (`Sawmill`/`Windmill`/`Forge`/`Market`), `BurnForest`, `Disband`, `Destroy`, signed `i32` population/loss & score floor, M16 carry-overs & `sim-core` hot-path cleanups; v1 byte-identical | merged ba89c28; `pixi run check` green (652 cargo, 26 + 420 pytest); `/review 17`: merge, no defects, 4 nits |
 | M18 | v2 lighthouses (4 corners, discovery +1 pop), v2 Explorer (+3.5 lighthouse bonus), monuments (`ParkOfFortune`, `GateOfPower`, `EyeOfGod`, `BuildMonument`, `Destroy`, 400 score, kills tracking), M17 review nits; v1 byte-identical | merged 83c4003; `pixi run check` green (680 cargo, 26 + 420 pytest); `/review 18`: merge, 0 defects, 0 spec gaps |
 | M19 | v2 units (`Swordsman`, `Catapult`, `Knight`), `Stiff`/`Persist` skills, `PlayerView::ruleset()`, v2 `RushBot`/`EconomyBot` extensions, v2 text/HTML renderer & CLI `--ruleset v2`; v1 byte-identical | merged 4190c8a; `pixi run check` green (725 cargo, 26 + 420 pytest); `/review 19`: merge, 0 defects, 0 spec gaps |
+| M20 | `PlayerView` v2 & `attack_preview`, 64-ch/33-global v2 obs (37/18 v1 prefix + 6 damage-preview channels), 15 factored `ActionType`s & `ActionMasks`, `obs_hash_for`, `Env`/`PyEnv`/`PPOConfig` `V2` support; v1 byte-identical | merged c966bea; `pixi run check` green (742 cargo, 33 + 425 pytest); `/review 20`: merge, 0 defects, 0 spec gaps |
 
 **Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
 worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
@@ -125,27 +134,27 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 ## Waiting on the owner
 
 1. Optional: M16b Gate item 3 (re-run the M13a profile fixture + `torch.profiler` sync counts on the RTX 4060 machine and record in `docs/RL_REPORT.md`).
-2. Next is the M20 brief (v2 observation, factored action space, `Env` support, and damage preview).
-3. Distillation vs warm start for the v1 -> v2 transfer: decided at M21, possibly both as arms.
+2. Next is the M21 brief (v1 -> v2 policy transfer: warm-start vs distillation, possibly both as arms).
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q56). Q1-Q55 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q58). Q1-Q57 are in `docs/DECISIONS.md`.
 - Spec open questions: none. `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc
   was retired in M16b, B5).
-- `.git/tests-lock` points at `008e2ad` (M19's Q55 A test commit).
+- `.git/tests-lock` points at `13b27cd` (M20's Q56 A / Q57 A test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
 1. Run M16b Gate item 3 on the CUDA machine (profile fixture + sync counts) and log results in `docs/RL_REPORT.md`.
-2. M20 brief (v2 observation channels, factored action slots for v2 actions/units, `sim-env` & `sim-py` `V2` support, and damage preview observation feature).
+2. M21 brief (v1 -> v2 policy transfer: prefix warm-start & distillation into the 64-ch / 33-global / 15-kind v2 `PolicyNet`).
 3. Optional viewer polish: render `road`/`building`/`monument`/`lighthouse` badges visually in `html.rs` JS `draw()` (data keys already emitted in M19).
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-11-27 | M20 merged (`c966bea`), `pixi run check` green (742 cargo, 33 + 425 pytest), branch removed; `/review 20` verdict merge (0 blocking defects, 0 spec gaps; Nit #1 fixed before merge); Q56–Q57 moved to `DECISIONS.md`; tests locked at `13b27cd`. |
 | 2026-11-27 | M19 merged (`4190c8a`), `pixi run check` green (725 cargo, 26 + 420 pytest), branch removed; `/review 19` verdict merge (0 blocking defects, 0 spec gaps); Q55 moved to `DECISIONS.md`; tests locked at `008e2ad`. |
 | 2026-11-27 | M18 merged (`83c4003`), `pixi run check` green (680 cargo, 26 + 420 pytest), branch removed; `/review 18` verdict merge (0 blocking defects, 0 spec gaps); Q52–Q54 moved to `DECISIONS.md`; tests locked at `8adaca5`. |
 | 2026-11-26 | M17 merged (`ba89c28`), `pixi run check` green (652 cargo, 26 + 420 pytest), branch removed; `/review 17` verdict merge (0 blocking defects, 4 nits); Q50–Q51 moved to `DECISIONS.md`; tests locked at `e163730`. |
