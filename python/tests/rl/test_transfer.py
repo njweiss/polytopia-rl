@@ -32,7 +32,7 @@ import torch
 from polytopia_rl import experiment, train
 from polytopia_rl.checkpoint import Checkpoint, load_net, save_checkpoint
 from polytopia_rl.config import PPOConfig, load_config
-from polytopia_rl.model import PolicyNet
+from polytopia_rl.model import Features, PolicyNet
 from polytopia_rl.ppo import RolloutBuffer, collect_rollout, train_update
 from polytopia_rl.transfer import (
     compute_teacher_logits,
@@ -690,7 +690,8 @@ def test_distill_v1_to_v2_arch_v2_mixed_batch_and_all_edge_cases():
         tf = teacher.trunk(board[:, : v1_spec["channels"]], glob[:, : v1_spec["globals"]])
         torch.testing.assert_close(t_logits[0], teacher.actor_logits(tf), atol=1e-6, rtol=0)
         torch.testing.assert_close(t_logits[1], teacher.kind_logits(tf, actors), atol=1e-6, rtol=0)
-        torch.testing.assert_close(t_logits[2][:5], teacher.arg_logits(tf, actors[:5], kinds[:5]), atol=1e-6, rtol=0)
+        tf5 = Features(tf.fmap[:5], tf.g[:5])
+        torch.testing.assert_close(t_logits[2][:5], teacher.arg_logits(tf5, actors[:5], kinds[:5]), atol=1e-6, rtol=0)
 
     sf = student.trunk(board, glob)
     s_logits = (student.actor_logits(sf), student.kind_logits(sf, actors), student.arg_logits(sf, actors, kinds))
