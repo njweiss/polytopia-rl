@@ -165,8 +165,12 @@ class ArgHead(nn.Module):
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, spec: dict, width: int = 64, blocks: int = 4):
+    def __init__(self, spec: dict, width: int = 64, blocks: int = 4, arch: str = "v1"):
         super().__init__()
+        if arch == "v2":
+            raise NotImplementedError("milestone 21")
+        if arch != "v1":
+            raise ValueError(f"arch {arch!r} is not 'v1' or 'v2'")
         channels, num_globals = spec["channels"], spec["globals"]
         self.num_tiles = spec["height"] * spec["width"]
         kinds = spec["action_types"]
