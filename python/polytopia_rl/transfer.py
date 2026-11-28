@@ -102,15 +102,16 @@ def warm_start_v1_to_v2(
     for k in exact_keys:
         if v1_state[k].shape != dst_state[k].shape:
             raise ValueError(f"shape mismatch at {k}: v1={tuple(v1_state[k].shape)}, dst={tuple(dst_state[k].shape)}")
-    if v1_state["kind_head.mlp.2.weight"].shape != (k1, dst_net.kind_head.mlp[2].weight.shape[1]):
-        raise ValueError("kind_head.mlp.2.weight shape mismatch")
-    if v1_state["kind_head.mlp.2.bias"].shape != (k1,):
-        raise ValueError("kind_head.mlp.2.bias shape mismatch")
-    if v1_state["arg_head.kind_embed.weight"].shape != (k1, dst_net.arg_head.kind_embed.weight.shape[1]):
-        raise ValueError("arg_head.kind_embed.weight shape mismatch")
-    if v1_state["arg_head.tile_bias"].shape != (k1,):
-        raise ValueError("arg_head.tile_bias shape mismatch")
+    for key, expected in (
+        ("kind_head.mlp.2.weight", (k1, dst_net.kind_head.mlp[2].weight.shape[1])),
+        ("kind_head.mlp.2.bias", (k1,)),
+        ("arg_head.kind_embed.weight", (k1, dst_net.arg_head.kind_embed.weight.shape[1])),
+        ("arg_head.tile_bias", (k1,)),
+    ):
+        if v1_state[key].shape != expected:
+            raise ValueError(f"{key} shape mismatch")
 
+    enum_pairs = []
     for dst_idx, dst_k in enumerate(dst_net.arg_head.enum_kinds):
         name = v2_spec["action_types"][dst_k]
         if name in v1_enum_by_name:
@@ -122,6 +123,7 @@ def warm_start_v1_to_v2(
                 raise ValueError(f"enum head {name!r} shape mismatch: v1={tuple(src_w.shape)}, dst={tuple(dst_m.weight.shape)}")
             if src_b.shape != (src_w.shape[0],):
                 raise ValueError(f"enum head {name!r} bias shape mismatch")
+            enum_pairs.append((dst_m, src_w, src_b))
 
     with torch.no_grad():
         for k in exact_keys:
@@ -139,16 +141,10 @@ def warm_start_v1_to_v2(
         dst_net.arg_head.kind_embed.weight[:k1].copy_(v1_state["arg_head.kind_embed.weight"])
         dst_net.arg_head.tile_bias[:k1].copy_(v1_state["arg_head.tile_bias"])
 
-        for dst_idx, dst_k in enumerate(dst_net.arg_head.enum_kinds):
-            name = v2_spec["action_types"][dst_k]
-            if name in v1_enum_by_name:
-                src_idx = v1_enum_by_name[name]
-                src_w = v1_state[f"arg_head.enum.{src_idx}.weight"]
-                src_b = v1_state[f"arg_head.enum.{src_idx}.bias"]
-                n = src_w.shape[0]
-                dst_m = dst_net.arg_head.enum[dst_idx]
-                dst_m.weight[:n].copy_(src_w)
-                dst_m.bias[:n].copy_(src_b)
+        for dst_m, src_w, src_b in enum_pairs:
+            n = src_w.shape[0]
+            dst_m.weight[:n].copy_(src_w)
+            dst_m.bias[:n].copy_(src_b)
 
 
 def load_warm_start(dst_net: PolicyNet, ckpt_path: str, v2_spec: dict) -> Checkpoint:
@@ -227,6 +223,12 @@ def compute_teacher_logits(
     return a_logits, k_logits, arg_logits
 
 
+def _masked_kl_if_any(t_logits: Tensor, s_logits: Tensor, mask: Tensor, zero: Tensor, temp: float) -> Tensor:
+    has_any = mask.any(dim=1)
+    safe_mask = mask | ~has_any.unsqueeze(1)
+    return torch.where(has_any, masked_kl(t_logits, s_logits, safe_mask, temp=temp), zero)
+
+
 def distill_kl(
     teacher_logits: tuple[Tensor, Tensor, Tensor],
     student_logits: tuple[Tensor, Tensor, Tensor],
@@ -248,11 +250,7 @@ def distill_kl(
     zero = torch.zeros(s_actor.shape[0], dtype=s_actor.dtype, device=device)
 
     kl_actor = masked_kl(t_actor, s_actor, actor_mask, temp=temp)
-
-    km_t = kind_mask[:, :k1]
-    has_k = km_t.any(dim=1)
-    safe_km = km_t | ~has_k.unsqueeze(1)
-    kl_kind = torch.where(has_k, masked_kl(t_kind, s_kind[:, :k1], safe_km, temp=temp), zero)
+    kl_kind = _masked_kl_if_any(t_kind, s_kind[:, :k1], kind_mask[:, :k1], zero, temp)
 
     v1_arg_lens = torch.tensor(
         list(teacher_spec["arg_lens"]) + [0] * (k2 - k1),
@@ -260,11 +258,8 @@ def distill_kl(
         device=device,
     )
     len_b = v1_arg_lens[kinds]
-    n_args = arg_mask.shape[1]
-    am_t = arg_mask & (torch.arange(n_args, device=device).unsqueeze(0) < len_b.unsqueeze(1))
-    has_a = am_t.any(dim=1)
-    safe_am = am_t | ~has_a.unsqueeze(1)
-    kl_arg = torch.where(has_a, masked_kl(t_arg, s_arg, safe_am, temp=temp), zero)
+    am_t = arg_mask & (torch.arange(arg_mask.shape[1], device=device).unsqueeze(0) < len_b.unsqueeze(1))
+    kl_arg = _masked_kl_if_any(t_arg, s_arg, am_t, zero, temp)
 
     total = kl_actor + kl_kind + kl_arg
     return total, {"actor": kl_actor, "kind": kl_kind, "arg": kl_arg}

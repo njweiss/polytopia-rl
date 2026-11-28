@@ -267,41 +267,35 @@ class PolicyNet(nn.Module):
         self.register_buffer("has_arg", torch.tensor([n > 0 for n in arg_lens]), persistent=False)
         ctx_dim = 3 * width  # [global MLP, mean-pool F, max-pool F]
         if arch == "v1":
-            # Trunk.
             self.stem = _init(nn.Conv2d(channels, width, 3, padding=1), math.sqrt(2))
             self.blocks = nn.Sequential(*[ResBlock(width) for _ in range(blocks)])
             self.global_mlp = nn.Sequential(_mlp([num_globals, width, width], math.sqrt(2)), nn.ReLU())
-            # Heads.
-            self.actor_head = ActorHead(width, ctx_dim)
-            self.kind_head = KindHead(width, ctx_dim, self.num_tiles, len(kinds))
-            self.arg_head = ArgHead(width, ctx_dim, self.num_tiles, kinds, arg_lens)
-            self.value_head = _mlp([ctx_dim, width, 1], 1.0)
         else:
             rows = torch.linspace(-1.0, 1.0, height, dtype=torch.float32).view(1, 1, height, 1).expand(1, 1, height, width_board)
             cols = torch.linspace(-1.0, 1.0, width_board, dtype=torch.float32).view(1, 1, 1, width_board).expand(1, 1, height, width_board)
             self.register_buffer("coords", torch.cat([rows, cols], dim=1).contiguous(), persistent=False)
-            # Trunk.
             self.stem = _init(nn.Conv2d(channels + 2, width, 3, padding=1), math.sqrt(2))
             self.blocks = nn.ModuleList([ResBlockV2(width, blocks) for _ in range(blocks)])
             self.trunk_norm = nn.GroupNorm(_gn_groups(width), width)
             self.global_mlp = nn.Sequential(_mlp([num_globals, width, width], math.sqrt(2)), nn.SiLU())
-            # Heads.
-            self.actor_head = ActorHead(width, ctx_dim)
-            self.kind_head = KindHead(width, ctx_dim, self.num_tiles, len(kinds))
-            self.arg_head = ArgHeadV2(width, ctx_dim, height, width_board, kinds, arg_lens)
-            self.value_head = _mlp([ctx_dim, width, 1], 1.0)
+        self.actor_head = ActorHead(width, ctx_dim)
+        self.kind_head = KindHead(width, ctx_dim, self.num_tiles, len(kinds))
+        self.arg_head = (
+            ArgHead(width, ctx_dim, self.num_tiles, kinds, arg_lens)
+            if arch == "v1"
+            else ArgHeadV2(width, ctx_dim, height, width_board, kinds, arg_lens)
+        )
+        self.value_head = _mlp([ctx_dim, width, 1], 1.0)
 
     def trunk(self, board: Tensor, globals: Tensor) -> Features:
+        g_emb = self.global_mlp(globals)
         if self.arch == "v1":
             fmap = self.blocks(torch.relu(self.stem(board)))
-            g = torch.cat([self.global_mlp(globals), fmap.mean(dim=(2, 3)), fmap.amax(dim=(2, 3))], dim=1)
-            return Features(fmap=fmap, g=g)
-        x = torch.cat([board, self.coords.expand(board.shape[0], -1, -1, -1)], dim=1)
-        x = self.stem(x)
-        g_emb = self.global_mlp(globals)
-        for blk in self.blocks:
-            x = blk(x, g_emb)
-        fmap = F.silu(self.trunk_norm(x))
+        else:
+            x = self.stem(torch.cat([board, self.coords.expand(board.shape[0], -1, -1, -1)], dim=1))
+            for blk in self.blocks:
+                x = blk(x, g_emb)
+            fmap = F.silu(self.trunk_norm(x))
         g = torch.cat([g_emb, fmap.mean(dim=(2, 3)), fmap.amax(dim=(2, 3))], dim=1)
         return Features(fmap=fmap, g=g)
 

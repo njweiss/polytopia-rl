@@ -96,6 +96,14 @@ class RolloutBuffer:
         self.policy_time = 0.0
 
 
+def _obs_tensors(board: np.ndarray, glob: np.ndarray, device) -> tuple[Tensor, Tensor]:
+    return torch.from_numpy(board).to(device), torch.from_numpy(glob).to(device)
+
+
+def _copy_record(rec: dict) -> dict:
+    return {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in rec.items()}
+
+
 def collect_rollout(net, vec_env, buffer: RolloutBuffer, generator: torch.Generator) -> list:
     """Fill `buffer` with `num_steps` steps of `vec_env` (already reset) under `net`; return the
     `EpisodeStat`s of the episodes that finished."""
@@ -105,10 +113,7 @@ def collect_rollout(net, vec_env, buffer: RolloutBuffer, generator: torch.Genera
     buffer.segment_end = None
     buffer.env_time = buffer.policy_time = 0.0
 
-    def tensors(board, glob):
-        return torch.from_numpy(board).to(device), torch.from_numpy(glob).to(device)
-
-    board, glob = tensors(*vec_env.observations())
+    board, glob = _obs_tensors(*vec_env.observations(), device)
     for t in range(buffer.num_steps):
         t0 = time.perf_counter()
         with torch.no_grad():
@@ -130,9 +135,9 @@ def collect_rollout(net, vec_env, buffer: RolloutBuffer, generator: torch.Genera
         cut = np.flatnonzero(step.truncated)
         with torch.no_grad():
             if cut.size:
-                fb, fg = tensors(step.final_board[cut], step.final_globals[cut])
+                fb, fg = _obs_tensors(step.final_board[cut], step.final_globals[cut], device)
                 buffer.next_values[t, torch.from_numpy(cut).to(device)] = net.value(net.trunk(fb, fg))
-            board, glob = tensors(*vec_env.observations())
+            board, glob = _obs_tensors(*vec_env.observations(), device)
         buffer.env_time += t2 - t1
         buffer.policy_time += t1 - t0 + time.perf_counter() - t2
     with torch.no_grad():
@@ -151,9 +156,6 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
     buffer.segment_end = None
     buffer.env_time = buffer.policy_time = 0.0
 
-    def tensors(board, glob):
-        return torch.from_numpy(board).to(device), torch.from_numpy(glob).to(device)
-
     while True:
         ready = vec_env.learner_slots()
         if len(ready) == n and all(x == T for x in t):
@@ -165,7 +167,7 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
             # One learner forward pass for the slots on their learner's move with rows left.
             envs = [vec_env.envs[i] for i in acting]
             obs = [env.observation() for env in envs]
-            board, glob = tensors(np.stack([b for b, _ in obs]), np.stack([g for _, g in obs]))
+            board, glob = _obs_tensors(np.stack([b for b, _ in obs]), np.stack([g for _, g in obs]), device)
             with torch.no_grad():
                 out = net.act(net.trunk(board, glob), env_masks_fn(envs, vec_env.num_tiles), generator)
             ti = torch.tensor([t[i] for i in acting], device=device)
@@ -195,7 +197,7 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
             # observation (the one before the auto-reset), computed for those slots in one batch.
             cut = [tr for tr in done if tr.truncated]
             if cut:
-                fb, fg = tensors(np.stack([tr.final_board for tr in cut]), np.stack([tr.final_globals for tr in cut]))
+                fb, fg = _obs_tensors(np.stack([tr.final_board for tr in cut]), np.stack([tr.final_globals for tr in cut]), device)
                 with torch.no_grad():
                     values = net.value(net.trunk(fb, fg))
                 cut_slots = [tr.slot for tr in cut]
@@ -207,7 +209,7 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
         buffer.env_time += t2 - t1
         buffer.policy_time += t1 - t0 + time.perf_counter() - t2
     with torch.no_grad():
-        buffer.last_value[:] = net.value(net.trunk(*tensors(*vec_env.observations())))
+        buffer.last_value[:] = net.value(net.trunk(*_obs_tensors(*vec_env.observations(), device)))
     return stats
 
 
@@ -220,20 +222,14 @@ class StreamState:
         self.carryover: list[tuple[tuple[int, int], dict]] = []
 
     def state_dict(self) -> dict:
-        def copy_rec(rec: dict) -> dict:
-            return {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in rec.items()}
-
         return {
-            "pending": [[list(k), copy_rec(v)] for k, v in sorted(self.pending.items())],
-            "carryover": [[list(k), copy_rec(v)] for k, v in self.carryover],
+            "pending": [[list(k), _copy_record(v)] for k, v in sorted(self.pending.items())],
+            "carryover": [[list(k), _copy_record(v)] for k, v in self.carryover],
         }
 
     def load_state_dict(self, state: dict) -> None:
-        def copy_rec(rec: dict) -> dict:
-            return {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in rec.items()}
-
-        self.pending = {(int(k[0]), int(k[1])): copy_rec(v) for k, v in state["pending"]}
-        self.carryover = [((int(k[0]), int(k[1])), copy_rec(v)) for k, v in state["carryover"]]
+        self.pending = {(int(k[0]), int(k[1])): _copy_record(v) for k, v in state["pending"]}
+        self.carryover = [((int(k[0]), int(k[1])), _copy_record(v)) for k, v in state["carryover"]]
 
 
 def collect_rollout_stream(
@@ -255,9 +251,6 @@ def collect_rollout_stream(
     lanes: dict[tuple[int, int], list[dict]] = {}
     collected = 0
 
-    def tensors(board, glob):
-        return torch.from_numpy(board).to(device), torch.from_numpy(glob).to(device)
-
     if state.carryover:
         take = min(batch, len(state.carryover))
         for lane_id, rec in state.carryover[:take]:
@@ -275,7 +268,7 @@ def collect_rollout_stream(
             obs = [env.observation() for env in envs]
             boards_np = [b.copy() for b, _ in obs]
             globs_np = [g.copy() for _, g in obs]
-            board, glob = tensors(np.stack(boards_np), np.stack(globs_np))
+            board, glob = _obs_tensors(np.stack(boards_np), np.stack(globs_np), device)
             with torch.no_grad():
                 out = net.act(net.trunk(board, glob), env_masks_fn(envs, vec_env.num_tiles), generator)
             actors_list = out.actors.cpu().tolist()
@@ -359,26 +352,26 @@ def collect_rollout_stream(
             else:
                 next_val_list.append(0.0)
 
+    def fill_boot(indices: list[int], obs_list: list[tuple[np.ndarray, np.ndarray]]) -> None:
+        if not indices:
+            return
+        b, g = _obs_tensors(np.stack([x for x, _ in obs_list]), np.stack([y for _, y in obs_list]), device)
+        for idx, v in zip(indices, net.value(net.trunk(b, g)).cpu().tolist()):
+            next_val_list[idx] = v
+
     t_boot = time.perf_counter()
     with torch.no_grad():
-        if trunc_indices:
-            fb, fg = tensors(np.stack([b for b, _ in trunc_obs]), np.stack([g for _, g in trunc_obs]))
-            tvals = net.value(net.trunk(fb, fg)).cpu().tolist()
-            for idx, v in zip(trunc_indices, tvals):
-                next_val_list[idx] = v
+        fill_boot(trunc_indices, trunc_obs)
         if live_boot_indices:
-            obs = [vec_env.envs[s].observation() for s in live_boot_slots]
-            lb, lg = tensors(np.stack([b for b, _ in obs]), np.stack([g for _, g in obs]))
-            lvals = net.value(net.trunk(lb, lg)).cpu().tolist()
-            for idx, v in zip(live_boot_indices, lvals):
-                next_val_list[idx] = v
+            fill_boot(live_boot_indices, [vec_env.envs[s].observation() for s in live_boot_slots])
     buffer.policy_time += time.perf_counter() - t_boot
 
+    actions_t = torch.tensor([r["action"] for r in ordered], dtype=torch.int64).reshape(T, E, 3)
     buffer.board.copy_(torch.from_numpy(np.stack([r["board"] for r in ordered])).reshape(T, E, *buffer.board.shape[2:]))
     buffer.globals.copy_(torch.from_numpy(np.stack([r["globals"] for r in ordered])).reshape(T, E, -1))
-    buffer.actors.copy_(torch.tensor([r["action"][0] for r in ordered], dtype=torch.int64).reshape(T, E))
-    buffer.kinds.copy_(torch.tensor([r["action"][1] for r in ordered], dtype=torch.int64).reshape(T, E))
-    buffer.args.copy_(torch.tensor([r["action"][2] for r in ordered], dtype=torch.int64).reshape(T, E))
+    buffer.actors.copy_(actions_t[..., 0])
+    buffer.kinds.copy_(actions_t[..., 1])
+    buffer.args.copy_(actions_t[..., 2])
     buffer.actor_mask.copy_(torch.from_numpy(np.stack([r["actor_mask"] for r in ordered])).reshape(T, E, -1))
     buffer.kind_mask.copy_(torch.from_numpy(np.stack([r["kind_mask"] for r in ordered])).reshape(T, E, -1))
     buffer.arg_mask.copy_(torch.from_numpy(np.stack([r["arg_mask"] for r in ordered])).reshape(T, E, -1))

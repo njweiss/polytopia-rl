@@ -14,6 +14,7 @@ hold the pool. With `--resume`, `--init-checkpoint` is ignored.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import dataclasses
 import json
@@ -106,6 +107,37 @@ def _set_rng_state(state: dict, gen: torch.Generator) -> None:
     gen.set_state(state["sample"])
 
 
+@contextlib.contextmanager
+def _preserve_torch_rng():
+    state = torch.get_rng_state()
+    try:
+        yield
+    finally:
+        torch.set_rng_state(state)
+
+
+def _weighted_win_rate(tracker: WinRateTracker, names: list[str]) -> float | None:
+    games = sum(tracker.games(n) for n in names)
+    if games == 0:
+        return None
+    return sum(tracker.win_rate(n) * tracker.games(n) for n in names) / games
+
+
+def _should_add_snapshot(cfg, pool: SnapshotPool, tracker: WinRateTracker, global_step: int, last_snapshot_step: int, batch: int) -> bool:
+    snap_wr = getattr(cfg, "snapshot_win_rate", None)
+    if snap_wr is None:
+        return global_step // cfg.snapshot_every > (global_step - batch) // cfg.snapshot_every
+    elapsed = global_step - last_snapshot_step
+    if elapsed < cfg.snapshot_every:
+        return False
+    latest = pool.latest_snapshot()
+    min_games = getattr(cfg, "snapshot_min_games", 20)
+    max_steps = getattr(cfg, "snapshot_max_steps", None)
+    gated_ok = latest is not None and tracker.games(latest.name) >= min_games and tracker.win_rate(latest.name) >= snap_wr
+    forced = max_steps is not None and elapsed >= max_steps
+    return gated_ok or forced
+
+
 def _window_metrics(recent: list[dict]) -> dict:
     """Return, win rate and length over the finished episodes in the window (None if empty)."""
     if not recent:
@@ -158,15 +190,10 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     teacher_spec = None
     if getattr(cfg, "teacher_checkpoint", None) is not None:
         # Preserve global torch RNG so teacher construction does not perturb fresh/resumed runs.
-        torch_rng = torch.get_rng_state()
-        teacher, teacher_ck = load_net(cfg.teacher_checkpoint, device=device, strict_obs=True)
-        torch.set_rng_state(torch_rng)
+        with _preserve_torch_rng():
+            teacher, teacher_ck = load_net(cfg.teacher_checkpoint, device=device, strict_obs=True)
         teacher.eval().requires_grad_(False)
-        teacher_spec = (
-            teacher_ck.spec
-            if teacher_ck.spec is not None
-            else polytopia_sim.Env(size=teacher_ck.cfg.size, ruleset=getattr(teacher_ck.cfg, "ruleset", "v1")).spec()
-        )
+        teacher_spec = teacher_ck.spec if teacher_ck.spec is not None else env_spec(teacher_ck.cfg)
         print(f"teacher {describe(cfg.teacher_checkpoint, teacher_ck)}", flush=True)
 
     # Self-play state: the pool, win-rate tracker, anchors, opponent-draw RNG and action generator.
@@ -177,8 +204,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     anchor_templates: dict[str, PolicyNet] = {}
     anchor_cfgs: dict[str, object] = {}
     if cfg.selfplay and getattr(cfg, "anchor_checkpoints", None):
-        torch_rng = torch.get_rng_state()
-        try:
+        with _preserve_torch_rng():
             for i, anchor_path in enumerate(cfg.anchor_checkpoints):
                 anchor_net, anchor_ck = load_net(anchor_path, device=device, strict_obs=True)
                 if anchor_ck.spec is None or anchor_ck.spec["obs_hash"] != spec["obs_hash"]:
@@ -190,8 +216,6 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                 anchor_templates[name] = anchor_net
                 anchor_cfgs[name] = anchor_ck.cfg
                 print(f"{name} {describe(anchor_path, anchor_ck)}", flush=True)
-        finally:
-            torch.set_rng_state(torch_rng)
 
     opp_rng = np.random.default_rng([cfg.seed, 11])
     opp_gen = torch.Generator(device=device).manual_seed(cfg.seed + 1)
@@ -364,23 +388,9 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             # Only the last window matters, for the curriculum and for the logged rates.
             history.outcomes = history.outcomes[-cfg.stage_window :]
             recent = recent[-cfg.stage_window :]
-            if cfg.selfplay:
-                snap_wr = getattr(cfg, "snapshot_win_rate", None)
-                if snap_wr is None:
-                    if crossed(cfg.snapshot_every):
-                        pool.add(net.state_dict(), global_step)
-                        last_snapshot_step = global_step
-                else:
-                    elapsed = global_step - last_snapshot_step
-                    if elapsed >= cfg.snapshot_every:
-                        latest = pool.latest_snapshot()
-                        min_games = getattr(cfg, "snapshot_min_games", 20)
-                        max_steps = getattr(cfg, "snapshot_max_steps", None)
-                        gated_ok = latest is not None and tracker.games(latest.name) >= min_games and tracker.win_rate(latest.name) >= snap_wr
-                        forced = max_steps is not None and elapsed >= max_steps
-                        if gated_ok or forced:
-                            pool.add(net.state_dict(), global_step)
-                            last_snapshot_step = global_step
+            if cfg.selfplay and _should_add_snapshot(cfg, pool, tracker, global_step, last_snapshot_step, batch):
+                pool.add(net.state_dict(), global_step)
+                last_snapshot_step = global_step
 
             counts = np.bincount(buffer.kinds.flatten().cpu().numpy(), minlength=len(kinds))
             kind_freq = {name: float(c) / batch for name, c in zip(kinds, counts)}
@@ -408,15 +418,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                 anchor_names = [e.name for e in pool.entries if e.pinned]
                 sp_candidates = list(dict.fromkeys(sp_bot_names + anchor_names + ([latest_entry.name] if latest_entry is not None else [])))
                 row["sp_win_rate"] = {n: tracker.win_rate(n) for n in sp_candidates if tracker.games(n) > 0}
-                bot_games = sum(tracker.games(n) for n in sp_bot_names)
-                row["win_rate_bots"] = (
-                    sum(tracker.win_rate(n) * tracker.games(n) for n in sp_bot_names) / bot_games if bot_games > 0 else None
-                )
-                pool_names = [e.name for e in pool.entries]
-                pool_games = sum(tracker.games(n) for n in pool_names)
-                row["win_rate_pool"] = (
-                    sum(tracker.win_rate(n) * tracker.games(n) for n in pool_names) / pool_games if pool_games > 0 else None
-                )
+                row["win_rate_bots"] = _weighted_win_rate(tracker, sp_bot_names)
+                row["win_rate_pool"] = _weighted_win_rate(tracker, [e.name for e in pool.entries])
                 row["win_rate_latest"] = (
                     tracker.win_rate(latest_entry.name)
                     if (latest_entry is not None and tracker.games(latest_entry.name) > 0)

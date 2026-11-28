@@ -1,13 +1,10 @@
 //! Spec hashes stored in checkpoints (docs/MILESTONE_11 "Hashes and checkpoints").
 
-use sim_core::data::{
-    site_actions, techs, units, ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS, ALL_SITE_ACTIONS,
-    ALL_TECHS, ALL_UNITS,
-};
+use sim_core::data::{site_actions, techs, units, ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS};
 use sim_core::state::Ruleset;
 
-use crate::actions::{action_types, arg_len, arg_len_for, ActionType};
-use crate::obs::{obs_spec, obs_spec_for, snake_name};
+use crate::actions::{action_types, arg_len_for};
+use crate::obs::{obs_spec_for, snake_name};
 
 /// Bumped by hand for a rules change that lives in code rather than in `data/*.json`; part of
 /// `rules_hash` (docs/MILESTONE_11 L9).
@@ -33,52 +30,35 @@ pub fn hex64(h: u64) -> String {
 /// rewards, techs and site actions, all as one flat list of items joined with `\n` (no trailing
 /// newline).
 pub fn obs_canonical(size: u8) -> String {
-    let spec = obs_spec(size);
-    let mut items = vec![size.to_string()];
-    items.extend(spec.channel_names);
-    items.extend(spec.global_names);
-    items.extend(ActionType::ALL.iter().map(|&k| snake_name(k)));
-    items.extend(
-        ActionType::ALL
-            .iter()
-            .map(|&k| arg_len(size, k).to_string()),
-    );
-    items.extend(ALL_UNITS.iter().map(|&x| snake_name(x)));
-    items.extend(ALL_REWARDS.iter().map(|&x| snake_name(x)));
-    items.extend(ALL_TECHS.iter().map(|&x| snake_name(x)));
-    items.extend(ALL_SITE_ACTIONS.iter().map(|&x| snake_name(x)));
-    items.join("\n")
+    obs_canonical_for(size, Ruleset::V1)
 }
 
 /// `hex64(fnv1a64(obs_canonical(size)))`.
 pub fn obs_hash(size: u8) -> String {
-    hex64(fnv1a64(obs_canonical(size).as_bytes()))
+    obs_hash_for(size, Ruleset::V1)
 }
 
 pub fn obs_canonical_for(size: u8, ruleset: Ruleset) -> String {
-    match ruleset {
-        Ruleset::V1 => obs_canonical(size),
-        Ruleset::V2 => {
-            let spec = obs_spec_for(size, Ruleset::V2);
-            let kinds = action_types(Ruleset::V2);
-            let mut items = vec![size.to_string()];
-            items.extend(spec.channel_names);
-            items.extend(spec.global_names);
-            items.extend(kinds.iter().map(|&k| snake_name(k)));
-            items.extend(
-                kinds
-                    .iter()
-                    .map(|&k| arg_len_for(size, k, Ruleset::V2).to_string()),
-            );
-            items.extend(units(Ruleset::V2).iter().map(|&x| snake_name(x)));
-            items.extend(ALL_REWARDS.iter().map(|&x| snake_name(x)));
-            items.extend(techs(Ruleset::V2).iter().map(|&x| snake_name(x)));
-            items.extend(site_actions(Ruleset::V2).iter().map(|&x| snake_name(x)));
-            items.extend(ALL_BUILDINGS.iter().map(|&x| snake_name(x)));
-            items.extend(ALL_MONUMENTS.iter().map(|&x| snake_name(x)));
-            items.join("\n")
-        }
+    let spec = obs_spec_for(size, ruleset);
+    let kinds = action_types(ruleset);
+    let mut items = vec![size.to_string()];
+    items.extend(spec.channel_names);
+    items.extend(spec.global_names);
+    items.extend(kinds.iter().map(|&k| snake_name(k)));
+    items.extend(
+        kinds
+            .iter()
+            .map(|&k| arg_len_for(size, k, ruleset).to_string()),
+    );
+    items.extend(units(ruleset).iter().map(|&x| snake_name(x)));
+    items.extend(ALL_REWARDS.iter().map(|&x| snake_name(x)));
+    items.extend(techs(ruleset).iter().map(|&x| snake_name(x)));
+    items.extend(site_actions(ruleset).iter().map(|&x| snake_name(x)));
+    if ruleset == Ruleset::V2 {
+        items.extend(ALL_BUILDINGS.iter().map(|&x| snake_name(x)));
+        items.extend(ALL_MONUMENTS.iter().map(|&x| snake_name(x)));
     }
+    items.join("\n")
 }
 
 pub fn obs_hash_for(size: u8, ruleset: Ruleset) -> String {

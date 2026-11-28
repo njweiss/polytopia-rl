@@ -35,6 +35,22 @@ def _is_bot(opp) -> bool:
     return isinstance(opp, BotSpec) or (isinstance(opp, str) and opp != LIVE_SELF)
 
 
+def _sample_item(
+    items: Sequence,
+    rng: np.random.Generator,
+    *,
+    tracker: WinRateTracker | None,
+    pfsp_mode: str,
+    pfsp_power: float,
+    base_weights: Sequence[float] | None = None,
+):
+    if pfsp_mode == "off" and base_weights is None:
+        return items[rng.integers(len(items))]
+    wrs = [tracker.win_rate(_opp_name(x)) if tracker is not None else 0.5 for x in items]
+    probs = pfsp_weights(wrs, pfsp_mode, power=pfsp_power, base_weights=base_weights)
+    return items[int(rng.choice(len(items), p=probs))]
+
+
 def _opp_name(opp) -> str:
     if isinstance(opp, (Entry, BotSpec)):
         return opp.name
@@ -132,11 +148,7 @@ class SnapshotPool:
             raise ValueError("cannot sample from an empty SnapshotPool")
         if rng.random() < self.p_latest:
             return self.latest_snapshot()
-        if pfsp_mode == "off":
-            return self.entries[rng.integers(len(self.entries))]
-        wrs = [tracker.win_rate(e.name) if tracker is not None else 0.5 for e in self.entries]
-        probs = pfsp_weights(wrs, pfsp_mode, power=pfsp_power)
-        return self.entries[int(rng.choice(len(self.entries), p=probs))]
+        return _sample_item(self.entries, rng, tracker=tracker, pfsp_mode=pfsp_mode, pfsp_power=pfsp_power)
 
 
 def draw_opponent(
@@ -154,14 +166,15 @@ def draw_opponent(
     u = rng.random()
     if u < p_bot:
         if bots is None:
-            if pfsp_mode == "off":
-                return BOT_OPPONENTS[rng.integers(len(BOT_OPPONENTS))]
-            wrs = [tracker.win_rate(b) if tracker is not None else 0.5 for b in BOT_OPPONENTS]
-            probs = pfsp_weights(wrs, pfsp_mode, power=pfsp_power)
-            return BOT_OPPONENTS[int(rng.choice(len(BOT_OPPONENTS), p=probs))]
-        wrs = [tracker.win_rate(b.name) if tracker is not None else 0.5 for b in bots]
-        probs = pfsp_weights(wrs, pfsp_mode, power=pfsp_power, base_weights=[b.weight for b in bots])
-        return bots[int(rng.choice(len(bots), p=probs))]
+            return _sample_item(BOT_OPPONENTS, rng, tracker=tracker, pfsp_mode=pfsp_mode, pfsp_power=pfsp_power)
+        return _sample_item(
+            bots,
+            rng,
+            tracker=tracker,
+            pfsp_mode=pfsp_mode,
+            pfsp_power=pfsp_power,
+            base_weights=[b.weight for b in bots],
+        )
     if u < p_bot + p_self:
         return LIVE_SELF
     return pool.sample(rng, tracker=tracker, pfsp_mode=pfsp_mode, pfsp_power=pfsp_power)
@@ -398,6 +411,107 @@ class SelfPlayVecEnv(SyncVecEnv):
         after = np.float32(0.0) if terminated else self._potential(self.envs[i].info()["scores"], seat)
         return r["shaping_weight"] * (r["gamma"] * after - self._potential(before, seat))
 
+    def _step_learner_vs_opp(self, i: int, action: tuple[int, int, int]) -> tuple[Any, np.float32 | None]:
+        env = self.envs[i]
+        snapshot = isinstance(self._opp[i], Entry)
+        scores_before = env.info()["scores"] if (snapshot or self.python_bot_shaping) else None
+        reward, _, terminated, truncated = env.step_factored(*action)
+        self._actions[i].append(action)
+        if terminated or truncated:
+            self._ended[i] = (terminated, truncated)
+        if snapshot:
+            self._log[i].append(action)
+            return scores_before, None
+        r_val = np.float32(reward)
+        if scores_before is not None:
+            r_val = r_val + self._bot_shaping_delta(i, scores_before, terminated)
+        return None, r_val
+
+    def _complete_self_seat(
+        self,
+        i: int,
+        seat: int,
+        before_scores,
+        *,
+        terminated: bool = False,
+        truncated: bool = False,
+        final_obs: tuple[np.ndarray, np.ndarray] | None = None,
+    ) -> Transition:
+        r = self._seat_reward(i, seat, before_scores)
+        self._self_ret[i][seat] += float(r)
+        return Transition(
+            slot=i,
+            seat=seat,
+            reward=float(r),
+            terminated=terminated,
+            truncated=truncated,
+            final_board=None if final_obs is None else final_obs[0].copy(),
+            final_globals=None if final_obs is None else final_obs[1].copy(),
+        )
+
+    def _step_live_self(self, i: int, action: tuple[int, int, int]) -> list[Transition]:
+        env = self.envs[i]
+        seat = _current_player(env)
+        before_scores = env.info()["scores"]
+        _, _, terminated, truncated = env.step_factored(*action)
+        self._log[i].append(action)
+        self._self_len[i][seat] += 1
+        other = 1 - seat
+        if terminated or truncated:
+            self._ended[i] = (terminated, truncated)
+            final_obs = env.observation()
+            trs = [
+                self._complete_self_seat(
+                    i, seat, before_scores, terminated=terminated, truncated=truncated, final_obs=final_obs
+                )
+            ]
+            if self._self_before[i][other] is not None:
+                trs.append(
+                    self._complete_self_seat(
+                        i,
+                        other,
+                        self._self_before[i][other],
+                        terminated=terminated,
+                        truncated=truncated,
+                        final_obs=final_obs,
+                    )
+                )
+                self._self_before[i][other] = None
+            trs.sort(key=lambda t: (t.slot, t.seat))
+            return trs
+        if _current_player(env) == seat:
+            return [self._complete_self_seat(i, seat, before_scores)]
+        self._self_before[i][seat] = before_scores
+        if self._self_before[i][other] is not None:
+            tr = self._complete_self_seat(i, other, self._self_before[i][other])
+            self._self_before[i][other] = None
+            return [tr]
+        return []
+
+    def _eval_opponent_groups(self, groups: dict[str, list[int]]) -> dict[str, list]:
+        group_actions: dict[str, list] = {}
+        if not groups:
+            return group_actions
+
+        def run_per_snapshot(items):
+            for name, idx in items:
+                group_actions[name] = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
+
+        if self.stacked_policy is None:
+            run_per_snapshot(groups.items())
+            return group_actions
+        stackable = [(name, idx) for name, idx in groups.items() if self._opp[idx[0]].net_template is None]
+        non_stackable = [(name, idx) for name, idx in groups.items() if self._opp[idx[0]].net_template is not None]
+        run_per_snapshot(non_stackable)
+        if stackable and (not self.auto_stack or len(stackable) >= 2):
+            self.stacked_policy.sync(self._stack_entries())
+            stacked_out = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in stackable])
+            for (name, _), acts in zip(stackable, stacked_out):
+                group_actions[name] = acts
+        else:
+            run_per_snapshot(stackable)
+        return group_actions
+
     def reset_all(self) -> VecState:
         for i in range(self.num_envs):
             self._reset(i)
@@ -414,25 +528,13 @@ class SelfPlayVecEnv(SyncVecEnv):
             final_globals=np.zeros((e, self.num_globals), dtype=np.float32),
         )
         before = {}
-        for i, env in enumerate(self.envs):
+        for i in range(e):
             action = (int(actors[i]), int(kinds[i]), int(args[i]))
-            snapshot = isinstance(self._opp[i], Entry)
-            bot_before = None
-            if snapshot:
-                before[i] = env.info()["scores"]
-            elif self.python_bot_shaping:
-                bot_before = env.info()["scores"]
-            reward, _, terminated, truncated = env.step_factored(*action)
-            self._actions[i].append(action)
-            if snapshot:
-                self._log[i].append(action)
+            snap_before, bot_r = self._step_learner_vs_opp(i, action)
+            if snap_before is not None:
+                before[i] = snap_before
             else:
-                r_val = np.float32(reward)
-                if bot_before is not None:
-                    r_val = r_val + self._bot_shaping_delta(i, bot_before, terminated)
-                out.reward[i] = r_val
-            if terminated or truncated:
-                self._ended[i] = (terminated, truncated)
+                out.reward[i] = bot_r
         self._advance(list(before))
         restarted = []
         for i, env in enumerate(self.envs):
@@ -468,100 +570,16 @@ class SelfPlayVecEnv(SyncVecEnv):
         self_trs: dict[int, list[Transition]] = {}
         for i in sorted(learner_actions):
             action = tuple(int(x) for x in learner_actions[i])
-            env = self.envs[i]
-            opp = self._opp[i]
-            if opp == LIVE_SELF:
-                seat = _current_player(env)
-                before_scores = env.info()["scores"]
-                _, _, terminated, truncated = env.step_factored(*action)
-                self._log[i].append(action)
-                self._self_len[i][seat] += 1
-                if terminated or truncated:
-                    self._ended[i] = (terminated, truncated)
-                    fb, fg = env.observation()
-                    trs_i = []
-                    r_s = self._seat_reward(i, seat, before_scores)
-                    self._self_ret[i][seat] += float(r_s)
-                    trs_i.append(
-                        Transition(
-                            slot=i,
-                            seat=seat,
-                            reward=float(r_s),
-                            terminated=terminated,
-                            truncated=truncated,
-                            final_board=fb.copy(),
-                            final_globals=fg.copy(),
-                        )
-                    )
-                    other = 1 - seat
-                    if self._self_before[i][other] is not None:
-                        r_o = self._seat_reward(i, other, self._self_before[i][other])
-                        self._self_ret[i][other] += float(r_o)
-                        self._self_before[i][other] = None
-                        trs_i.append(
-                            Transition(
-                                slot=i,
-                                seat=other,
-                                reward=float(r_o),
-                                terminated=terminated,
-                                truncated=truncated,
-                                final_board=fb.copy(),
-                                final_globals=fg.copy(),
-                            )
-                        )
-                    trs_i.sort(key=lambda t: (t.slot, t.seat))
+            if self._opp[i] == LIVE_SELF:
+                trs_i = self._step_live_self(i, action)
+                if trs_i:
                     self_trs[i] = trs_i
-                elif _current_player(env) == seat:
-                    r_s = self._seat_reward(i, seat, before_scores)
-                    self._self_ret[i][seat] += float(r_s)
-                    self_trs[i] = [
-                        Transition(
-                            slot=i,
-                            seat=seat,
-                            reward=float(r_s),
-                            terminated=False,
-                            truncated=False,
-                            final_board=None,
-                            final_globals=None,
-                        )
-                    ]
-                else:
-                    other = 1 - seat
-                    self._self_before[i][seat] = before_scores
-                    if self._self_before[i][other] is not None:
-                        r_o = self._seat_reward(i, other, self._self_before[i][other])
-                        self._self_ret[i][other] += float(r_o)
-                        self._self_before[i][other] = None
-                        self_trs[i] = [
-                            Transition(
-                                slot=i,
-                                seat=other,
-                                reward=float(r_o),
-                                terminated=False,
-                                truncated=False,
-                                final_board=None,
-                                final_globals=None,
-                            )
-                        ]
                 continue
-
-            snapshot = isinstance(opp, Entry)
-            bot_before = None
-            if snapshot:
-                self._before[i] = env.info()["scores"]
-            elif self.python_bot_shaping:
-                bot_before = env.info()["scores"]
-            reward, _, terminated, truncated = env.step_factored(*action)
-            self._actions[i].append(action)
-            if snapshot:
-                self._log[i].append(action)
+            snap_before, bot_r = self._step_learner_vs_opp(i, action)
+            if snap_before is not None:
+                self._before[i] = snap_before
             else:
-                r_val = np.float32(reward)
-                if bot_before is not None:
-                    r_val = r_val + self._bot_shaping_delta(i, bot_before, terminated)
-                bot_reward[i] = r_val
-            if terminated or truncated:
-                self._ended[i] = (terminated, truncated)
+                bot_reward[i] = bot_r
 
         # One opponent move per slot whose snapshot/anchor opponent is to move, grouped by entry
         # name in order of first appearance by slot.
@@ -569,31 +587,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         for i in range(self.num_envs):
             if self._opponent_to_move(i):
                 groups.setdefault(self._opp[i].name, []).append(i)
-
-        group_actions: dict[str, list] = {}
-        if groups:
-            if self.stacked_policy is None:
-                for name, idx in groups.items():
-                    group_actions[name] = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
-            else:
-                stackable: list[tuple[str, list[int]]] = []
-                non_stackable: list[tuple[str, list[int]]] = []
-                for name, idx in groups.items():
-                    if self._opp[idx[0]].net_template is not None:
-                        non_stackable.append((name, idx))
-                    else:
-                        stackable.append((name, idx))
-                for name, idx in non_stackable:
-                    group_actions[name] = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
-                use_stacked = len(stackable) > 0 and (not self.auto_stack or len(stackable) >= 2)
-                if use_stacked:
-                    self.stacked_policy.sync(self._stack_entries())
-                    stacked_out = self.stacked_policy([(name, [self.envs[i] for i in idx]) for name, idx in stackable])
-                    for (name, _), acts in zip(stackable, stacked_out):
-                        group_actions[name] = acts
-                else:
-                    for name, idx in stackable:
-                        group_actions[name] = self._policy(self._opp[idx[0]])([self.envs[i] for i in idx])
+        group_actions = self._eval_opponent_groups(groups)
 
         for name, idx in groups.items():
             for i, a in zip(idx, group_actions[name]):
@@ -671,10 +665,7 @@ class SelfPlayVecEnv(SyncVecEnv):
         mid-turn pending scores, live-self state, paired-seed mirror queue, and gone pool entries."""
         in_pool = {e.name for e in self.pool.entries}
         gone = {}
-        for o in self._opp:
-            if isinstance(o, Entry) and o.name not in in_pool and o.name not in gone:
-                gone[o.name] = {"step": o.step, "state": o.state, "pinned": o.pinned}
-        for _, o, _ in self._mirror_queue:
+        for o in (*self._opp, *(opp for _, opp, _ in self._mirror_queue)):
             if isinstance(o, Entry) and o.name not in in_pool and o.name not in gone:
                 gone[o.name] = {"step": o.step, "state": o.state, "pinned": o.pinned}
         sd = {
@@ -774,28 +765,19 @@ def make_selfplay_vec_env(
 
     def env_fn(key):
         if key == "none":
-            return polytopia_sim.Env(
-                **env_kwargs_of(cfg),
-                opponent="none",
-                opponent_epsilon=cfg.opponent_epsilon,
-                agent_seat="seed_parity",
-                **reward,
-            )
-        if isinstance(key, tuple):
-            bot_name, epsilon, seat_key = key
-            return polytopia_sim.Env(
-                **env_kwargs_of(cfg),
-                opponent=bot_name,
-                opponent_epsilon=cfg.opponent_epsilon if epsilon is None else epsilon,
-                agent_seat=seat_key,
-                **bot_reward,
-            )
+            opp, eps, seat_key, rew = "none", cfg.opponent_epsilon, "seed_parity", reward
+        elif isinstance(key, tuple):
+            opp, epsilon, seat_key = key
+            eps = cfg.opponent_epsilon if epsilon is None else epsilon
+            rew = bot_reward
+        else:
+            opp, eps, seat_key, rew = key, cfg.opponent_epsilon, "seed_parity", bot_reward
         return polytopia_sim.Env(
             **env_kwargs_of(cfg),
-            opponent=key,
-            opponent_epsilon=cfg.opponent_epsilon,
-            agent_seat="seed_parity",
-            **bot_reward,
+            opponent=opp,
+            opponent_epsilon=eps,
+            agent_seat=seat_key,
+            **rew,
         )
 
     raw_bots = getattr(cfg, "selfplay_bots", None)

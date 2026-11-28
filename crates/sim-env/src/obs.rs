@@ -238,17 +238,16 @@ pub fn encode_board_with_legal(view: &PlayerView, legal: &[Action], out: &mut [f
         }
         if let Some(u) = t.unit {
             let kind_idx = u.kind as usize;
-            if u.owner == me {
-                if kind_idx < ALL_UNITS.len() {
-                    out[idx(MY_UNIT + kind_idx, p)] = 1.0;
-                } else if v2 {
-                    out[idx(MY_UNIT_V2 + (kind_idx - ALL_UNITS.len()), p)] = 1.0;
-                }
+            let (base_v1, base_v2) = if u.owner == me {
                 out[idx(PHASE + u.phase as usize, p)] = 1.0;
-            } else if kind_idx < ALL_UNITS.len() {
-                out[idx(ENEMY_UNIT + kind_idx, p)] = 1.0;
+                (MY_UNIT, MY_UNIT_V2)
+            } else {
+                (ENEMY_UNIT, ENEMY_UNIT_V2)
+            };
+            if kind_idx < ALL_UNITS.len() {
+                out[idx(base_v1 + kind_idx, p)] = 1.0;
             } else if v2 {
-                out[idx(ENEMY_UNIT_V2 + (kind_idx - ALL_UNITS.len()), p)] = 1.0;
+                out[idx(base_v2 + (kind_idx - ALL_UNITS.len()), p)] = 1.0;
             }
             out[idx(HEALTH, p)] = u.health as f32 / u.max_health as f32;
             out[idx(VETERAN, p)] = flag(u.veteran);

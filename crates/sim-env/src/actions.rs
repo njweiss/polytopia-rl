@@ -1,10 +1,7 @@
 //! The factored action space (docs/MILESTONE_9 "Factored action space").
 
 use sim_core::actions::Action;
-use sim_core::data::{
-    site_actions, techs, units, ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS, ALL_SITE_ACTIONS,
-    ALL_TECHS, ALL_UNITS,
-};
+use sim_core::data::{site_actions, techs, units, ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS};
 use sim_core::grid::Pos;
 use sim_core::state::{Ruleset, State};
 
@@ -127,22 +124,7 @@ pub fn num_actors(size: u8) -> usize {
 }
 
 pub fn arg_len(size: u8, kind: ActionType) -> usize {
-    match kind {
-        ActionType::Move | ActionType::Attack => tiles(size),
-        ActionType::Train => ALL_UNITS.len(),
-        ActionType::ChooseReward => ALL_REWARDS.len(),
-        ActionType::Site => ALL_SITE_ACTIONS.len(),
-        ActionType::Research => ALL_TECHS.len(),
-        ActionType::BuildBuilding => ALL_BUILDINGS.len(),
-        ActionType::BuildMonument => ALL_MONUMENTS.len(),
-        ActionType::Capture
-        | ActionType::Recover
-        | ActionType::Promote
-        | ActionType::EndTurn
-        | ActionType::Disband
-        | ActionType::BuildRoad
-        | ActionType::Destroy => 0,
-    }
+    arg_len_for(size, kind, Ruleset::V1)
 }
 
 pub fn arg_len_for(size: u8, kind: ActionType, ruleset: Ruleset) -> usize {

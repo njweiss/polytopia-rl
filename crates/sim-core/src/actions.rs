@@ -23,7 +23,8 @@ use crate::roads::update_connections;
 use crate::score::score;
 use crate::spawn::spawn_super_unit;
 use crate::state::{
-    City, CityId, Dir, Improvement, Outcome, Phase, PlayerId, Ruleset, State, Unit, UnitId,
+    City, CityId, Dir, Improvement, Outcome, Phase, PlayerId, Ruleset, State, TileState, Unit,
+    UnitId,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -242,22 +243,41 @@ fn train_legal(state: &State, city: CityId, kind: UnitType) -> bool {
         && supported_units(state, city) < c.level + 1
 }
 
-/// Site-action legality apart from the pending-reward block (checked by the callers).
-fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
-    if !site_actions(state.config.ruleset).contains(&action) {
-        return false;
-    }
+/// Owning city of `at` if `at` is in bounds, belongs to `state.current`, and has no enemy unit.
+fn own_uncontested_tile(state: &State, at: Pos) -> Option<CityId> {
     if at.row >= state.size || at.col >= state.size {
-        return false;
+        return None;
     }
     let t = state.tile(at);
-    let Some(owner_city) = t.owner_city else {
-        return false;
-    };
+    let owner_city = t.owner_city?;
+    if state.city(owner_city).owner != state.current {
+        return None;
+    }
     let enemy_here = t
         .unit
         .and_then(|id| state.unit(id))
         .is_some_and(|u| u.owner != state.current);
+    (!enemy_here).then_some(owner_city)
+}
+
+fn is_empty_buildable_field(t: &TileState) -> bool {
+    t.terrain == Terrain::Field
+        && t.city.is_none()
+        && t.improvement.is_none()
+        && t.building.is_none()
+        && t.monument.is_none()
+        && !t.lighthouse
+        && t.resource.is_none()
+}
+
+/// Site-action legality apart from the pending-reward block (checked by the callers).
+fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
+    if !site_actions(state.config.ruleset).contains(&action)
+        || own_uncontested_tile(state, at).is_none()
+    {
+        return false;
+    }
+    let t = state.tile(at);
     let info = state.tables.site_action(action);
     let me = &state.players[state.current as usize];
     let condition = match action {
@@ -272,11 +292,7 @@ fn site_legal(state: &State, at: Pos, action: SiteAction) -> bool {
             t.terrain == Terrain::Forest && t.improvement.is_none() && t.building.is_none()
         }
     };
-    state.city(owner_city).owner == state.current
-        && !enemy_here
-        && me.techs.contains(info.tech)
-        && me.stars >= info.cost
-        && condition
+    me.techs.contains(info.tech) && me.stars >= info.cost && condition
 }
 
 /// BuildRoad legality apart from the pending-reward block (checked by the callers); never legal
@@ -307,7 +323,7 @@ fn road_legal(state: &State, at: Pos) -> bool {
 /// BuildBuilding legality apart from the pending-reward block (checked by the callers); never
 /// legal under v1 (docs/MILESTONE_17 "BuildBuilding", P1, P2).
 fn building_legal(state: &State, at: Pos, building: Building) -> bool {
-    if state.config.ruleset != Ruleset::V2 || at.row >= state.size || at.col >= state.size {
+    if state.config.ruleset != Ruleset::V2 {
         return false;
     }
     let info = state.tables.building(building);
@@ -315,26 +331,10 @@ fn building_legal(state: &State, at: Pos, building: Building) -> bool {
     if !me.techs.contains(info.tech) || me.stars < info.cost {
         return false;
     }
-    let t = state.tile(at);
-    let Some(owner_city) = t.owner_city else {
+    let Some(owner_city) = own_uncontested_tile(state, at) else {
         return false;
     };
-    if state.city(owner_city).owner != state.current {
-        return false;
-    }
-    let enemy_here = t
-        .unit
-        .and_then(|id| state.unit(id))
-        .is_some_and(|u| u.owner != state.current);
-    if enemy_here
-        || t.terrain != Terrain::Field
-        || t.city.is_some()
-        || t.improvement.is_some()
-        || t.building.is_some()
-        || t.monument.is_some()
-        || t.lighthouse
-        || t.resource.is_some()
-    {
+    if !is_empty_buildable_field(state.tile(at)) {
         return false;
     }
     if info.one_per_city
@@ -351,56 +351,30 @@ fn building_legal(state: &State, at: Pos, building: Building) -> bool {
 /// BuildMonument legality apart from the pending-reward block (checked by the callers); never
 /// legal under v1 (docs/MILESTONE_18 "BuildMonument", M3).
 fn monument_legal(state: &State, at: Pos, monument: Monument) -> bool {
-    if state.config.ruleset != Ruleset::V2 || at.row >= state.size || at.col >= state.size {
+    if state.config.ruleset != Ruleset::V2 {
         return false;
     }
     let me = &state.players[state.current as usize];
     if !me.monuments_unlocked.contains(monument) || me.monuments_placed.contains(monument) {
         return false;
     }
-    let t = state.tile(at);
-    let Some(owner_city) = t.owner_city else {
-        return false;
-    };
-    if state.city(owner_city).owner != state.current {
-        return false;
-    }
-    let enemy_here = t
-        .unit
-        .and_then(|id| state.unit(id))
-        .is_some_and(|u| u.owner != state.current);
-    !enemy_here
-        && t.terrain == Terrain::Field
-        && t.city.is_none()
-        && t.improvement.is_none()
-        && t.building.is_none()
-        && t.monument.is_none()
-        && !t.lighthouse
-        && t.resource.is_none()
+    own_uncontested_tile(state, at).is_some() && is_empty_buildable_field(state.tile(at))
 }
 
 /// Destroy legality apart from the pending-reward block (checked by the callers); never legal
 /// under v1 (docs/MILESTONE_17 "Destroy", docs/MILESTONE_18 "Destroy").
 fn destroy_legal(state: &State, at: Pos) -> bool {
-    if state.config.ruleset != Ruleset::V2 || at.row >= state.size || at.col >= state.size {
+    if state.config.ruleset != Ruleset::V2 {
         return false;
     }
     let me = &state.players[state.current as usize];
-    if !me.techs.contains(state.tables.v2_rules().destroy_tech) {
+    if !me.techs.contains(state.tables.v2_rules().destroy_tech)
+        || own_uncontested_tile(state, at).is_none()
+    {
         return false;
     }
     let t = state.tile(at);
-    let Some(owner_city) = t.owner_city else {
-        return false;
-    };
-    if state.city(owner_city).owner != state.current {
-        return false;
-    }
-    let enemy_here = t
-        .unit
-        .and_then(|id| state.unit(id))
-        .is_some_and(|u| u.owner != state.current);
-    !enemy_here && (t.improvement.is_some() || t.building.is_some() || t.monument.is_some())
+    t.improvement.is_some() || t.building.is_some() || t.monument.is_some()
 }
 
 /// Disband legality apart from the pending-reward block (checked by the callers); never legal
