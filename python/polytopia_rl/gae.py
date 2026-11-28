@@ -36,3 +36,16 @@ def compute_gae(
         a_next = delta + gamma * lam * not_done * a_next
         advantages[t] = a_next
     return advantages, advantages + values
+
+
+def compute_gae_segments(
+    rewards: Tensor,
+    values: Tensor,
+    terminated: Tensor,
+    truncated: Tensor,
+    next_values: Tensor,
+    segment_end: Tensor,
+    gamma: float,
+    lam: float,
+) -> tuple[Tensor, Tensor]:
+    raise NotImplementedError

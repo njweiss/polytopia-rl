@@ -20,6 +20,7 @@ import torch
 from polytopia_rl.vec_env import EpisodeStat, SyncVecEnv, VecState, VecStep, agent_outcome, env_kwargs_of, env_masks_fn
 
 BOT_OPPONENTS = ("economy", "rush")
+LIVE_SELF = "self"
 
 
 def _current_player(env) -> int:

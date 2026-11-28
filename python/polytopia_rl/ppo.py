@@ -208,6 +208,27 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
     return stats
 
 
+class StreamState:
+    def __init__(self):
+        raise NotImplementedError
+
+    def state_dict(self) -> dict:
+        raise NotImplementedError
+
+    def load_state_dict(self, state: dict) -> None:
+        raise NotImplementedError
+
+
+def collect_rollout_stream(
+    net,
+    vec_env,
+    buffer: RolloutBuffer,
+    generator: torch.Generator,
+    stream_state: StreamState | None = None,
+) -> list:
+    raise NotImplementedError
+
+
 def train_update(
     net,
     optimizer,
