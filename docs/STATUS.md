@@ -5,14 +5,22 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
+**Milestone 23 (revised self-play environment: PFSP, live two-sided self-play, barrier-free stream
+rollouts, pinned cross-arch anchors, win-rate gating, shaping annealing & paired seeds) merged into
+`main` (`09f513a`, 2026-11-28), `pixi run check` green (742 cargo, 33 + 567 pytest).** Brief `a758006`
+(SP1–SP7 confirmed); tests `1a01b4b` (83 new RL test cases in `test_selfplay_v2.py`) + `9ebcf4a`
+(`/review 23` guard & anchor RNG tests, total 84); implementation `65d41b7` (all 4 `/review 23`
+findings fixed before merge). `/review 23`: 0 blocking defects, 0 spec gaps, 0 open questions.
+Pure-Python, 100% backward-compatible milestone: zero Rust, `data/`, `obs_hash`, `rules_hash`, or
+legacy-config changes; shipped `v2_selfplay_revised.json` and `selfplay23.json`. All v2 milestones
+(M15–M23) are now complete on `main`—ready for CUDA experiments (`transfer22.json`, `selfplay23.json`).
+
 **Milestone 22 (`v1 -> v2` policy transfer: prefix warm-start & policy distillation) merged into `main`
 (`b575481`, 2026-11-28), `pixi run check` green (742 cargo, 33 + 483 pytest).** Brief `3809f08` (T1–T6
 confirmed); tests `1750ca6` (28 new RL test cases in `test_transfer.py`) + `f520118` (Q59 A);
 implementation `a7f536a` (incl. `PPOConfig.from_json` docstring nit). `/review 22`: pass, 0 blocking
 defects, 0 should-fix, 0 spec gaps. Pure-Python milestone: zero Rust, `data/`, `obs_hash`, or
 `rules_hash` changes; shipped `v2_curriculum.json`, `v2_selfplay.json`, and 4-arm `transfer22.json`.
-Next: run the v2 transfer experiment (`python/experiments/transfer22.json`) and/or M16b GPU profile gate
-on the CUDA machine.
 
 **Milestone 21 (`arch="v2"` PolicyNet architecture) merged into `main` (`5898c72`, 2026-11-27),
 `pixi run check` green (742 cargo, 33 + 455 pytest).** Brief `1a33867` (A1–A5 confirmed); tests
@@ -137,6 +145,7 @@ Milestone 12 (closed 2026-10-26):
 | M20 | `PlayerView` v2 & `attack_preview`, 64-ch/33-global v2 obs (37/18 v1 prefix + 6 damage-preview channels), 15 factored `ActionType`s & `ActionMasks`, `obs_hash_for`, `Env`/`PyEnv`/`PPOConfig` `V2` support; v1 byte-identical | merged c966bea; `pixi run check` green (742 cargo, 33 + 425 pytest); `/review 20`: merge, 0 defects, 0 spec gaps |
 | M21 | `arch="v2"` `PolicyNet` (CoordConv, pre-norm `GroupNorm` + pooled-context/globals FiLM + scaled `ResBlockV2`, separate `move`/`attack` keys + QK `LayerNorm` + 2D `rel_bias` in `ArgHeadV2`), `PPOConfig.arch`; `arch="v1"` & Rust/hashes untouched | merged 5898c72; `pixi run check` green (742 cargo, 33 + 455 pytest); `/review 21`: merge, 0 defects, 0 spec gaps |
 | M22 | `v1 -> v2` policy transfer (`transfer.py`: prefix warm-start, temperature-scaled `masked_kl`, linear `distill_schedule`, 3-stage factored `distill_kl`, single teacher pass per rollout), `PPOConfig` transfer fields, `v2_curriculum.json`, `v2_selfplay.json`, `transfer22.json`; Rust/hashes untouched | merged b575481; `pixi run check` green (742 cargo, 33 + 483 pytest); `/review 22`: pass, 0 defects, 0 spec gaps |
+| M23 | Revised self-play (`pfsp.py`, `compute_gae_segments`, `rollout="stream"`, live two-sided `"self"`, `opponent_forward="auto"`, `selfplay_bots`, pinned cross-arch `anchor_checkpoints`, win-rate-gated snapshots, self-play `best.pt`, `shaping_anneal_steps`, `paired_seeds`), `v2_selfplay_revised.json`, `selfplay23.json`; Rust/hashes/legacy configs untouched | merged 09f513a; `pixi run check` green (742 cargo, 33 + 567 pytest); `/review 23`: 0 blocking defects, all 4 findings fixed |
 
 **Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
 worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
@@ -150,26 +159,28 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 ## Waiting on the owner
 
 1. Run the M22 v2 transfer experiment (`python/experiments/transfer22.json`) on the CUDA machine (`scratch_v1`, `warmstart_v1`, `scratch_v2`, `distill_v2`) and record results in `docs/RL_REPORT.md`.
-2. Optional: M16b Gate item 3 (re-run the M13a profile fixture + `torch.profiler` sync counts on the RTX 4060 machine and record in `docs/RL_REPORT.md`).
+2. Run the M23 v2 self-play A/B experiment (`python/experiments/selfplay23.json`) on the CUDA machine (`legacy` vs `revised`) and record results in `docs/RL_REPORT.md`.
+3. Optional: M16b Gate item 3 (re-run the M13a profile fixture + `torch.profiler` sync counts on the RTX 4060 machine and record in `docs/RL_REPORT.md`).
 
 ## Open questions
 
 - `QUESTIONS.md`: none open (next number Q60). Q1-Q59 are in `docs/DECISIONS.md`.
 - Spec open questions: none. `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc
   was retired in M16b, B5).
-- `.git/tests-lock` points at `f520118` (M22's Q59 A test commit).
+- `.git/tests-lock` points at `9ebcf4a` (M23's review guard test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
 1. Run the M22 4-arm transfer experiment (`python/experiments/transfer22.json`) on the CUDA machine and log findings in `docs/RL_REPORT.md`.
-2. Run M16b Gate item 3 on the CUDA machine (profile fixture + sync counts) and log results in `docs/RL_REPORT.md`.
-3. Optional viewer polish: render `road`/`building`/`monument`/`lighthouse` badges visually in `html.rs` JS `draw()` (data keys already emitted in M19).
+2. Run the M23 2-arm self-play experiment (`python/experiments/selfplay23.json`) on the CUDA machine and log findings in `docs/RL_REPORT.md`.
+3. Optional: M16b Gate item 3 (profile fixture + sync counts on CUDA) and viewer polish (`road`/`building`/`monument`/`lighthouse` badges in `html.rs` JS `draw()`).
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-11-28 | M23 merged (`09f513a`), `pixi run check` green (742 cargo, 33 + 567 pytest), branch removed; `/review 23` 0 blocking defects (2 should-fix + 2 nits all fixed before merge); 0 new Q-entries; tests locked at `9ebcf4a`. |
 | 2026-11-28 | M22 merged (`b575481`), `pixi run check` green (742 cargo, 33 + 483 pytest), branch removed; `/review 22` verdict pass (0 blocking defects, 0 should-fix, 0 spec gaps; docstring nit fixed before merge); Q59 moved to `DECISIONS.md`; tests locked at `f520118`. |
 | 2026-11-27 | M21 merged (`5898c72`), `pixi run check` green (742 cargo, 33 + 455 pytest), branch removed; `/review 21` verdict merge (0 blocking defects, 0 spec gaps); Q58 moved to `DECISIONS.md`; tests locked at `9b2d0bb`. |
 | 2026-11-27 | M20 merged (`c966bea`), `pixi run check` green (742 cargo, 33 + 425 pytest), branch removed; `/review 20` verdict merge (0 blocking defects, 0 spec gaps; Nit #1 fixed before merge); Q56–Q57 moved to `DECISIONS.md`; tests locked at `13b27cd`. |
