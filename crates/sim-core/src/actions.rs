@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::buildings::{has_matching_adjacent, sync_buildings};
 use crate::combat::{resolve_attack, Combatant};
 use crate::data::{
-    site_actions, techs, Building, Monument, Reward, SiteAction, Skill, Tech, UnitType,
-    ALL_BUILDINGS, ALL_MONUMENTS, ALL_UNITS,
+    site_actions, techs, units, Building, Monument, Reward, SiteAction, Skill, Tech, UnitType,
+    ALL_BUILDINGS, ALL_MONUMENTS,
 };
 use crate::economy::{
     cumulative_population_for_level, income, research_cost, reward_menu, supported_units,
@@ -53,7 +53,7 @@ pub enum ActionError {
 /// The current player's legal actions in canonical order. With a pending reward: only the
 /// lowest-id pending city's ChooseReward, in menu order. Otherwise: units by ascending id (per unit
 /// Move (row-major), Attack (row-major), Capture, Recover, Promote, and under v2 Disband); Train
-/// per city by ascending id in `ALL_UNITS` order; site actions row-major in
+/// per city by ascending id in `units(config.ruleset)` order; site actions row-major in
 /// `site_actions(config.ruleset)` order; under v2 BuildRoad row-major, BuildBuilding row-major in
 /// `ALL_BUILDINGS` order, BuildMonument row-major in `ALL_MONUMENTS` order, Destroy row-major;
 /// Research in `techs(config.ruleset)` order; then EndTurn. Empty once there is an outcome.
@@ -73,7 +73,7 @@ pub fn legal_actions(state: &State) -> Vec<Action> {
         push_unit_actions(state, u, &mut out);
     }
     for c in state.cities.iter().filter(|c| c.owner == state.current) {
-        for kind in ALL_UNITS {
+        for &kind in units(state.config.ruleset) {
             if train_legal(state, c.id, kind) {
                 out.push(Action::Train { city: c.id, kind });
             }
@@ -224,8 +224,7 @@ fn pending_city(state: &State) -> Option<CityId> {
 
 /// Train legality apart from the pending-reward block (checked by the callers).
 fn train_legal(state: &State, city: CityId, kind: UnitType) -> bool {
-    // The v2 units are trained from milestone 19 on (docs/MILESTONE_15 V4).
-    if !ALL_UNITS.contains(&kind) {
+    if !units(state.config.ruleset).contains(&kind) {
         return false;
     }
     let Some(c) = state.cities.get(city.0 as usize).filter(|c| c.id == city) else {
@@ -549,14 +548,15 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
         health: u.health,
         max_health: u.max_health,
     };
-    let in_range = chebyshev(a.pos, d.pos) <= sd.range;
+    let can_retaliate = chebyshev(a.pos, d.pos) <= sd.range && !sd.skills.contains(&Skill::Stiff);
     let outcome = resolve_attack(
         &combatant(&a, sa.attack, sa.defense),
         &combatant(&d, sd.attack, sd.defense),
         bonus,
-        in_range,
+        can_retaliate,
     );
     let attacker_ranged = sa.range > 1;
+    let attacker_persist = sa.skills.contains(&Skill::Persist);
 
     state.unit_mut(attacker_id).health = outcome.attacker_health;
     state.unit_mut(defender_id).health = outcome.defender_health;
@@ -600,7 +600,11 @@ fn apply_attack(state: &mut State, attacker_id: UnitId, target: Pos) {
         relocate(state, attacker_id, d.pos);
     }
     let u = state.unit_mut(attacker_id);
-    u.phase = Phase::Attacked;
+    u.phase = if defender_died && attacker_persist {
+        Phase::Moved
+    } else {
+        Phase::Attacked
+    };
     if attacker_ranged {
         u.last_dir = Some(direction(a.pos, d.pos));
     }

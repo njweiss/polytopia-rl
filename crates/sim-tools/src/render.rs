@@ -2,12 +2,12 @@
 
 use serde::Serialize;
 use sim_core::actions::Action;
-use sim_core::data::{UnitType, ALL_TECHS};
+use sim_core::data::{techs, UnitType};
 use sim_core::economy::income;
 use sim_core::grid::Pos;
 use sim_core::map::{Resource, Terrain};
 use sim_core::score::score;
-use sim_core::state::{Improvement, Outcome, Phase, PlayerId, State, TileState};
+use sim_core::state::{Improvement, Outcome, Phase, PlayerId, Ruleset, State, TileState};
 use sim_core::view::resource_visible;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,10 +112,9 @@ fn cell(state: &State, view: View, pos: Pos) -> String {
                 UnitType::Archer => 'A',
                 UnitType::Defender => 'D',
                 UnitType::SuperUnit => 'S',
-                // Never trained before milestone 19, which picks their glyphs.
-                UnitType::Swordsman | UnitType::Catapult | UnitType::Knight => {
-                    unimplemented!("v2 unit glyphs")
-                }
+                UnitType::Swordsman => 'X',
+                UnitType::Catapult => 'C',
+                UnitType::Knight => 'K',
             };
             if u.owner == 0 {
                 c
@@ -135,7 +134,7 @@ fn panel_line(state: &State, view: View, p: PlayerId) -> String {
     let pl = &state.players[p as usize];
     let cities = state.cities.iter().filter(|c| c.owner == p).count();
     let units = state.units.iter().filter(|u| u.owner == p).count();
-    let techs: Vec<String> = ALL_TECHS
+    let techs: Vec<String> = techs(state.config.ruleset)
         .iter()
         .filter(|&&t| pl.techs.contains(t))
         .map(snake)
@@ -222,10 +221,25 @@ pub fn describe_tile(state: &State, view: View, pos: Pos) -> String {
             parts.join(" ")
         }
     };
-    format!(
+    let mut line = format!(
         "({row},{col}) {} res={res} imp={imp} territory={ter} site={site} unit={unit}",
         terrain_name(t.terrain)
-    )
+    );
+    if state.config.ruleset == Ruleset::V2 {
+        if t.road {
+            line.push_str(" road");
+        }
+        if let Some(b) = t.building {
+            line.push_str(&format!(" bldg={}({})", snake(&b), t.building_level));
+        }
+        if let Some(m) = t.monument {
+            line.push_str(&format!(" monument={}", snake(&m)));
+        }
+        if t.lighthouse {
+            line.push_str(" lighthouse");
+        }
+    }
+    line
 }
 
 pub fn action_label(action: &Action) -> String {

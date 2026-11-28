@@ -75,7 +75,7 @@ impl<'a> PlayerView<'a> {
     }
 
     pub fn ruleset(&self) -> Ruleset {
-        todo!("milestone 19")
+        self.state.config.ruleset
     }
 
     pub fn current(&self) -> PlayerId {

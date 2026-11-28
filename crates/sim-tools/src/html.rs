@@ -33,6 +33,19 @@ fn tile_json(state: &State, i: usize) -> Value {
     if let Some(u) = t.unit {
         m.insert("unit".into(), u.0.into());
     }
+    if t.road {
+        m.insert("road".into(), true.into());
+    }
+    if let Some(b) = t.building {
+        m.insert("building".into(), snake(&b).into());
+        m.insert("building_level".into(), t.building_level.into());
+    }
+    if let Some(mon) = t.monument {
+        m.insert("monument".into(), snake(&mon).into());
+    }
+    if t.lighthouse {
+        m.insert("lighthouse".into(), true.into());
+    }
     Value::Object(m)
 }
 
@@ -167,7 +180,7 @@ const PAGE: &str = r#"<!doctype html>
     <p>Last action: <span id="label"></span></p>
     <p id="legend">Letters: top left resource or improvement (o fruit, + crop, a animal, $ metal,
       H lumber hut, F farm, M mine); top right site (V village, C city, K capital, with level).
-      Circles are units (W R A D S) in the owner's color, gold rim = veteran. Inner border =
+      Circles are units (W R A D S X C K) in the owner's color, gold rim = veteran. Inner border =
       territory. Arrow keys step through the game.</p>
   </div>
 </div>
@@ -183,7 +196,7 @@ const PAGE: &str = r#"<!doctype html>
   slider.max = String(last);
   const RES = { fruit: "o", crop: "+", animal: "a", metal: "$" };
   const IMP = { lumber_hut: "H", farm: "F", mine: "M" };
-  const KIND = { warrior: "W", rider: "R", archer: "A", defender: "D", super_unit: "S" };
+  const KIND = { warrior: "W", rider: "R", archer: "A", defender: "D", super_unit: "S", swordsman: "X", catapult: "C", knight: "K" };
   let current = 0;
   let timer = null;
 

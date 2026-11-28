@@ -5,7 +5,7 @@ use std::io::Write;
 use bots::{bot_policy, run_match, BotKind};
 use sim_core::map::MapParams;
 use sim_core::rng::Rng;
-use sim_core::state::{Config, Outcome, State};
+use sim_core::state::{Config, Outcome, Ruleset, State};
 
 use crate::html::html_page;
 use crate::policy::random_action;
@@ -13,12 +13,12 @@ use crate::render::{action_label, render, View};
 use crate::replay::{record_game, replay, replay_each, ReplayLog};
 
 const USAGE: &str = "usage:
-  polytopia play-random --seed N --out FILE [--turn-cap K] [--max-actions M] [--full-observability]
+  polytopia play-random --seed N --out FILE [--turn-cap K] [--max-actions M] [--full-observability] [--ruleset v1|v2]
   polytopia verify FILE
   polytopia view FILE [--step I | --all] [--player P]
   polytopia html FILE OUT.html
-  polytopia play --bots A,B --seed N --out FILE [--turn-cap K] [--max-actions M]
-  polytopia tournament --bots LIST [--games N] [--turn-cap K] [--seed S] [--gate-min R]
+  polytopia play --bots A,B --seed N --out FILE [--turn-cap K] [--max-actions M] [--ruleset v1|v2]
+  polytopia tournament --bots LIST [--games N] [--turn-cap K] [--seed S] [--gate-min R] [--ruleset v1|v2]
                        [--save-replays DIR --save-count C]
   (bots: random, rush, economy)
 ";
@@ -69,6 +69,16 @@ fn value<T: std::str::FromStr>(it: &mut std::slice::Iter<String>, name: &str) ->
     }
 }
 
+fn parse_ruleset(it: &mut std::slice::Iter<String>) -> Result<Ruleset, Fail> {
+    match value::<String>(it, "--ruleset")?.as_str() {
+        "v1" => Ok(Ruleset::V1),
+        "v2" => Ok(Ruleset::V2),
+        other => usage(&format!(
+            "invalid value {other:?} for --ruleset (expected v1 or v2)"
+        )),
+    }
+}
+
 fn outcome_text(o: Option<Outcome>) -> String {
     match o {
         Some(Outcome::Win(p)) => format!("Win({p})"),
@@ -92,6 +102,7 @@ fn play_random(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     let mut turn_cap = Config::default().turn_cap;
     let mut max_actions: usize = 5000;
     let mut full_observability = false;
+    let mut ruleset = Config::default().ruleset;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -100,6 +111,7 @@ fn play_random(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
             "--turn-cap" => turn_cap = value(&mut it, "--turn-cap")?,
             "--max-actions" => max_actions = value(&mut it, "--max-actions")?,
             "--full-observability" => full_observability = true,
+            "--ruleset" => ruleset = parse_ruleset(&mut it)?,
             other => return usage(&format!("unknown option {other:?}")),
         }
     }
@@ -115,6 +127,7 @@ fn play_random(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     let config = Config {
         full_observability,
         turn_cap,
+        ruleset,
         ..Config::default()
     };
     let mut rng = Rng::new(seed ^ POLICY_SEED_XOR);
@@ -236,6 +249,7 @@ fn play(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     let mut path: Option<String> = None;
     let mut turn_cap = Config::default().turn_cap;
     let mut max_actions: usize = 5000;
+    let mut ruleset = Config::default().ruleset;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -244,6 +258,7 @@ fn play(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
             "--out" => path = Some(value(&mut it, "--out")?),
             "--turn-cap" => turn_cap = value(&mut it, "--turn-cap")?,
             "--max-actions" => max_actions = value(&mut it, "--max-actions")?,
+            "--ruleset" => ruleset = parse_ruleset(&mut it)?,
             other => return usage(&format!("unknown option {other:?}")),
         }
     }
@@ -264,6 +279,7 @@ fn play(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     }
     let config = Config {
         turn_cap,
+        ruleset,
         ..Config::default()
     };
     let log = record_bot_game(seed, [a, b], &config, max_actions);
@@ -287,6 +303,7 @@ fn tournament(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     let mut gate_min: Option<f64> = None;
     let mut save_dir: Option<String> = None;
     let mut save_count: Option<usize> = None;
+    let mut ruleset = Config::default().ruleset;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -297,6 +314,7 @@ fn tournament(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
             "--gate-min" => gate_min = Some(value(&mut it, "--gate-min")?),
             "--save-replays" => save_dir = Some(value(&mut it, "--save-replays")?),
             "--save-count" => save_count = Some(value(&mut it, "--save-count")?),
+            "--ruleset" => ruleset = parse_ruleset(&mut it)?,
             other => return usage(&format!("unknown option {other:?}")),
         }
     }
@@ -316,6 +334,7 @@ fn tournament(args: &[String], out: &mut dyn Write) -> Result<(), Fail> {
     };
     let config = Config {
         turn_cap,
+        ruleset,
         ..Config::default()
     };
     let map = MapParams::default();

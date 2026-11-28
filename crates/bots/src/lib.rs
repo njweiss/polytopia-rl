@@ -8,7 +8,7 @@ mod rush;
 
 use sim_core::actions::{vision_radius, Action};
 use sim_core::combat::{compute_damage, Combatant};
-use sim_core::data::{Reward, SiteAction, UnitType};
+use sim_core::data::{Building, Reward, SiteAction, Skill, UnitType};
 use sim_core::grid::{all_tiles, chebyshev, within, Pos};
 use sim_core::rng::Rng;
 use sim_core::state::{Phase, PlayerId, Unit, UnitId};
@@ -179,8 +179,14 @@ fn attack_score(view: &PlayerView, unit: UnitId, target: Pos) -> (i64, bool) {
     if dealt >= d.health {
         return (1000 + dealt as i64, true);
     }
-    let in_range = chebyshev(a.pos, target) <= view.tables().unit(d.kind).range;
-    let taken = if in_range { damage.to_attacker } else { 0 };
+    let d_stats = view.tables().unit(d.kind);
+    let in_range = chebyshev(a.pos, target) <= d_stats.range;
+    let stiff = d_stats.skills.contains(&Skill::Stiff);
+    let taken = if in_range && !stiff {
+        damage.to_attacker
+    } else {
+        0
+    };
     (dealt as i64 - taken as i64, false)
 }
 
@@ -209,6 +215,22 @@ fn site_of_kind(legal: &[Action], kind: SiteAction) -> Option<Action> {
         .iter()
         .copied()
         .find(|a| matches!(a, Action::Site { action, .. } if *action == kind))
+}
+
+/// The first legal `BuildMonument` (tile row-major, then `ALL_MONUMENTS` order).
+fn build_monument(legal: &[Action]) -> Option<Action> {
+    legal
+        .iter()
+        .copied()
+        .find(|a| matches!(a, Action::BuildMonument { .. }))
+}
+
+/// The first legal `BuildBuilding` of `kind`, tile row-major.
+fn building_of_kind(legal: &[Action], kind: Building) -> Option<Action> {
+    legal
+        .iter()
+        .copied()
+        .find(|a| matches!(a, Action::BuildBuilding { building, .. } if *building == kind))
 }
 
 fn is_hurt(u: &Unit) -> bool {
