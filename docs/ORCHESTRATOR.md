@@ -7,26 +7,26 @@ session that follows it should also maintain `docs/STATUS.md` (see below).
 ## Your role
 
 You are the project's high-level agent, working with the owner. You do not write the simulator or
-training code yourself. Other fresh Claude Code sessions do that, one phase each:
+training code yourself. Other fresh Claude Code sessions do that, one phase each (`.claude/commands/`):
 
 - `/write-tests N`: stubs plus tests, validated by a throwaway reference implementation and mutants,
   committed as `tests(mN): ...`
-- `/implement N`: makes the locked tests pass, runs `./scripts/check.sh`, writes a report
-- `/review N`: read-only review, used for complex milestones
+- `/implement N`: makes the locked tests pass, runs `pixi run check`, writes a report
+- `/review N`: read-only spec-keyed review, used for complex milestones
 
 Your job:
 
 1. **Plan and write milestone briefs** (`docs/MILESTONE_N.md`) in the house format below.
-2. **Own the spec's coherence:** `docs/SPEC.md`, `docs/QUESTIONS.md`, the decisions log. Merge answered
-   questions into the spec at the end of each milestone.
+2. **Own the spec's coherence:** `docs/SPEC.md`, `docs/QUESTIONS.md`, `docs/DECISIONS.md`. Merge
+   answered questions into `docs/SPEC.md` at the end of each milestone.
 3. **Review reports** from the other sessions critically: check numbers against the brief, run
-   `./scripts/check.sh` yourself when a claim matters, read diffs of risky changes, and say plainly
+   `pixi run check` yourself when a claim matters, read diffs of risky changes, and say plainly
    when a result is weaker than it looks.
 4. **Raise the questions that matter** to the owner. The owner owns every rules decision and every
    priority call. Ask with a short multiple-choice question when a choice is genuinely theirs; otherwise
    make the conventional choice, state it, and flag it in the brief's "Clarifications" section.
-5. **Keep the project's memory** in the repo (STATUS.md), not in your head: a new orchestrator session
-   must be able to continue from the files alone.
+5. **Keep the project's memory** in the repo (`docs/STATUS.md`), not in your head: a new orchestrator
+   session must be able to continue from the files alone.
 
 You do not: edit locked tests, change a rule without the owner, "fix" a failing gate by changing the gate,
 or start the next milestone before the owner says they are ready.
@@ -37,69 +37,61 @@ or start the next milestone before the owner says they are ready.
 2. Learning an agentic coding workflow (the test-first, three-session loop is part of the point).
 3. Optimization is a side product. Speed work only after profiling.
 
-The owner is relatively new to Claude Code. Explain choices briefly, name tradeoffs, and recommend one
-option rather than listing five.
+Explain choices briefly, name tradeoffs, and recommend one option rather than listing five.
 
 ## The project
 
-A deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia, exposed to Python
-through PyO3, used to train a PPO agent. Pipeline: rules and data tables -> simulator -> tools -> bots ->
-Python env -> PPO against bots -> evaluation suite and self-play.
+A deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia (v1 and v2 rulesets),
+exposed to Python through PyO3, used to train a PPO agent against scripted bots and through self-play.
 
-Repo layout (check the tree; it changes):
+Repo layout:
 
 - `crates/sim-core`: rules, state, `legal_actions`, `apply`, map generation, score, `PlayerView` (fog)
 - `crates/sim-tools`: renderer, digest, replay log, HTML viewer, CLI (`play`, `tournament`, `verify`, ...)
-- `crates/bots`: Bot trait, Random/Rush/Economy bots, match runner and stats
-- `crates/sim-env`: observation encoding, factored action space and masks, `Env`, reward
-- `crates/sim-py`: PyO3 glue (module `polytopia_sim`)
-- `python/polytopia_rl/`: vec env, policy net, PPO, curriculum, evaluation (and, from M11, suite,
-  ratings, self-play)
-- `data/*.json`: rules tables, loaded through `Tables`. `docs/`: spec, briefs, questions, reports.
-- `scripts/check.sh`: the gate (test-lock block, fmt, clippy `-D warnings`, `cargo test --workspace`,
-  then Python tests when `maturin`/`torch` are available). `CLAUDE.md`: rules for coding agents.
+- `crates/bots`: `Bot` trait, `Random`/`Rush`/`Economy` bots (v1 & v2), match runner and stats
+- `crates/sim-env`: v1/v2 observation encoding, factored action space and masks, `Env`, reward, hashes
+- `crates/sim-py`: PyO3 bindings (`polytopia_sim`)
+- `python/polytopia_rl/`: `vec_env`, `model` (`arch="v1"`/`"v2"`), `ppo`, `curriculum`, `transfer`,
+  `selfplay`, `pfsp`, `evaluate`, `suite`, `rating`, `tournament`, `experiment`
+- `data/*.json`, `data/v2/*.json`: rules tables, loaded through `Tables`. `docs/`: spec, status, briefs, decisions, questions, RL report.
+- `scripts/check.sh` (`pixi run check`): the gate (test-lock check on `crates/*/tests/` and `python/tests/rl/`,
+  fmt, clippy `-D warnings`, `cargo test --workspace`, then worktree-safe `py_check.sh` and `rl_check.sh`).
+- `CLAUDE.md`: rules for coding agents.
 
-Environment: the owner's machine (Ryzen 5 5600X3D, RTX 4060 8 GB, WSL2), pixi-managed Python with a
-CUDA torch build. Training runs are hours long and run by the owner (`scripts/train.sh`, `scripts/*.sh`).
+Environment: pixi-managed Python supporting `linux-64` (CUDA 12.9 on the owner's RTX 4060 training
+machine) and `osx-arm64` (CPU for local development). Long training runs are launched by the owner
+via `scripts/train.sh`, `scripts/selfplay.sh`, and `scripts/experiment.sh`.
 
 ## Where things stand
 
-Current milestone, phase, completed milestones, open questions and next actions live in
-`docs/STATUS.md`. Read `docs/STATUS.md` at the start of each session and update it at the end.
+Current milestone, completed milestones, test counts, spec hashes, open questions, and next actions
+live in `docs/STATUS.md`. Read `docs/STATUS.md` at the start of each session and update it at the end.
 
-## Decisions the owner has made (do not relitigate without a reason)
+## Standing decisions (do not relitigate without a reason)
 
 - Test-first, three separate fresh sessions per milestone; tests locked once committed; any suspected
   wrong test is recorded in `docs/QUESTIONS.md`, never edited.
 - Fog: per-player monotonic explored mask; explored tiles show live state; `full_observability` flag.
   The opponent's stars and techs are hidden; only the score is public. Bots see a fog-restricted
   `PlayerView`, not the full state.
-- Game RNG is pcg32 inside the state; `apply` is a pure function of state and action; no `HashMap`
-  iteration order in anything affecting state; `unsafe` is forbidden (pyo3 needs a recorded exception
-  if its macros conflict).
-- Turn starts at 0 (QUESTIONS Q1). Player 0 moves first. No income on a player's first turn.
+- Game RNG is `pcg32` inside the state; `apply` is a pure function of state and action; no `HashMap`
+  iteration order in anything affecting state; `unsafe` is forbidden.
+- Turn starts at 0 (Q1). Player 0 moves first. No income on a player's first turn. Turn cap is 30.
 - Improvements (lumber hut, farm, mine) do not consume the resource, one improvement per tile; harvest
-  animal/fruit consume the animal/fruit; Clear forest on an animal tile forfeits the animal.
+  animal/fruit consume the animal/fruit; Clear forest and Burn forest forfeit an animal.
 - Capital capture wins; otherwise score decides at the turn cap; equal scores draw.
-- Self-play uses a snapshot pool mixed with bots (not pure self-play); the learner trains only on its
-  own seat's transitions (shared-weights two-seat variant is a possible later experiment).
-- PPO is hand-written, CleanRL-style (spec open question 2 closed). Reward shaping is a configurable
-  potential on score difference in the Rust env, default weight to be revisited after M11.
-- The damage preview is real game information and partly reveals the defender's true defense bonus (and
-  so partly the enemy's techs). It will be added later as an observation feature (not an action), as a
-  deliberate, documented exception to the hidden-tech rule, together with a bump of `obs_hash`. It is not
-  part of M11.
-- Roadmap (2026-11-01): M12-M14 done (experiments, speed, capacity: no gap, 64x4 kept). Next is game v2:
-  land only (water/naval in v3); techs Roads, Mathematics, Trade, Smithery, Construction, Free Spirit,
-  Chivalry with their units/buildings/actions; damage preview as an observation feature; v1 behind a
-  ruleset flag; the v1 policy carried over by distillation.
-- Architecture refinement waits until the evaluation suite can discriminate; the ladder is bots ->
-  self-play pool -> (only if a capacity experiment shows a gap) a larger model, with distillation mainly
-  for carrying a policy across a game or observation change (v2).
+- Rulesets: `v1` (default, byte-identical) and `v2` (land techs, units, roads/connections, economy
+  buildings, monuments, lighthouses, and 6-channel damage preview as a documented exception to hidden techs).
+- PPO is hand-written, CleanRL-style with conditional masks, supporting `arch="v1"` and `arch="v2"`,
+  configurable score-difference potential shaping (optionally annealed), and v1→v2 transfer (prefix
+  warm-start or 3-stage factored KL distillation).
+- Self-play supports both the legacy snapshot pool (`rollout="interleaved"`/`"lockstep"`) and the M23
+  revised self-play (`rollout="stream"`, live two-sided self-play, PFSP, pinned cross-arch anchors,
+  win-rate-gated snapshots, and paired seeds).
 
 ## Milestone brief format
 
-Each brief is `docs/MILESTONE_N.md`, written in the style of M3 to M11. Sections, in this order:
+Each brief is `docs/MILESTONE_N.md`, written in the style of recent briefs. Sections, in this order:
 Goal; Decisions already made (owner); In scope; Out of scope; Public API (fixed so tests can import it);
 Rules (the precise behavior, tables, orderings, tie-breaks, rng draw order); Clarifications to the spec
 (owner: confirm or overrule); Changes to earlier tests; Tests (phase A guidance: goldens derived by
@@ -118,35 +110,34 @@ sent to the owner.
 - Look for what the test suite cannot see: a saturated metric, an untested hypothesis stated as a cause,
   a checkpoint selected on too few samples, a gate passed by an edit to the gate.
 - If a mutant or reference was skipped or weakened, say so.
-- Anything the implementer recorded in `QUESTIONS.md` needs an owner answer before the next milestone;
-  put the open ones in front of the owner in a short list with a recommendation each.
+- Anything the implementer recorded in `docs/QUESTIONS.md` needs an owner answer before the next
+  milestone; put the open ones in front of the owner in a short list with a recommendation each.
 
-## Lessons from the project so far
+## Lessons from the project
 
-- `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc was retired in M16b).
-  Merge answered `QUESTIONS.md` entries and confirmed brief clarifications directly into `docs/SPEC.md`
-  at the end of each milestone.
-- A spec test wording error ("no unmarked tile remains") and terrain-share figures that were off
-  surfaced only when a throwaway reference was run; keep that reference-plus-mutants discipline.
-- Briefs the owner later changed on disk (M7, M9) mean: read the disk version before building on a brief.
-- At 99 to 100% win rate, a 50-seed evaluation cannot rank checkpoints; use 200+ seeds and Wilson
-  intervals, and always report the win rate by seat.
-- Shaping with gamma near 1 is theoretically policy-invariant but changed behavior in practice; treat the
-  shaping weight as an experiment, not a default.
+- `docs/SPEC.md` in git is the single authoritative spec. Merge answered `docs/QUESTIONS.md` entries
+  and confirmed brief clarifications directly into `docs/SPEC.md` at the end of each milestone.
+- Always validate Phase A tests with a throwaway reference implementation and mutants to catch spec
+  or test wording bugs early.
+- Read the on-disk version of a brief before building on it in case the owner edited it.
+- At 99–100% win rate, a 50-seed evaluation cannot rank checkpoints; use 200+ seeds, Wilson intervals,
+  paired statistics across seeds, and always report win rate by seat.
+- Shaping with gamma near 1 is theoretically policy-invariant but changed behavior in practice; treat
+  shaping weight and annealing as experimental levers.
 
 ## First tasks for you
 
 1. Read `CLAUDE.md`, `docs/WORKFLOW.md`, `docs/SPEC.md`, `docs/QUESTIONS.md`, `docs/STATUS.md`, recent
-   `docs/MILESTONE_*.md`, and `docs/RL_REPORT.md`; run `git log --oneline` and `./scripts/check.sh`.
-2. Keep `docs/STATUS.md` updated at the end of every working session: current milestone and phase, what is
-   done, what is blocked on the owner, open questions, next three actions, and a dated change log.
-3. At the end of each milestone, merge answered `QUESTIONS.md` entries and confirmed brief clarifications
-   into `docs/SPEC.md`, move answered entries to `docs/DECISIONS.md` as one line each, and leave only open
-   items in `QUESTIONS.md`.
+   `docs/MILESTONE_*.md`, and `docs/RL_REPORT.md`; run `git log --oneline -20` and `pixi run check`.
+2. Keep `docs/STATUS.md` updated at the end of every working session: current state, done table,
+   open questions, next actions, and dated change log.
+3. At the end of each milestone, merge answered `docs/QUESTIONS.md` entries and confirmed brief
+   clarifications into `docs/SPEC.md`, move answered entries to `docs/DECISIONS.md` as one line each,
+   and leave only open items in `docs/QUESTIONS.md`.
 
 ## Working agreements
 
 - One recommendation, with the reason, then ask. Short messages. No recap of what the owner just said.
 - Never claim something works without running it or seeing its output; say what you did not check.
-- If you are unsure of a rule, read the spec and the locked tests before asking the owner.
+- If you are unsure of a rule, read `docs/SPEC.md` and the locked tests before asking the owner.
 - When the context gets long, write the state to `docs/STATUS.md` before it is lost.

@@ -3,226 +3,63 @@
 Maintained by the orchestrator session (`docs/ORCHESTRATOR.md`). A new orchestrator session continues
 from this file. Update it at the end of every working session.
 
-## Current milestone and phase
+## Current state
 
-**Milestone 23 (revised self-play environment: PFSP, live two-sided self-play, barrier-free stream
-rollouts, pinned cross-arch anchors, win-rate gating, shaping annealing & paired seeds) merged into
-`main` (`09f513a`, 2026-11-28), `pixi run check` green (742 cargo, 33 + 567 pytest).** Brief `a758006`
-(SP1–SP7 confirmed); tests `1a01b4b` (83 new RL test cases in `test_selfplay_v2.py`) + `9ebcf4a`
-(`/review 23` guard & anchor RNG tests, total 84); implementation `65d41b7` (all 4 `/review 23`
-findings fixed before merge). `/review 23`: 0 blocking defects, 0 spec gaps, 0 open questions.
-Pure-Python, 100% backward-compatible milestone: zero Rust, `data/`, `obs_hash`, `rules_hash`, or
-legacy-config changes; shipped `v2_selfplay_revised.json` and `selfplay23.json`. All v2 milestones
-(M15–M23) are now complete on `main`—ready for CUDA experiments (`transfer22.json`, `selfplay23.json`).
+All milestones **M1–M23** are merged on `main` (M23 merge commit `09f513a`, 2026-11-28).
 
-**Milestone 22 (`v1 -> v2` policy transfer: prefix warm-start & policy distillation) merged into `main`
-(`b575481`, 2026-11-28), `pixi run check` green (742 cargo, 33 + 483 pytest).** Brief `3809f08` (T1–T6
-confirmed); tests `1750ca6` (28 new RL test cases in `test_transfer.py`) + `f520118` (Q59 A);
-implementation `a7f536a` (incl. `PPOConfig.from_json` docstring nit). `/review 22`: pass, 0 blocking
-defects, 0 should-fix, 0 spec gaps. Pure-Python milestone: zero Rust, `data/`, `obs_hash`, or
-`rules_hash` changes; shipped `v2_curriculum.json`, `v2_selfplay.json`, and 4-arm `transfer22.json`.
-
-**Milestone 21 (`arch="v2"` PolicyNet architecture) merged into `main` (`5898c72`, 2026-11-27),
-`pixi run check` green (742 cargo, 33 + 455 pytest).** Brief `1a33867` (A1–A5 confirmed); tests
-`7360559` (30 new RL test cases in `test_arch_v2.py`) + `9b2d0bb` (Q58 A); implementation `d14cfc3`.
-`/review 21`: merge, 0 blocking defects, 0 spec gaps. Pure-Python milestone: zero Rust, `obs_hash`, or
-`rules_hash` changes; `arch="v1"` remains bit-for-bit identical.
-
-**Milestone 20 (v2 observation, factored action space, Env/Python support, and damage preview) merged
-into `main` (`c966bea`, 2026-11-27), `pixi run check` green (742 cargo, 33 + 425 pytest).** Brief
-`4bda847` (O1–O7 confirmed); tests `e47af57` (29 new Rust/Python/RL tests) + `13b27cd` (Q56 A, Q57 A);
-implementation `1b4992e` (incl. `/review 20` Nit #1 zero-alloc `PyEnv::observation` dims). `/review 20`:
-merge, 0 blocking defects, 0 spec gaps. Hashes (`size=11`): v1 `obs_hash d5f9b1033cfd55ca` / `rules_hash
-a8b52b91eae34503` (byte-identical, replay fixture OK); v2 `obs_hash c15247decc21ae4f` / `rules_hash
-ed271736a688e86d`.
-
-**Milestone 19 (v2 units, skills, bots and renderer) merged into `main` (`4190c8a`, 2026-11-27),
-`pixi run check` green (725 cargo, 26 + 420 pytest).** Brief `c1bee6b` (U1–U6 confirmed); tests
-`d5c2c02` (45 new Rust tests across `sim-core`, `bots`, `sim-tools`, all 12 mutant groups covered) +
-`008e2ad` (Q55 A); implementation `7dd94b4`. `/review 19`: merge, 0 blocking defects, 0 spec gaps, 3
-non-blocking nits. v1 identity holds (`obs_hash d5f9b1033cfd55ca`, `rules_hash a8b52b91eae34503`, v1
-replay fixture OK).
-
-**Milestone 18 (v2 monuments, lighthouses and the v2 Explorer) merged into `main` (`83c4003`,
-2026-11-27), `pixi run check` green (680 cargo, 26 + 420 pytest).** Brief `728df83` (M1–M7 confirmed) +
-`ffd0ef6` (Q52 A, Q53 A); tests `c890971` (28 new Rust tests, 23/23 mutants caught) + `8adaca5` (Q54 B);
-implementation `9aeec6f`. `/review 18`: merge, 0 blocking defects, 0 spec gaps (doc comment nit fixed
-before merge). v1 identity holds (`obs_hash d5f9b1033cfd55ca`, `rules_hash a8b52b91eae34503`, v1 replay
-fixture OK).
-
-**Milestone 17 (v2 economy buildings, tile actions, population loss) merged into `main` (`ba89c28`,
-2026-11-26), `pixi run check` green (652 cargo, 26 + 420 pytest).** Brief `a671de5` (P1–P7 confirmed) +
-`c535b96` (Q50 C, Q51 A); tests `e163730` (27 new Rust tests, 20/20 mutants caught); implementation
-`8b8f5d4`. `/review 17`: merge, no blocking defects, no spec gaps; 4 non-blocking nits noted below. v1
-identity holds (`obs_hash d5f9b1033cfd55ca`, `rules_hash a8b52b91eae34503`, v1 replay fixture OK).
-
-**Milestone 16b (rollout speedups, harness correctness, paired stats, repo hygiene) merged into `main`
-(`724e821`, 2026-11-25), `pixi run check` green (625 cargo, 26 + 420 pytest).** Brief `af1aba8` (B1–B6
-confirmed); tests `0aafb54` (52 new RL tests, 17/17 mutants caught, plus owner-approved `setup.rs:163`
-Rust 1.100 clippy fix); implementation `6f293a6`. v1 identity holds (`obs_hash d5f9b1033cfd55ca`,
-`rules_hash a8b52b91eae34503`). Pending on the owner's CUDA machine: Gate item 3 (M13a GPU profile fixture
-+ `torch.profiler` sync counts in `docs/RL_REPORT.md`).
-
-**Milestone 16 (v2 roads, road movement, city connections) merged into `main` (`9af6590`, 2026-11-19),
-`pixi run check` green (625 cargo, 26 + 368 pytest).** Tests `2ef0f2d`, `7580470`, `b8f127f` (owner-approved
-Q47 edit of the M15 v2-digest expectation); implementation `58d4810`. `/review 16`: merge, no defects;
-one spec gap (Q49, answered A). v1 identity holds (hashes, fixture).
-
-**Milestone 14 closed (2026-10-31): no capacity gap.** Phase 2 (self-play) `elo_vs_ref` vs the M10
-checkpoint: w32b4 152, w64b4 147, w128b4 75, w64b8 -118; rush_e0 0.957 / 0.944 / 0.856 / 0.703. Larger was
-worse at fixed hyperparameters (P3); likely an optimization effect (LR tuned for 64x4, no normalization in
-the residual blocks), not proof that capacity cannot help. w32b4 equals w64b4 at ~20-25% higher speed.
-From scratch, 10M curriculum + 10M self-play beats M10 (+147 Elo). RL_REPORT "Milestone 14b".
-
-**Milestone 13b (stacked snapshot forward): merged into `main` (`074b0ef`, 2026-10-28), `pixi run check`
-green (320 RL + 26 Python tests); gate 13b measured (`4344435`).** Stacking gave little: pool 10
-total sps 1.11x (opponent calls 3.9x fewer, but each stacked call costs 2.8x: 372 launches, padding,
-vmap/functional_call dispatch); pool 1 0.82x (18% slower; one group per tick, so only the extra per-call
-cost shows). The 1M smoke (default stacked, pool 1 throughout) ran 17% slower than the 13a per-snapshot
-smoke; learning not broken. Re-profile at pool 10: opponent forward 46%, Python loop and per-element
-buffer writes 27% (~29k host-device syncs per rollout), learner 22%. Tests `9b7a1ca` (20 tests, 19
-mutants caught), implementation `8809bcf`. Default `opponent_forward: "stacked"`; `"per_snapshot"`
-reproduces M13. Q38 A: the stack also holds snapshots thinned out of the pool while slots still play
-them (untested path; first thinning at ~41M steps with the defaults).
-
-**Milestone 13 (interleaved rollout, `c8a0fcf`):** gate 13a: 1.66x rollout / 1.54x total at pool 10;
-`--parallel 4`. Known gap: an episode truncated during the opponent's opening turn would hang the
-rollout (needs a tiny `max_agent_actions`). Deferred option (a): batch the per-element GPU buffer writes
-in `collect_rollout_interleaved` (~27% of rollout time).
-
-**Milestone 12c closed (2026-10-28):** `decay10 >= decay20 >= const` on all 9 metrics; `elo_vs_init`
-168 / 119 / 89, rush_e0 0.942 / 0.930 / 0.872; 9 of 9 paired seed comparisons ordered on
-`elo_vs_init`. Conclusion: anneal the LR to zero within each run (the default); 10M-step runs suffice
-for M14 comparisons. RL_REPORT "Milestone 12c".
-
-Milestone 12 (closed 2026-10-26):
-- **12a:** batched suite 22 min -> 28 s (greedy W-L-D identical; Q34 TF32 length differences accepted);
-  3 trainers at once give 1,570 sps total against 804 for one (`--parallel 3` default); smoke
-  experiment ran end to end.
-- **12b** (`base`, `pbot40` = `p_bot` 0.4, `ent003` = `ent_coef` 0.003; 3 seeds x 10M; mean of the
-  8/9/10M checkpoints): rush_e0 0.913 +- 0.058 / 0.942 +- 0.021 / 0.884 +- 0.008; `elo_vs_init` 181 /
-  168 / 190. Only pbot40 > ent003 on rush_e0 is flagged (p 0.029), which does not survive a Bonferroni
-  correction for 6 tests. Readings:
-  1. Seed variance in one config spans 0.848-0.958 against rush: single-run comparisons are unreliable.
-  2. `p_bot` 0.4 is ahead of `base` seed by seed on every rush condition, at no Elo cost (consistent,
-     not significant).
-  3. A smaller entropy bonus hurts against rush; keep `ent_coef` 0.01.
-  4. Hypothesis: the LR schedule matters. `base` seed 1 (11b config, 10M) scores 0.80 vs the M10
-     checkpoint where 11b's 20M final scored 0.675, on the same rating seeds.
-- Throughput note: GPU at 40-50% because each trainer is one Python thread making many tiny
-  opponent forward passes (Q29/Q30); per-trainer sps falls from ~550 (pool 2) to ~200 (pool 10).
-
-## Roadmap (owner, 2026-10-24)
-
-1. **Close M11:** done (2026-10-24).
-2. **M12 experiments:** done (2026-10-26).
-3. **M13 speed:** interleaved self-play rollout (brief `docs/MILESTONE_13.md`), then a re-profile.
-4. **M14 architecture and scaling:** network width/depth ladder measured with the M12 harness.
-5. **Game v2 (owner scope, 2026-11-01):** land only (water and naval units deferred to v3). New techs:
-   Roads (roads), Mathematics (sawmill, catapult), Trade (market), Smithery (swordsman, forge),
-   Construction (burn forest, windmill), Free Spirit (disband), Chivalry (knight, destroy building);
-   plus the damage preview as an observation feature. v1 stays runnable behind a ruleset flag. The v1
-   policy is carried over to v2 by distillation.
+- **Gate (`pixi run check`):** green — **742** cargo tests, **33** Python binding tests, **567** RL tests.
+- **Test lock (`.git/tests-lock`):** `9ebcf4a` (M23 review guard tests).
+- **Spec hashes (`size=11`):**
+  - **v1:** `obs_hash d5f9b1033cfd55ca`, `rules_hash a8b52b91eae34503` (byte-identical to M11).
+  - **v2:** `obs_hash c15247decc21ae4f`, `rules_hash ed271736a688e86d`.
+- **Open questions:** none in `docs/QUESTIONS.md` (next number **Q60**). Q1–Q59 are logged in `docs/DECISIONS.md`.
+- **Authoritative spec:** `docs/SPEC.md`. Empirical results live in `docs/RL_REPORT.md`.
 
 ## Done
 
-| Milestone | Content | Result |
+| Milestone | Scope | Merge / Outcome |
 | --- | --- | --- |
-| M1-M6 | data/rng/combat, map gen, state/movement/legality, economy, Explorer/Super Unit, capture/win/score | gated, merged |
-| M7 | renderer, digest, replay, HTML viewer, CLI | gated, merged |
-| M8 | PlayerView, Random/Rush/Economy bots, tournament | gated, merged (Q13: Rush beats Economy 84%, accepted) |
-| M9 | observation, factored actions, masks, Env, PyO3 | gated, merged |
-| M10 | CleanRL-style PPO, curriculum, 20M steps | `latest.pt`: 100% vs random and economy, 97.8% vs rush (seat 1 96.0%) |
-| M11 | hashes, checkpoints, suite, losses, Elo, tournament, snapshot-pool self-play | 11b passed: 0.675 vs M10, worst suite drop -3.0 pp (passes from ~18M on) |
-| M12 | batched suite, seed-varied maps, multi-seed experiment harness, Welch | 12b: see above; `pbot40` best against rush, not significant |
-| M12c, M13, M13b, M14 | LR schedule experiment, interleaved rollout, stacked snapshot forward, capacity ladder | merged; see RL_REPORT 12c, 13a, 13b, 14b |
-| M15 | v2 foundation: ruleset flag, data/v2 tables, v2 tech research, hashes; v1 byte-identical | merged 70c79e4; review: no blocking findings, 2 nits (below) |
-| M16 | v2 roads, road movement (half-points), city connections; v1 byte-identical | merged 9af6590; review: no defects, Q49 spec gap answered, 3 nits (next actions) |
-| M16b | rollout batching/syncs, `current_player()`, opening-turn safeguard, epoch-mean `target_kl`, batched eval, checked `load_policy`, paired t-test, `experiment.py` simplify, worktree/Mac hygiene | merged 724e821; `pixi run check` green (625 cargo, 26 + 420 pytest); GPU profile gate pending on CUDA machine |
-| M17 | v2 economy buildings (`Sawmill`/`Windmill`/`Forge`/`Market`), `BurnForest`, `Disband`, `Destroy`, signed `i32` population/loss & score floor, M16 carry-overs & `sim-core` hot-path cleanups; v1 byte-identical | merged ba89c28; `pixi run check` green (652 cargo, 26 + 420 pytest); `/review 17`: merge, no defects, 4 nits |
-| M18 | v2 lighthouses (4 corners, discovery +1 pop), v2 Explorer (+3.5 lighthouse bonus), monuments (`ParkOfFortune`, `GateOfPower`, `EyeOfGod`, `BuildMonument`, `Destroy`, 400 score, kills tracking), M17 review nits; v1 byte-identical | merged 83c4003; `pixi run check` green (680 cargo, 26 + 420 pytest); `/review 18`: merge, 0 defects, 0 spec gaps |
-| M19 | v2 units (`Swordsman`, `Catapult`, `Knight`), `Stiff`/`Persist` skills, `PlayerView::ruleset()`, v2 `RushBot`/`EconomyBot` extensions, v2 text/HTML renderer & CLI `--ruleset v2`; v1 byte-identical | merged 4190c8a; `pixi run check` green (725 cargo, 26 + 420 pytest); `/review 19`: merge, 0 defects, 0 spec gaps |
-| M20 | `PlayerView` v2 & `attack_preview`, 64-ch/33-global v2 obs (37/18 v1 prefix + 6 damage-preview channels), 15 factored `ActionType`s & `ActionMasks`, `obs_hash_for`, `Env`/`PyEnv`/`PPOConfig` `V2` support; v1 byte-identical | merged c966bea; `pixi run check` green (742 cargo, 33 + 425 pytest); `/review 20`: merge, 0 defects, 0 spec gaps |
-| M21 | `arch="v2"` `PolicyNet` (CoordConv, pre-norm `GroupNorm` + pooled-context/globals FiLM + scaled `ResBlockV2`, separate `move`/`attack` keys + QK `LayerNorm` + 2D `rel_bias` in `ArgHeadV2`), `PPOConfig.arch`; `arch="v1"` & Rust/hashes untouched | merged 5898c72; `pixi run check` green (742 cargo, 33 + 455 pytest); `/review 21`: merge, 0 defects, 0 spec gaps |
-| M22 | `v1 -> v2` policy transfer (`transfer.py`: prefix warm-start, temperature-scaled `masked_kl`, linear `distill_schedule`, 3-stage factored `distill_kl`, single teacher pass per rollout), `PPOConfig` transfer fields, `v2_curriculum.json`, `v2_selfplay.json`, `transfer22.json`; Rust/hashes untouched | merged b575481; `pixi run check` green (742 cargo, 33 + 483 pytest); `/review 22`: pass, 0 defects, 0 spec gaps |
-| M23 | Revised self-play (`pfsp.py`, `compute_gae_segments`, `rollout="stream"`, live two-sided `"self"`, `opponent_forward="auto"`, `selfplay_bots`, pinned cross-arch `anchor_checkpoints`, win-rate-gated snapshots, self-play `best.pt`, `shaping_anneal_steps`, `paired_seeds`), `v2_selfplay_revised.json`, `selfplay23.json`; Rust/hashes/legacy configs untouched | merged 09f513a; `pixi run check` green (742 cargo, 33 + 567 pytest); `/review 23`: 0 blocking defects, all 4 findings fixed |
+| M1–M6 | Data tables, `pcg32` RNG, combat, map gen, movement, economy, Explorer, Super Unit, capture, win, score | Gated, merged |
+| M7 | Text renderer, state digest, replay log, HTML viewer, `polytopia` CLI | Gated, merged |
+| M8 | `PlayerView` fog of war, `Random`/`Rush`/`Economy` bots, match runner | Gated, merged (Q13: Rush beats Economy 84%) |
+| M9 | v1 observation encoding, factored action space and masks, `Env`, PyO3 (`polytopia_sim`) | Gated, merged |
+| M10 | CleanRL-style PPO, 3-stage bot curriculum (20M steps) | `latest.pt`: 100% vs random/economy, 97.8% vs rush |
+| M11 | `obs_hash`/`rules_hash`, checkpoints, 8-condition suite, loss review, Bradley-Terry Elo, snapshot-pool self-play | 11b passed (0.675 vs M10; see `RL_REPORT.md`) |
+| M12, M12c | Batched suite, seed-varied maps, multi-seed experiment harness, LR annealing schedule | Merged (`RL_REPORT.md` 12a–12c; `p_bot` 0.4, anneal LR to 0) |
+| M13, M13b | Interleaved self-play rollout, stacked snapshot forward (`torch.func`) | Merged (`c8a0fcf`, `074b0ef`; `RL_REPORT.md` 13a–13b) |
+| M14 | Capacity ladder (`w32b4`–`w128b4`, `w64b8`) | Merged (`3501282`; `RL_REPORT.md` 14b: no capacity gap at fixed LR) |
+| M15 | v2 foundation: `ruleset` flag, `data/v2/` tables, 7 v2 techs, v2 digest & `rules_hash` | Merged (`70c79e4`); v1 byte-identical |
+| M16 | v2 roads, half-cost road movement, city connections (+1/-1 pop), Q48–Q49 | Merged (`9af6590`); v1 byte-identical |
+| M16b | Rollout batching/sync fixes, `current_player()`, opening-turn safeguard, epoch-mean `target_kl`, batched eval, paired t-test, `osx-arm64` pixi, worktree-safe checks | Merged (`724e821`) |
+| M17 | v2 economy buildings (`Sawmill`, `Windmill`, `Forge`, `Market`), `BurnForest`, `Disband`, `Destroy`, signed `i32` pop & score floor | Merged (`ba89c28`); v1 byte-identical |
+| M18 | v2 corner lighthouses (+1 pop), v2 Explorer (+3.5 lighthouse bonus), monuments (`ParkOfFortune`, `GateOfPower`, `EyeOfGod`, 400 score) | Merged (`83c4003`); v1 byte-identical |
+| M19 | v2 units (`Swordsman`, `Catapult`, `Knight`), `Stiff`/`Persist`, v2 bots, text/HTML renderer & CLI `--ruleset v2` | Merged (`4190c8a`); v1 byte-identical |
+| M20 | v2 `PlayerView` & `attack_preview`, 64-ch/33-global obs (37/18 v1 prefix + 6 damage-preview channels), 15 factored `ActionType`s, `Env`/`PyEnv` v2 | Merged (`c966bea`); v1 byte-identical |
+| M21 | `arch="v2"` `PolicyNet` (CoordConv, pre-norm `GroupNorm` + FiLM `ResBlockV2`, separate `move`/`attack` keys + QK `LayerNorm` + 2D `rel_bias`) | Merged (`5898c72`); `arch="v1"` & Rust untouched |
+| M22 | v1→v2 policy transfer (`transfer.py`: prefix warm-start, 3-stage factored KL distillation), `v2_curriculum.json`, `v2_selfplay.json`, `transfer22.json` | Merged (`b575481`); Rust/hashes untouched |
+| M23 | Revised self-play (`pfsp.py`, `compute_gae_segments`, `rollout="stream"`, live two-sided `p_self`, `opponent_forward="auto"`, `selfplay_bots`, cross-arch anchors, win-rate gating, shaping annealing, paired seeds), `v2_selfplay_revised.json`, `selfplay23.json` | Merged (`09f513a`); 0 blocking defects, all 4 review findings fixed |
 
-**Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
-worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
-the shared `polytopia_sim`); run tests with
-`PYTHONPATH=$PWD/python /home/njweiss4/projects/polytopia_rl/.pixi/envs/default/bin/python -m pytest ...`.
-For milestones that change Rust, build the extension into the worktree only and put it first on the path:
-`(cd python && $E/bin/maturin build --release -q -i $E/bin/python -o ../target/wheels)`, unzip the wheel
-into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/python -m pytest ...`
-(`E` = the main checkout's `.pixi/envs/default`); cargo runs normally in the worktree's own `target/`.
+## Next actions
 
-## Waiting on the owner
-
-1. Run the M22 v2 transfer experiment (`python/experiments/transfer22.json`) on the CUDA machine (`scratch_v1`, `warmstart_v1`, `scratch_v2`, `distill_v2`) and record results in `docs/RL_REPORT.md`.
-2. Run the M23 v2 self-play A/B experiment (`python/experiments/selfplay23.json`) on the CUDA machine (`legacy` vs `revised`) and record results in `docs/RL_REPORT.md`.
-3. Optional: M16b Gate item 3 (re-run the M13a profile fixture + `torch.profiler` sync counts on the RTX 4060 machine and record in `docs/RL_REPORT.md`).
-
-## Open questions
-
-- `QUESTIONS.md`: none open (next number Q60). Q1-Q59 are in `docs/DECISIONS.md`.
-- Spec open questions: none. `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc
-  was retired in M16b, B5).
-- `.git/tests-lock` points at `9ebcf4a` (M23's review guard test commit).
-- Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
-
-## Next three actions
-
-1. Run the M22 4-arm transfer experiment (`python/experiments/transfer22.json`) on the CUDA machine and log findings in `docs/RL_REPORT.md`.
-2. Run the M23 2-arm self-play experiment (`python/experiments/selfplay23.json`) on the CUDA machine and log findings in `docs/RL_REPORT.md`.
-3. Optional: M16b Gate item 3 (profile fixture + sync counts on CUDA) and viewer polish (`road`/`building`/`monument`/`lighthouse` badges in `html.rs` JS `draw()`).
+1. Run the M22 4-arm v2 transfer experiment (`python/experiments/transfer22.json`: `scratch_v1`, `warmstart_v1`, `scratch_v2`, `distill_v2`) on the CUDA machine and record results in `docs/RL_REPORT.md`.
+2. Run the M23 2-arm v2 self-play A/B experiment (`python/experiments/selfplay23.json`: `legacy` vs `revised`) on the CUDA machine and record results in `docs/RL_REPORT.md`.
+3. Optional: run the M16b GPU profile check (`torch.profiler` sync counts on the RTX 4060) and add v2 road/building/monument/lighthouse badges to the HTML viewer (`crates/sim-tools/src/html.rs`).
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
-| 2026-11-28 | M23 merged (`09f513a`), `pixi run check` green (742 cargo, 33 + 567 pytest), branch removed; `/review 23` 0 blocking defects (2 should-fix + 2 nits all fixed before merge); 0 new Q-entries; tests locked at `9ebcf4a`. |
-| 2026-11-28 | M22 merged (`b575481`), `pixi run check` green (742 cargo, 33 + 483 pytest), branch removed; `/review 22` verdict pass (0 blocking defects, 0 should-fix, 0 spec gaps; docstring nit fixed before merge); Q59 moved to `DECISIONS.md`; tests locked at `f520118`. |
-| 2026-11-27 | M21 merged (`5898c72`), `pixi run check` green (742 cargo, 33 + 455 pytest), branch removed; `/review 21` verdict merge (0 blocking defects, 0 spec gaps); Q58 moved to `DECISIONS.md`; tests locked at `9b2d0bb`. |
-| 2026-11-27 | M20 merged (`c966bea`), `pixi run check` green (742 cargo, 33 + 425 pytest), branch removed; `/review 20` verdict merge (0 blocking defects, 0 spec gaps; Nit #1 fixed before merge); Q56–Q57 moved to `DECISIONS.md`; tests locked at `13b27cd`. |
-| 2026-11-27 | M19 merged (`4190c8a`), `pixi run check` green (725 cargo, 26 + 420 pytest), branch removed; `/review 19` verdict merge (0 blocking defects, 0 spec gaps); Q55 moved to `DECISIONS.md`; tests locked at `008e2ad`. |
-| 2026-11-27 | M18 merged (`83c4003`), `pixi run check` green (680 cargo, 26 + 420 pytest), branch removed; `/review 18` verdict merge (0 blocking defects, 0 spec gaps); Q52–Q54 moved to `DECISIONS.md`; tests locked at `8adaca5`. |
-| 2026-11-26 | M17 merged (`ba89c28`), `pixi run check` green (652 cargo, 26 + 420 pytest), branch removed; `/review 17` verdict merge (0 blocking defects, 4 nits); Q50–Q51 moved to `DECISIONS.md`; tests locked at `e163730`. |
-| 2026-11-25 | M16b merged (724e821), `pixi run check` green on `osx-arm64` (625 cargo, 26 + 420 pytest), branch removed; tests locked at `0aafb54`; B1–B6 implemented (`docs/SPEC.md` single source of truth, `osx-arm64` pixi target, worktree-safe checks). |
-| 2026-11-19 | M16 merged (9af6590), gate green (625 cargo, 26 + 368 pytest), worktree removed; Q47-Q49 to DECISIONS.md; Q48/Q49 rules added to SPEC.md and the Claude Doc "v2 rules" tab (rev 23). README.md added. |
-| 2026-11-12 | M16 Q47 A (M15 v2-digest expectation updated, owner-approved) and Q48 C; tests approved and locked at b8f127f; phase B and /review 16 run. |
-| 2026-11-11 | M16 R1-R6 confirmed; phase A started in worktree ../polytopia_rl-m16. |
-| 2026-11-11 | M16 brief (roads and city connections) drafted; clarifications R1-R6 for the owner. |
-| 2026-11-10 | v2 rules merged into the spec: draft tab renamed "v2 rules" (approved lead, M15 data/versioning section), main tab scope/config/status/decision rows updated; SPEC.md synced (main + v2). |
-| 2026-11-09 | M15 merged (70c79e4), gate green (577 cargo, 26 + 368 pytest), worktree removed; Q42-Q46 to DECISIONS.md. Review: no blocking findings; nits StateBuilder tables (M16) and renderer v2 techs (M19/M20). |
-| 2026-11-09 | M15 tests (ca3d45d) approved; Q42-Q46 accepted as recommended (17f0287 on milestone-15); phase B started in the worktree. |
-| 2026-11-07 | M15 V1-V5 confirmed; phase A started in worktree ../polytopia_rl-m15 (Rust built in the worktree, extension unpacked to target/pyext). |
-| 2026-11-06 | M15 brief (v2 foundation) drafted; v2 plan M15-M21 recorded in it. |
-| 2026-11-02 | v2 rules draft approved by the owner (8 proposals; Super Unit disband refund 5). |
-| 2026-11-02 | v2 rules drafted from owner rulings + namu.moe into a new Claude Doc tab; ruins and water out of v2; monuments M18 added to the v2 plan. |
-| 2026-11-01 | v2 scope set by the owner: land only; Roads, Mathematics, Trade, Smithery, Construction, Free Spirit, Chivalry; damage preview; distillation from v1. |
-| 2026-10-31 | 14b done (phase 1 restart after a CUDA start-up failure); RL_REPORT 14b: no capacity gap, larger worse at fixed settings. |
-| 2026-10-29 | 14b phase 1: 11 of 12 runs done (~19.7 h); w32b4/seed3 crashed 6 s in (CUDA_ERROR_UNKNOWN at start-up, GPU fine after). Chain restarted from phase 1 via runs/gate14a/run14b.sh. |
-| 2026-10-28 | Fix: every training run writes ckpt_final.pt (tests c82a9fb, code 98eba2d); the first 14a smoke failed without it. Smoke + 14b launched via runs/gate14a/run14.sh. |
-| 2026-10-28 | Simplify pass merged (1eb8146). M14 merged (3501282), gate green; Q39-Q41 to DECISIONS.md. |
-| 2026-10-28 | Self-play `opponent_forward` set to per_snapshot (5eaa577). M14 brief (capacity ladder) drafted. |
-| 2026-10-28 | Gate 13b: stacked 1.11x at pool 10, 0.82x at pool 1; smoke OK. |
-| 2026-10-28 | M13b merged (074b0ef), gate green, worktree removed; Q38 to DECISIONS.md. |
-| 2026-10-28 | Owner chose option (b): M13b brief (stacked snapshot forward via torch.func) drafted. Option (a) and the hang safeguard deferred. |
-| 2026-10-28 | Gate 13a: interleaved 1.66x rollout / 1.54x total at pool 10; smoke OK; --parallel 4. |
-| 2026-10-28 | 12c done and reported (decay10 best); M13 merged (c8a0fcf), gate green, worktree removed; Q36-Q37 to DECISIONS.md. |
-| 2026-10-27 | 12c-b launched by the owner. M13 S1-S3 confirmed; phase A moved to worktree `../polytopia_rl-m13` (first attempt stopped before any edit). |
-| 2026-10-27 | Profiled self-play at pool 10 (92% of rollout in opponent calls, 58 calls per learner step, barrier per step); M13 brief (interleaved rollout) drafted; scaling becomes M14. |
-| 2026-10-27 | M12c tests and implementation merged (7af81d4); Q35 answered A; 12b pbot40 runs linked as 12c decay10. |
-| 2026-10-27 | `p_bot` 0.4 adopted (tests `6a8b487`, config `4c6740f`, gate green). M12c brief (LR schedule experiment) drafted. |
-| 2026-10-27 | 12b done and reported (RL_REPORT "Milestone 12b"); M12 closed; Q31-Q34 moved to DECISIONS.md. |
-| 2026-10-25 | M12 phase A committed (8d866be) and reviewed; Q31-Q33 answered A. WSL restarted with 12 GB. |
-| 2026-10-24 | Q1-Q30 moved to `docs/DECISIONS.md`; QUESTIONS.md keeps only open items (next Q31). |
-| 2026-10-24 | M11 merged into main (540a214), gate green, test lock moved. 16M/18M suites run (see caveat 1). M12 brief final for phase A (840dc63). |
-| 2026-10-24 | 11b finished and passed (0.675 vs snap_0; worst suite drop -3.0 pp). Orchestrator caveats recorded. |
-| 2026-10-24 | M12 brief drafted (infrastructure + speed; experiments chosen after 11b). Owner: 10M steps per run, seed-varied maps, Welch t across seeds. |
-| 2026-10-24 | Roadmap set: M12 experiments, M13 architecture/scaling, then game v2 (with the damage preview). |
-| 2026-10-24 | WSL memory raised to 12 GB in config, pending a WSL restart after 11b. |
-| 2026-10-24 | Implementer status: 11b resumed at 1.0M with OMP_NUM_THREADS=1; 1M eval clean (rush_e0 0.96). Shared extension clobbered by a main build, restored. |
-| 2026-10-24 | Default turn cap 30 in sim-core (main); `docs/SPEC.md` synced to the Claude Doc rev 394. 11b at 1.0M steps. |
-| 2026-10-24 | Spec merge applied to the Claude Doc (rev 346 -> 394); turn cap closed at 30. 11b at 434k steps, ~700 sps. |
-| 2026-10-24 | STATUS.md created by the orchestrator session. 11b run `runs/selfplay_seed1` in progress. |
+| 2026-11-28 | M23 merged (`09f513a`), `pixi run check` green (742 cargo, 33 + 567 pytest); `/review 23` 0 blocking defects; tests locked at `9ebcf4a`. |
+| 2026-11-28 | M22 merged (`b575481`), `pixi run check` green (742 cargo, 33 + 483 pytest); Q59 to `DECISIONS.md`; tests locked at `f520118`. |
+| 2026-11-27 | M21 merged (`5898c72`), `pixi run check` green (742 cargo, 33 + 455 pytest); Q58 to `DECISIONS.md`; tests locked at `9b2d0bb`. |
+| 2026-11-27 | M20 merged (`c966bea`), `pixi run check` green (742 cargo, 33 + 425 pytest); Q56–Q57 to `DECISIONS.md`; tests locked at `13b27cd`. |
+| 2026-11-27 | M19 merged (`4190c8a`), `pixi run check` green (725 cargo, 26 + 420 pytest); Q55 to `DECISIONS.md`. |
+| 2026-11-27 | M18 merged (`83c4003`), `pixi run check` green (680 cargo, 26 + 420 pytest); Q52–Q54 to `DECISIONS.md`. |
+| 2026-11-26 | M17 merged (`ba89c28`), `pixi run check` green (652 cargo, 26 + 420 pytest); Q50–Q51 to `DECISIONS.md`. |
+| 2026-11-25 | M16b merged (`724e821`), `pixi run check` green on `osx-arm64` (625 cargo, 26 + 420 pytest); `docs/SPEC.md` sole spec, worktree-safe checks. |
+| 2026-11-19 | M16 merged (`9af6590`), gate green (625 cargo, 26 + 368 pytest); Q47–Q49 to `DECISIONS.md`; `README.md` added. |
+| 2026-11-09 | M15 merged (`70c79e4`), gate green (577 cargo, 26 + 368 pytest); Q42–Q46 to `DECISIONS.md`; v2 rules merged into `SPEC.md`. |
+| 2026-10-31 | M14 closed (`3501282`, Q39–Q41); capacity ladder results logged in `RL_REPORT.md`. |
+| 2026-10-28 | M13 (`c8a0fcf`, Q36–Q37) and M13b (`074b0ef`, Q38) merged; M12c LR schedule results logged in `RL_REPORT.md`. |
+| 2026-10-26 | M12 closed (Q31–Q34); multi-seed harness and 12a/12b results logged in `RL_REPORT.md`; `p_bot` 0.4 adopted (`4c6740f`). |
+| 2026-10-24 | M11 merged (`540a214`, 11b passed); Q1–Q30 moved to `DECISIONS.md`; turn cap closed at 30; `STATUS.md` created. |

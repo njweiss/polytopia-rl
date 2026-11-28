@@ -1,51 +1,19 @@
-# Polytopia Headless Sim: Spec v0.1
-
-Oct 24, 2026 · @Nicholas Weiss
+# Polytopia Headless Sim: Spec
 
 ## Overview and goals
 
-This spec defines a deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia, built to train a PPO agent. The owner makes every rules decision. Agents implement against this document and its tests.
+This spec is the single authoritative rulebook for the deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia and its RL training stack. The owner makes every rules decision. Agents implement against this document and its tests.
 
-**Success criteria.** A working agent that makes sensible decisions given the rules and state, and a solid understanding of why it succeeds or fails. The sim never has to interoperate with the real game.
+**Sources of truth:** the owner's rulings and in-game values first, then the Polytopia wiki and the Tribes framework as cross-checks. Exact outcome parity with the real game is not required.
 
-**Priorities, in order:**
+## Scope and rulesets
 
-1. RL understanding
-2. Agentic coding workflow skill
-3. Optimization (a side product, not a goal)
+The simulator supports two drylands 1v1 Imperius rulesets selected by `config.ruleset` (`v1` by default, or `v2`):
 
-**Sources of truth:** the Polytopia wiki first, then the owner's play experience, then the Tribes framework as a cross-check. Exact outcome parity with the real game is not required.
+- **v1:** 11x11 land-only map, Imperius vs. Imperius (starts with Organization and 5 stars), 4 trainable units (Warrior, Rider, Archer, Defender) plus the Super Unit, skills (Dash, Escape, Fortify, Static), 9 technologies, villages and city capture, border growth, city walls, workshops, parks, Explorer (resolved inside the level-2 reward), fog of war (with optional full observability), and veteran promotion.
+- **v2:** extends v1 with 7 land technologies (Roads, Free Spirit, Trade, Chivalry, Mathematics, Construction, Smithery), 3 units (Swordsman, Catapult, Knight) and skills (Stiff, Persist), roads and city connections, 4 economy buildings (Sawmill, Windmill, Forge, Market), tile/unit actions (Burn forest, Disband, Destroy), 3 monuments (Park of Fortune, Gate of Power, Eye of God), corner lighthouses with an updated Explorer walk, and a 6-channel damage-preview observation (see **Game v2 rules** below). Under `v1`, every v1 rule, serialization, replay, and hash is unchanged.
 
-**Resources:** Ryzen 5 5600X3D and an RTX 4060 (8 GB). No speed target until a profile exists.
-
-## Scope and feature flags
-
-v1 is one tribe (Imperius), 1v1, an 11x11 land-only map, four unit types, and a nine-tech tree. Everything else sits behind a flag so it can return as a later milestone without a state-layout rewrite.
-
-**In v1**
-
-- Tribe: Imperius (starts with Organization and 5 stars)
-- Units: Warrior, Rider, Archer, Defender, plus the Super Unit from level 5 up
-- Skills: Dash, Escape, Fortify
-- Villages and city capture, border growth, city walls, workshops, parks
-- Explorer (resolved inside the level-2 reward, not a persistent unit)
-- Fog of war, with full observability as a flag
-- Veteran promotion
-
-**Out of v1 (flagged)**
-
-| Feature | Flag | Notes |
-| --- | --- | --- |
-| Roads and the Roads tech | `roads` | Removed from the tech list and from city connection rewards |
-| Water, ports, naval units | `water` | No water techs, so the map is drylands only |
-| Ruins | `ruins` | Excluded from map generation |
-| Other skills (Persist, etc.) | none yet | Added per unit as needed |
-| Other tribes | none yet | Needs per-tribe spawn modifiers |
-| Lighthouses | lighthouses | Corner tiles are plain land in v1, and the Explorer's lighthouse bonus is ignored |
-
-**v2:** the config value `ruleset` (`v1` by default, or `v2`) selects the rules. v2 adds Roads, Persist, lighthouses, monuments and the other content in v2 rules; water, ports, naval units, ruins and other tribes stay out (v3 candidates). Under `v1` every rule in this tab is unchanged.
-
-**Config values (not hard-coded):** turn cap (30, see Termination), score weights, `max_city_level` (unset means no cap), ruleset (v1 or v2), map size, full-observability flag, auto-recover (off by default).
+**Config values (not hard-coded):** turn cap (30, see Termination), score weights, `max_city_level` (unset means no cap), `ruleset` (`v1` or `v2`), map size (minimum 6), `full_observability` flag, `auto_recover` (off by default).
 
 ## Data tables
 
@@ -190,7 +158,7 @@ Formulas are taken from the wiki. Arithmetic is `f32`, evaluated in exactly the 
 
 ### Movement
 
-Source: the wiki's Movement page. Roads are out of scope.
+Source: the wiki's Movement page. Road movement applies under `ruleset = v2` (see **Game v2 rules**).
 
 - A unit reaches tiles within Chebyshev distance of its movement stat, subject to the rules below. Each step costs 1, cost rounds up, and fog tiles cannot be entered. Every step of the path uses the explored mask from before the move (C2).
 - **Rough terrain:** a unit may move onto a forest or mountain tile but no further that turn. Mountains also need Climbing.
@@ -237,7 +205,7 @@ Every action has one actor kind. The sim exposes `legal_actions(state)` as struc
 | Global | Research (tech) | Prerequisite is researched. Stars cover the cost. | Tech is added. |
 | Global | End turn | Always legal when no reward is pending. | Ends the player's turn. |
 
-**Forced rewards.** If any city has a pending reward, the only legal action is that city's Choose reward. Nothing else is legal until it resolves, including unit actions, Promote and End turn (D9). When several cities are pending, resolve in ascending city id. With roads out of v1, only one city can have a pending reward at a time, so this rule matters only once roads return.
+**Forced rewards.** If any city has a pending reward, the only legal action is that city's Choose reward. Nothing else is legal until it resolves, including unit actions, Promote and End turn (D9). When several cities are pending, resolve in ascending city id. Under v2, a pending reward blocks only its owner (chosen at the start of their turn); a captured city keeps its pending reward and the capturer must choose it at once (Q49).
 
 **Capture notes**
 
@@ -322,7 +290,7 @@ Source: the wiki's Score page, reduced to the v1 rules. Score is computed on dem
 | Parks | 250 each |
 | Technology | 100 × tier for each researched tech, including the starting tech |
 
-Out of v1: monuments, temples, and ship upgrades.
+Under v2, monuments add 400 points each and surplus population is floored at 0 (see **Game v2 rules**).
 
 - **City points.** The wiki scores each population at 5 and gives a level-up bonus of `50 - 5 × level`, so every level is worth 50 in total. A city's points are therefore `100 + 50 × (level - 1) + 5 × surplus population`. The bonus turns negative at level 10 and above, but the total per level stays 50, so the formula needs no special case.
 - **Starting score is 515 for each player:** capital 100, territory 9 tiles = 180, exploration 25 tiles = 125, Warrior 10, Organization 100. The wiki's own check, a level 1 city with 9 tiles of territory, gives 280, which matches the first two terms.
@@ -334,7 +302,7 @@ Out of v1: monuments, temples, and ship upgrades.
 
 ## Map generation
 
-v1 copies the Tribes framework's `LevelGenerator`, which the owner supplied. Its default setup is an 11x11 map with two tribes, matching v1. Where the Tribes generator and the wiki disagree on map generation, Tribes wins. Water is skipped, so the map is drylands, and ruins and lighthouses are skipped as well.
+Map generation copies the Tribes framework's `LevelGenerator` on a drylands map (default 11x11, two Imperius players). Where the Tribes generator and the wiki disagree on map generation, Tribes wins. Under v2, the four corner tiles are set to fogged plain-field lighthouses with no resource (see **Lighthouses and the Explorer**).
 
 ### Pipeline
 
@@ -352,7 +320,6 @@ All randomness comes from the game's own RNG. Java's `Random` is not replicated,
    - Mountain: roll metal.
 8. **Imperius guarantee:** if the 8 ring 1 tiles of a capital hold fewer than 2 fruit, repeat: pick one of the 8 uniformly and overwrite it with field plus fruit, until the count reaches 2.
 
-Skipped stages: the land and water noise, tribe ownership flood fill (both players are Imperius, so it changes nothing), shallow water, ruins, and lighthouses.
 
 ### Parameters
 
@@ -406,41 +373,46 @@ These figures come from a simulation of this pipeline with the parameters above,
 
 ### Observation
 
-`observe(state, player)` returns what that player may know. Explored tiles show live state, so the only hidden information is unexplored tiles, and a recurrent policy is probably unnecessary for v1.
+`observe(state, player)` reads only `PlayerView` and returns what that player may know. Explored tiles show live state, so the only hidden information is unexplored tiles and opponent private state (stars, techs, income, enemy unit phases).
 
-- **Per-tile channels:** terrain, resource, improvement, explored flag, owning city's owner (mine, enemy, unowned), city and level, unit type and owner, health fraction, unit phase, veteran and promotion-available flags, and whether the tile can currently be harvested or built on.
+- **Per-tile channels (v1: 37; v2: 64):**
+  - v1 prefix (channels 0–36): `explored`, terrain (3), resource (4), improvement (3), `village`, territory (mine/enemy), city (mine/enemy, normalized level, capital), own unit type (5), enemy unit type (5), health fraction, own unit phase (4), `veteran`, `can_promote`, `can_harvest`, `can_build`.
+  - v2 suffix (channels 37–63): own/enemy v2 unit types (3+3), `road`, `city.connected`, economy buildings (4) and normalized `building.level`, `lighthouse`, monuments (3), v2 legality flags (`can_build_road`, `can_build_building`, `can_build_monument`, `can_destroy`), and 6 damage-preview channels (`preview.target_can_kill`, `preview.target_max_dmg`, `preview.target_min_retal`, `preview.target_def_bonus`, `preview.attacker_can_kill`, `preview.attacker_max_dmg`).
 - **Tech-gated visibility:** crops need Organization and metal needs Climbing, so the observation depends on the explored mask **and** the player's techs.
-- **Unexplored tiles** are all zeros apart from the explored flag. Enemy units show health but not phase (J2). A terminal observation is still valid, from the observer's side, with every mask false (J3).
-- **Global features:** stars, researched techs, income, turn number divided by the turn cap, and whether a reward is pending. The turn counter is required because the game ends by score at the cap. The turn counter starts at 0.
-- Unbounded values (level, population, stars) are normalized and clipped when encoded. The observation is fixed-size float32: a channels-first board plus a global vector, for a map size fixed per Env (J2, J9). The exact layout is in sim-env and pinned by obs\_hash.
+- **Unexplored tiles** are all zeros apart from the explored flag. Enemy units show health and veteran status, not phase (J2). A terminal observation is still valid, from the observer's side, with every mask false (J3).
+- **Global features (v1: 18; v2: 33):**
+  - v1 prefix (0–17): normalized stars, income, turn fraction (`turn / turn_cap`), pending-reward flag, own score, opponent score, score difference, city count, unit count, and 9 v1 tech flags.
+  - v2 suffix (18–32): 7 v2 tech flags, normalized kills (`min(kills, 10) / 10`), lighthouses discovered (`count / 4`), 3 monument-unlocked flags, and 3 monument-placed flags.
+- Unbounded values (level, population, stars, scores) are normalized and clipped when encoded. The observation is fixed-size `float32`: a channels-first board `(C, H, W)` plus a global vector `(G,)`, pinned by `obs_hash` (J2, J9).
 - Full observability is a config flag that sets the explored mask to all ones. The explored mask grows when a unit moves (radius 1, or radius 2 on a mountain) and whenever a city is founded, captured, or gains tiles, since cities see every tile they own.
-- Both players' total scores are public, so the observation includes the opponent's score and the score difference. The opponent's stars, techs and income are not visible, only the score (G4).
-- Planned, not built: the game's damage preview will be added as an observation feature, not an action. It partly reveals the defender's true defense bonus and so the enemy's techs, a deliberate exception to the hidden-tech rule. Adding it bumps obs\_hash.
+- Both players' total scores are public. The opponent's stars, techs, and income are hidden (G4); under v2, the damage-preview channels expose the defender's true defense bonus on legal attacks as a deliberate, documented exception.
 
 ### Action space
 
-One environment step is one game action, and End turn is a global action. The learner picks in stages.
+One environment step is one game action, and `EndTurn` is a global action. The learner picks in three conditional stages:
 
-1. **Actor head:** logits over three slots per tile (unit, city, site) plus one global slot. A unit and a city never share a slot (J6).
-2. **Action-type head:** conditioned on the actor, masked to legal types.
-3. **Target head:** per-tile logits for move and attack. Enum-valued actions (train, reward, research) use small separate heads, only one of which is active at a time. Site actions need no target, because the tile is the actor; an enum head picks the site action. Capture, Recover, Promote and End turn have no argument head (J7).
+1. **Actor head:** logits over `3 * size * size + 1` slots: three per tile (unit, city, site) plus one global slot. A unit and a city never share a slot (J6).
+2. **Action-type head:** conditioned on the actor, masked to legal types (10 types in v1; 15 types in v2, appending `Disband`, `BuildRoad`, `BuildBuilding`, `BuildMonument`, `Destroy`).
+3. **Argument head:** per-tile logits for `Move` and `Attack`; small enum heads for `Train`, `ChooseReward`, `Site`, `Research`, and (in v2) `BuildBuilding` and `BuildMonument`. `Capture`, `Recover`, `Promote`, `EndTurn`, `Disband`, `BuildRoad`, and `Destroy` take no argument (J7).
 
 - Masks at each stage come from `legal_actions`, and a pending reward restricts everything to that city.
 - The joint log-probability sums only the heads that fired. Entropy is approximated by summing conditional entropies along the sampled path.
-- A flat-index encoding is a stretch experiment built on the same legal-action list.
 
 ### Interface and training
 
-- Single-environment Rust sim exposed through PyO3 (crates sim-env and sim-py), with vectorization on the Python side (a synchronous vector env). Revisit only if profiling shows the interface is the bottleneck (J8, K9). The Env runs in bot mode (the opponent's turns run inside step) or two-seat mode (the caller supplies every action).
-- Algorithm: hand-written CleanRL-style PPO in PyTorch with the conditional actor, type and argument masks, since library PPOs do not support them (K1, open question 2 closed). gamma 0.999 (K4). Entropy is the sum of conditional entropies along the sampled path (K8).
-- Opponents: scripted bots first, through a curriculum (random, then economy, then economy and rush); a stage advances on the training win rate (K7). Then self-play against a snapshot pool mixed with bots: 20% of episodes against a bot (economy or rush), otherwise a snapshot, the newest with probability 0.5 and a uniform pool entry otherwise. A snapshot every 1M steps, at most 40 in the pool. Snapshots sample their actions. The learner trains only on its own seat's transitions (L1 to L4).
-- Rewards: terminal\_weight × (+1 win, -1 loss, 0 draw) plus shaping\_weight × (gamma × phi' - phi), with phi = (my score - opponent score) / 1000 and a terminal potential of 0. In bot mode a step's reward spans the opponent's turn (J4). The Rust Env defaults to shaping\_weight 0; the training config uses 1.0 (K3). Shaping changed behavior in practice, so its weight is an experiment, not a settled default. Self-play recomputes the same formula in Python, pinned by a test against the Rust env (L11).
+- Single-environment Rust sim exposed through PyO3 (`sim-env` and `sim-py`), vectorized in Python (`SyncVecEnv`). `Env` runs in bot mode (opponent turns execute inside `step`) or two-seat mode (the caller supplies every action). Both `ruleset = "v1"` and `ruleset = "v2"` are supported end to end.
+- **Policy network (`PolicyNet`):** supports `arch="v1"` (standard Conv/ResNet trunk + shared attention key) and `arch="v2"` (CoordConv, pre-norm `GroupNorm` + SiLU + pooled-context/globals FiLM + residual-scaled `ResBlockV2`, separate `move`/`attack` keys with QK `LayerNorm` and 2D relative position bias in `ArgHeadV2`).
+- **Algorithm:** hand-written CleanRL-style PPO in PyTorch with conditional actor, type, and argument masks (K1), `gamma = 0.999` (K4), and conditional-path entropy (K8). Linear LR annealing to zero (`anneal_lr = true`) is the default.
+- **Policy transfer (`transfer.py`):** supports v1→v2 prefix warm-start (`warm_start_checkpoint`, copying the shared v1 channel/global/head prefixes into a v2 network) and temperature-scaled 3-stage factored KL distillation (`teacher_checkpoint`, `distill_coef`, `distill_steps`, `distill_temp`) with a linear decay schedule and a single teacher pass per rollout.
+- **Curriculum and self-play:** curriculum training progresses through scripted bot stages (`random` → `economy` → `economy` + `rush`) on training win rate (K7). Self-play supports both the legacy snapshot pool (`rollout="interleaved"` or `"lockstep"`, `opponent_forward="per_snapshot"` or `"stacked"`, `p_bot` 0.4 in `selfplay.json`, `p_latest` 0.5, pool cap 40) and revised self-play (`rollout="stream"` barrier-free streaming rollouts with `compute_gae_segments`, `opponent_forward="auto"`, live two-sided self-play `p_self`, PFSP `"hard"`/`"variance"`, flexible `selfplay_bots`, pinned cross-arch `anchor_checkpoints`, win-rate-gated snapshots, shaping annealing, and paired seeds).
+- **Rewards:** `terminal_weight × (+1 win, -1 loss, 0 draw) + shaping_weight × (gamma × phi' - phi)`, with `phi = (my score - opponent score) / 1000` and terminal potential 0. In bot mode a step's reward spans the opponent's turn (J4). The Rust `Env` defaults to `shaping_weight = 0`; training configs default to `1.0` (K3), with optional linear annealing (`shaping_anneal_steps`, `shaping_end`) in self-play. Self-play recomputes the same formula in Python, verified against Rust (L11).
 - Every episode seed is replayable. Evaluation plays each seed twice with sides swapped; the learner's seat is seed parity (J10). Episodes truncate after 5,000 agent actions as a safety net, separate from the turn cap (J5).
-- Seed ranges never overlap: training below 1e9, evaluation and the suite in \[1e9, 1.5e9), ratings and tournaments from 2e9 (K6, M11).
-- The evaluation suite is the standing benchmark for every run: random, economy and rush at epsilon 0; economy and rush at epsilon 0.2; economy and rush under full observability; rush with sampled actions. 200 seeds, side-swapped. Adding a condition is a spec change (L6). Full observability is a diagnostic of distribution shift, not a target (L7).
-- Reports always show the win rate by seat. First-player advantage is measured, not corrected (L10).
-- Ratings are Bradley-Terry fits in Elo units from side-swapped matches. The random bot is anchored at 0, a draw counts half a win, and each pair that played gets one virtual 0.5-0.5 game as a prior (L5).
-- Checkpoints store obs\_hash (observation layout, action space and enum orders) and rules\_hash (the data tables plus a hand-bumped RULES\_VERSION for rule changes made in code). A checkpoint refuses to load against a different obs\_hash and warns on a different rules\_hash (L9).
+- Seed ranges never overlap: training below `1e9`, evaluation and the suite in `[1e9, 1.5e9)`, ratings and tournaments from `2e9` (K6, M11).
+- **Evaluation suite:** 8 fixed conditions (`random_e0`, `economy_e0`, `rush_e0`, `economy_e20`, `rush_e20`, `economy_fullobs`, `rush_fullobs`, `rush_e0_sampled`), 200 side-swapped seeds. Adding a condition is a spec change (L6). Full observability is a diagnostic of distribution shift, not a target (L7). Reports always show win rate by seat (L10).
+- **Ratings:** Bradley-Terry fits in Elo units from side-swapped matches (`random` anchored at 0, draw = 0.5, one virtual 0.5-0.5 prior game per played pair, L5).
+- **Spec hashes (`size = 11`):** checkpoints store `obs_hash` (refuses to load on mismatch) and `rules_hash` (warns on mismatch; covers `data/` plus `RULES_VERSION`, L9).
+  - v1: `obs_hash = d5f9b1033cfd55ca`, `rules_hash = a8b52b91eae34503`
+  - v2: `obs_hash = c15247decc21ae4f`, `rules_hash = ed271736a688e86d`
 
 ## Invariants and test plan
 
@@ -488,28 +460,15 @@ Determinism and testing are day-one requirements. Agent-written code is accepted
 
 ## Milestones and agent workflow
 
-The sim is finished as a solid prototype before RL starts, which is the owner's choice. Each milestone ends with a gate that agents cannot skip.
+Milestones M1–M23 are implemented and merged on `main`:
 
-1. **Repo and conventions.** Cargo workspace, lint and test commands, and a project instruction file for the coding agent. Gate: CI runs an empty test suite.
-2. **Data tables and combat.** Unit, tech, and action tables as data, plus the combat function. Gate: golden combat tests pass.
-3. **Map generation.** Seeded 11x11 generator with validity checks. Gate: output proportions match the spec over many seeds.
-4. **State, movement, legality.** State structs, phases, reachable tiles, `legal_actions`, `apply`. Gate: movement golden tests and mask property tests pass.
-5. **Economy and progression.** Income, population, levels, rewards, Explorer, techs, forced spawns. Gate: level-up and spawn golden tests pass.
-6. **Capture, win, score.** Villages, city capture, termination, score. Gate: random playouts always terminate with a valid result.
-7. **Tooling.** Text renderer, replay log, replay viewer. Gate: any game replays identically.
-8. **Heuristic bots.** At least a rush bot and an economy bot. Gate: they play full games against each other, and the stats show both strategies matter.
-9. **Python interface.** PyO3 bindings, observation and mask encoders, benchmark of steps per second. Gate: a random agent runs thousands of games from Python.
-10. **RL.** PPO against the bots, then self-play. Flat-action baseline as a stretch experiment.
+- **M1–M8 (v1 simulator, tooling, bots):** data tables, combat, map generation, movement/legality, economy/Explorer/Super Unit, capture/win/score, renderer/replay/HTML viewer/CLI, `PlayerView` and scripted bots.
+- **M9–M14 (v1 RL, evaluation, speed, scaling):** observation/action space, PyO3 bindings, CleanRL-style PPO, curriculum, checkpoint hashes, evaluation suite, Bradley-Terry Elo, snapshot-pool self-play, multi-seed experiment harness, interleaved/stacked rollouts, and the capacity ladder (`docs/RL_REPORT.md`).
+- **M15–M20 (v2 simulator, bots, renderer, RL env):** `ruleset` flag and `data/v2/` tables, roads and city connections, economy buildings and `BurnForest`/`Disband`/`Destroy`, lighthouses/v2 Explorer/monuments, v2 units (`Swordsman`, `Catapult`, `Knight`) and skills (`Stiff`, `Persist`), v2 bots/renderer/CLI, and v2 64-ch/33-global observation with 6 damage-preview channels and 15 factored actions.
+- **M16b (infrastructure):** rollout batching/sync fixes, `osx-arm64` pixi support, worktree-safe checks, paired statistics.
+- **M21–M23 (v2 policy, transfer, self-play):** `arch="v2"` `PolicyNet`, v1→v2 prefix warm-start and 3-stage factored KL distillation, and revised self-play (PFSP, live two-sided self-play, barrier-free stream rollouts, cross-arch anchors, win-rate gating, shaping annealing, paired seeds).
 
-Status as of 2026-11-10: milestones 1 to 15 are done. Milestone 10's PPO agent wins 100% against random and economy and 97.8% against rush (400 games each). Beyond this list, milestone 11 added the evaluation suite, checkpoint hashes, Elo ratings and snapshot-pool self-play; milestones 12 to 14 the multi-seed experiment harness, rollout speed-ups and the capacity ladder (results in docs/RL\_REPORT.md); milestone 15 the v2 foundation. Game v2 continues with milestone 16 (roads), 17 (buildings and tile actions), 18 (monuments and lighthouses), 19 (units, skills and bots), 20 (v2 observation, actions and the damage preview) and 21 (transfer from the v1 policy). Each milestone's brief is docs/MILESTONE\_N.md.
-
-**Working with agents**
-
-- The owner writes or approves every rule. Agents implement, and any ambiguity they find goes back into the Open questions list instead of being guessed.
-- Tests come first for each milestone, and the agent works until they pass.
-- Agents run with limited permissions and limited scope, and one milestone at a time.
-- The owner reviews diffs against this spec before merging.
-- Questions to answer along the way: how precise the spec must be for an agent to succeed unattended, and where parallel agents help.
+Each milestone's brief is `docs/MILESTONE_N.md`. Current status lives in `docs/STATUS.md`, and the three-session test-first workflow is documented in `docs/WORKFLOW.md`.
 
 ## Decision log and open questions
 
@@ -521,7 +480,7 @@ Status as of 2026-11-10: milestones 1 to 15 are done. Milestone 10's PPO agent w
 | Fog of war | Explored tiles show live state. Full observability is a flag. |
 | Vision | Units see radius 1, or radius 2 on a mountain. Cities see every tile they own. |
 | Step semantics | One environment step is one game action. End turn is a global action. |
-| Action structure | Factored heads with four actor slots: unit, city, site, global. Flat baseline is a stretch. |
+| Action structure | Factored heads with four actor slots: unit, city, site, global (10 action types in v1, 15 in v2). |
 | Unit state | Per-unit phase (Fresh, Moved, Attacked, Done) plus Dash and Escape as unit-type data |
 | Escape | Applies after move-then-attack, with a full movement budget |
 | Movement | No passing through friendly units. Unoccupied cities and villages can be entered. Zone of Control comes from enemy units only and stops a unit only when it arrives next to one (C1, C4). |
@@ -535,11 +494,11 @@ Status as of 2026-11-10: milestones 1 to 15 are done. Milestone 10's PPO agent w
 | City and wall bonus | Both require the Fortify skill |
 | Starting values | Population 0 for capital and converted villages. Capital border radius 1. |
 | Turn start | Income is added first, then units reset |
-| Pending rewards | Forced and immediate, may cascade. Simultaneous pending rewards resolve by ascending city id, which only matters once roads return. |
+| Pending rewards | Forced and immediate, may cascade. Simultaneous pending rewards resolve by ascending city id. Under v2, a pending reward blocks only its owner; a captured city's pending reward transfers to the capturer (Q49). |
 | Resource rates | Follows the Tribes generator's per-tile rolls with the values in terrainProbs.json: forest 0.40, mountain 0.15, and fruit, crop, animal, and metal 0.5, with the outer ring at one third. Imperius multipliers are 1 in that file. |
 | Explorer | Vision radius 1, no mountain bonus. Walk follows the wiki's 15-move fog-seeking algorithm with a 0.5 backtrack penalty. Spawns on the granting city, ignores units and Zone of Control, blocked only by mountains without Climbing. Lighthouses ignored. |
-| Roads | Out of v1; in v2 (v2 rules tab) |
-| Water, ruins, lighthouses | Out of v1. Lighthouses are in v2; water and ruins are v3 candidates |
+| Roads | Under `ruleset = v2` (see **Game v2 rules**) |
+| Map scope | Drylands only (1v1 Imperius); corner lighthouses under `ruleset = v2` |
 | Level cap | None. Parks stack. |
 | Mirrored maps | Rejected because they leak information under fog. Evaluate with swapped sides instead. |
 | Win condition | Capital capture, or higher score at the turn cap |
@@ -563,37 +522,33 @@ Status as of 2026-11-10: milestones 1 to 15 are done. Milestone 10's PPO agent w
 | Bots | Random, Rush, Economy on a fog-restricted view, stateless. Their brief rules are their spec. Rush beats Economy 84%, accepted (H1 to H6, Q10, Q13). |
 | RL algorithm | Hand-written CleanRL-style PPO with conditional masks. Open question 2 closed (K1). |
 | Reward | Terminal win/loss plus potential shaping on score difference / 1000, gamma 0.999, terminal potential 0. Env default shaping 0, training config 1.0; the weight is an experiment (J4, K3, K4). |
-| Self-play | Snapshot pool plus 20% bot games; newest snapshot half the time; snapshot every 1M steps, at most 40; snapshots sample; learner trains on its own seat only (L1 to L4) |
+| Self-play | Legacy snapshot pool (`p_bot = 0.4` in `selfplay.json`, `p_latest = 0.5`, pool cap 40) and M23 revised self-play (`rollout="stream"`, live two-sided `p_self`, PFSP, pinned cross-arch anchors, win-rate gating, shaping annealing, paired seeds) |
 | Evaluation | Fixed suite of 8 conditions, 200 side-swapped seeds, disjoint seed ranges, win rate by seat always, Elo with random at 0 (K6, L5 to L7, L10) |
-| Versioning | Checkpoints carry obs\_hash and rules\_hash. obs\_hash mismatch refuses to load; rules changes in code bump RULES\_VERSION by hand (L9). |
-| Damage preview | In v2 (milestone 20) as an observation feature, not an action: a deliberate, documented exception to hidden techs, with an obs\_hash bump |
-| Ruleset | Config value v1 (default) or v2, left out of v1 JSON so v1 stays byte-identical. v2 data in data/v2/; digest and rules\_hash change only under v2; the env refuses v2 until milestone 20; attack is f32 (Q42 to Q46). |
+| Versioning | Checkpoints carry `obs_hash` and `rules_hash`. `obs_hash` mismatch refuses to load; rules changes in code bump `RULES_VERSION` by hand (L9). |
+| Damage preview | Implemented in v2 as 6 observation channels (`PlayerView::attack_preview`): a deliberate, documented exception to hidden techs (`obs_hash c15247decc21ae4f`). |
+| Ruleset | Config value `v1` (default) or `v2`, left out of v1 JSON so v1 stays byte-identical. v2 data in `data/v2/`; both rulesets supported across sim, bots, CLI, `Env`/`PyEnv`, and RL training; attack is `f32` (Q42 to Q46). |
 
 ### Open questions
 
-None open. Agents record new questions in docs/QUESTIONS.md; once the owner answers one, it is merged into this spec. Open question 1 (turn cap) closed at 30 on 2026-10-24; open question 2 (RL library) closed by milestone 10.
+Open agent questions live in `docs/QUESTIONS.md`; answered entries are logged in `docs/DECISIONS.md` and merged into this spec.
 
 # Game v2 rules
 
-Nov 2, 2026 · @Nicholas Weiss
-
-The v2 ruleset is the v1 spec (other tab) plus the additions below, all approved by the owner (2026-11-02). Under ruleset v1 none of this applies. Milestone 15 built the foundation (ruleset flag, tables, tech tree); the remaining rules land in milestones 16 to 20, and until milestone 20 the RL environment refuses v2.
+The v2 ruleset is the v1 spec above plus the additions below. Under `ruleset = v1` none of this applies. All v2 rules are implemented across `sim-core`, `bots`, `sim-tools`, `sim-env`, `sim-py`, and `polytopia_rl`.
 
 ## Scope
 
-v2 is v1 plus seven land technologies, their units, buildings and actions, three monuments, lighthouses and the damage preview (owner, 2026-11-01). The map stays an 11x11 land map with two Imperius players.
+v2 adds seven land technologies, their units, buildings, and actions, three monuments, corner lighthouses, and the damage preview on the same 11x11 drylands 1v1 Imperius map.
 
-- **In v2:** Roads, Free Spirit, Trade, Chivalry, Mathematics, Construction, Smithery; Swordsman, Catapult, Knight; road, sawmill, windmill, forge, market; burn forest, disband, destroy; Park of Fortune, Gate of Power, Eye of God; lighthouses on the four corners; the damage preview as an observation feature.
-- **Not in v2:** water, ports and naval units, ruins, the other techs and monuments. Candidates for v3 (owner, 2026-11-02).
-- **Ruleset flag:** a config value `ruleset` = `v1` | `v2`. Under `v1` every rule, table entry and test of v1 is unchanged; v2 entries in the data tables are ignored. The flag is part of `rules_hash` (owner, 2026-11-02).
+- **Added in v2:** Roads, Free Spirit, Trade, Chivalry, Mathematics, Construction, Smithery; Swordsman, Catapult, Knight (with Stiff and Persist); road, sawmill, windmill, forge, market; burn forest, disband, destroy; Park of Fortune, Gate of Power, Eye of God; lighthouses on the four corners; 6-channel damage preview in observations.
+- **Ruleset flag:** `config.ruleset` = `v1` (default) | `v2`. Under `v1` every rule, table entry, replay, and hash of v1 is unchanged; v2 table entries are ignored. The flag is part of `rules_hash`.
 
-**Data and versioning** (milestone 15; Q42 to Q46):
+**Data and versioning** (Q42–Q47):
 
-- v2 data lives in `data/v2/` (units, techs, site\_actions, buildings, monuments, rules), loaded on top of the v1 tables. Every v2 entry appears exactly once, a prerequisite always has a lower tier, and building adjacency names must exist.
-- `ruleset` is left out of the config JSON under v1, so v1 files, replays and hashes are byte-identical. `rules_hash` under v2 also covers the `data/v2` files and the ruleset; v1's stays `a8b52b91eae34503`.
-- The state digest appends a ruleset byte under v2 only and hashes all 16 tech bits (Q42).
-- Unit attack is `f32`, in the tables and in combat, so the Knight's 3.5 is exact (Q45).
-- Until milestone 20 the RL environment refuses v2: Rust panics, Python raises `ValueError`, both naming milestone 20 (Q43, Q44).
+- v2 data lives in `data/v2/` (`units.json`, `techs.json`, `site_actions.json`, `buildings.json`, `monuments.json`, `rules.json`), loaded on top of the v1 tables via `Tables::from_json_v2`. Every v2 entry appears exactly once, a prerequisite always has a lower tier, and building adjacency names must exist.
+- `ruleset` is omitted from serialized v1 config JSON so v1 replays and hashes remain byte-identical. For `size = 11`: v1 `rules_hash = a8b52b91eae34503` / `obs_hash = d5f9b1033cfd55ca`; v2 `rules_hash = ed271736a688e86d` / `obs_hash = c15247decc21ae4f`.
+- Under v2, the state digest appends the ruleset byte, road flags, city connection links, economy buildings, lighthouses, monument state, and player kill counts, and hashes all 16 tech bits (Q42, Q47).
+- Unit `attack` is `f32` in the tables and combat so the Knight's `3.5` is exact (Q45).
 
 ## Technologies
 
@@ -625,7 +580,7 @@ In-game values from the owner (2026-11-01/02).
 - **Persist:** each kill by the unit's attack restores a full attack (the phase goes back to allowing an attack), with no limit. It does not restore movement, apart from the kill-move onto the target's tile (owner). Whether an Escape move remains available after a Persist chain is not relevant: the Knight has no Escape.
 - **Ranged:** the Catapult attacks at Chebyshev distance up to 3 and never kill-moves (v1 rule for ranged units).
 - **Score:** units score 5 per star of cost as in v1: Swordsman 25, Catapult 40, Knight 40.
-- **Bots:** the Rush and Economy bots must at least handle the new units and actions legally; whether they use them is part of the units milestone (owner, 2026-11-02).
+- **Bots:** under v2, `RushBot` researches `Riding -> FreeSpirit -> Chivalry`, trains in priority order `Knight -> Rider -> Warrior`, and builds unlocked monuments; `EconomyBot` researches all 15 v2 techs, builds monuments and economy buildings (`Market`, `Forge`, `Sawmill`, `Windmill`), and trains `Swordsman -> Catapult -> Warrior` while units < `2 × cities`.
 
 ## Roads and city connections
 
@@ -637,7 +592,7 @@ A road is a building (Roads tech, 3 stars) that halves movement on roads and for
 - **City connection:** a city is connected when roads link it to its owner's capital; the path may pass through the owner's cities. When a city becomes connected, it and the capital each gain +1 population; when the connection is lost, both lose it again. (owner)
 - **Game over:** connections are not updated after the action that ends the game, so a capital capture changes no population through connections (owner, 2026-11-12, Q48).
 - **Rewards on the other player's turn:** a road (even a neutral one the other player builds) can connect a city and level it up during the other player's turn. A pending reward blocks only its owner, who chooses it at the start of their turn; a city captured with a pending reward keeps it, and the capturer must choose it at once (owner, 2026-11-19, Q49).
-- **Who acts:** building a road is a site action on the tile (owner, 2026-11-02); a road in neutral territory is a site action of a tile the player does not own, which v1's actor slots do not have yet (a design point for the observation milestone).
+- **Who acts:** building a road is a site action on the tile (including explored, unoccupied neutral tiles), encoded as `ActionType::BuildRoad` in the site actor family.
 
 ## Buildings and tile actions
 
@@ -666,7 +621,6 @@ v2 has three monuments; each is free, gives its city +3 population and its owner
 | Gate of Power | the player has killed 10 enemy units |
 | Eye of God | the player has discovered all four lighthouses (active from the start) |
 
-- The other monuments' tasks are impractical in v2 and are left out (owner).
 - Placing a monument is a site action on the target tile (owner, 2026-11-02). Kills count as in v1 (attack or retaliation, the Super Unit included) (owner, 2026-11-02).
 - A monument is a building: Destroy removes it with its population and score, and it cannot be placed again (namu.moe: a destroyed monument cannot be rebuilt; owner, 2026-11-02).
 
@@ -683,19 +637,8 @@ A lighthouse stands on each of the map's four corner tiles (owner, 2026-11-01).
 
 - **Population loss:** a city's level never goes down. Its population may fall below the current level's threshold, even below zero, and must grow back past it before the next level-up. Population is lost when a building that gave it is destroyed or loses levels, and when a city connection is lost (owner, 2026-11-02).
 - **Score:** v1's terms continue (units, territory, exploration, cities, parks, techs). New: monuments 400 each. Roads and the economy buildings score only through the population they give (owner, 2026-11-02). The city term's surplus population is never negative: below the threshold it counts as 0 (owner, 2026-11-02).
-- **Damage preview:** an observation feature, not an action. For each attack the observer could make, the attack result and the retaliation from the combat formula, using the defender's true defense bonus. It is a deliberate, documented exception to the hidden-tech rule and bumps `obs_hash`. Its encoding is decided in the observation milestone (owner, earlier decision).
+- **Damage preview:** an observation feature, not an action. `PlayerView::attack_preview(unit, target)` evaluates the combat formula using the defender's true defense bonus (`dealt`, `retaliation`, `defender_dies`, `defense_bonus`) for every legal attack—a deliberate, documented exception to the hidden-tech rule. In v2 observations (64 board channels, 33 globals, `obs_hash = c15247decc21ae4f`), previews are aggregated across legal attacks into 6 channels:
+  - On each target tile: `preview.target_can_kill` (binary), `preview.target_max_dmg` (`max(dealt / target.hp)`), `preview.target_min_retal` (`min(retaliation / attacker.hp)`), `preview.target_def_bonus` (`defense_bonus / 4.0`).
+  - On each attacker tile: `preview.attacker_can_kill` (binary), `preview.attacker_max_dmg` (`max(dealt / target.hp)`).
 
-## Proposals and sources
-
-The orchestrator's proposals, all approved by the owner on 2026-11-02 (the Super Unit's refund changed to 5):
-
-- [x] `ruleset` flag v1 / v2, and in `rules_hash`
-- [x] road building as a site action, including on neutral tiles
-- [x] "adjacent" = the 8 surrounding tiles
-- [x] Burn forest forfeits an animal on the tile
-- [x] Disband legal in any phase, not a kill; the Super Unit refunds 5 (worth 10 stars)
-- [x] Bots handle the new units and actions legally; how much they use them is decided in the units milestone
-- [x] Monument placement as a site action; kills counted as in v1; a destroyed monument cannot be placed again
-- [x] No separate score for roads and economy buildings; surplus population floored at 0 in the score
-
-**Sources:** the owner's in-game values and rulings (authoritative); [namu.moe: The Battle of Polytopia](https://namu.moe/w/polytopia) (secondary; its tech tree is an older layout); [Pocket Gamer unit list](https://www.pocketgamer.com/the-battle-of-polytopia/the-battle-of-polytopia-cheats-and-tips-list-of-every-unit-and-tribe/) and [West Games damage calculator](https://west-games.com/polytopia-damage-calculator/) (checked, superseded by the owner's values). The Fandom wiki could not be read automatically. Working notes: `docs/V2_RULES_NOTES.md` in the repo.
+**Sources:** owner rulings and in-game values (authoritative); [namu.moe: The Battle of Polytopia](https://namu.moe/w/polytopia), [Pocket Gamer unit list](https://www.pocketgamer.com/the-battle-of-polytopia/the-battle-of-polytopia-cheats-and-tips-list-of-every-unit-and-tribe/), and [West Games damage calculator](https://west-games.com/polytopia-damage-calculator/) (secondary cross-checks).

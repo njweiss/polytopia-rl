@@ -1,9 +1,9 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 `9af6590` for Q47-Q49 `ba89c28` for Q50-Q51 `83c4003` for Q52-Q54 `4190c8a` for Q55 `c966bea` for Q56-Q57 `5898c72` for Q58 and `b575481` for Q59.
-Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
-spec section, or the brief when the answer is an implementation detail.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`), `7542ffa` for Q31-Q34, `7af81d4` for Q35, `c8a0fcf` for Q36-Q37, `074b0ef` for Q38, `3501282` for Q39-Q41, `70c79e4` for Q42-Q46, `9af6590` for Q47-Q49, `ba89c28` for Q50-Q51, `83c4003` for Q52-Q54, `4190c8a` for Q55, `c966bea` for Q56-Q57, `5898c72` for Q58, and `b575481` for Q59.
+Rule-level answers are also merged into `docs/SPEC.md`; "Where" names the spec section, or the brief
+when the answer is an implementation detail.
 
 | Q | Date | Question | Answer | Where |
 | --- | --- | --- | --- | --- |

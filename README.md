@@ -1,85 +1,105 @@
 # polytopia_rl
 
-A deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia, with Python bindings
-and a PPO agent trained against scripted bots and through self-play.
-
-It is also a learning project in RL and agentic workflows: Claude Code agents write every milestone
-from a spec the owner approves, tests first.
+A deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia (v1 and v2 rulesets),
+with Python bindings and a PPO agent trained against scripted bots and through self-play.
 
 ## Status
 
-- **Game v1** (the reduced ruleset) is complete. The PPO agent was trained on it (curriculum against
-  bots, then snapshot-pool self-play); results are in `docs/RL_REPORT.md`.
-- **Game v2** (more of the real game) is in progress, behind a `ruleset: v2` flag. Done so far: tech
-  research for the v2 techs (M15), roads and city connections (M16). v1 stays byte-identical.
-- The current state and next steps are in `docs/STATUS.md`.
+- **Game v1** (reduced 9-tech, 4-unit ruleset) is complete; PPO and self-play results are in
+  [`docs/RL_REPORT.md`](docs/RL_REPORT.md).
+- **Game v2** (`ruleset = v2`) is complete through Milestone 23: 7 additional land technologies,
+  3 new units (`Swordsman`, `Catapult`, `Knight`) with `Stiff`/`Persist`, roads and city connections,
+  economy buildings (`Sawmill`, `Windmill`, `Forge`, `Market`), `BurnForest`/`Disband`/`Destroy`,
+  monuments, lighthouses, a 6-channel damage preview observation, an `arch="v2"` policy network,
+  v1→v2 policy transfer (prefix warm-start & distillation), and revised self-play (PFSP, live
+  two-sided self-play, stream rollouts, anchors, win-rate gating, shaping annealing, paired seeds).
+  v1 remains byte-identical.
+- Current state, test counts, hashes, and next steps are tracked in [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `crates/sim-core` | The rules: state, `legal_actions`, `apply`, map generation, combat, movement. Pure and deterministic. |
-| `crates/bots` | Scripted opponents: `random`, `rush`, `economy`. |
-| `crates/sim-tools` | Digests, replay files, a text renderer, an HTML viewer, and the `polytopia` CLI. |
-| `crates/sim-env` | The RL environment: observations, the action space, rewards. |
+| `crates/sim-core` | Pure, deterministic game rules: state, `legal_actions`, `apply`, map gen, combat, movement, `PlayerView`. |
+| `crates/bots` | Scripted opponents (`random`, `rush`, `economy`) supporting v1 and v2, plus match runner. |
+| `crates/sim-tools` | State digests, replay logs, text renderer, HTML viewer, and the `polytopia` CLI. |
+| `crates/sim-env` | RL environment: v1/v2 observations, factored action space and masks, rewards, spec hashes. |
 | `crates/sim-py` | PyO3 bindings (`polytopia_sim`). |
-| `data/` | Rules tables (units, techs, rules, rewards) as JSON; `data/v2/` for game v2. |
-| `python/polytopia_rl` | PPO, self-play, evaluation, the evaluation suite, tournaments, experiments. |
-| `python/configs`, `python/experiments` | Training configs and multi-seed experiment specs. |
-| `scripts/` | The check gate and launchers for training and evaluation. |
-| `docs/` | The spec, milestone briefs, decisions and status (see below). |
+| `data/`, `data/v2/` | JSON rules tables (units, techs, site actions, rewards, buildings, monuments, rules). |
+| `python/polytopia_rl` | Policy networks (`arch="v1"`/`"v2"`), PPO, curriculum, transfer, self-play/PFSP, suite, Elo, tournaments, experiment harness. |
+| `python/configs`, `python/experiments` | Training configs (`v1` & `v2`) and multi-seed experiment specs (`transfer22.json`, `selfplay23.json`, etc.). |
+| `scripts/` | Check gate (`check.sh`) and training/evaluation launchers. |
+| `docs/` | Authoritative rulebook (`SPEC.md`), status, decisions, workflow, milestone briefs, and RL report. |
 
 ## Setup
 
-Requirements: Rust (stable) and [pixi](https://pixi.sh), which provides Python 3.12, PyTorch (CUDA
-12.9), maturin and pytest. The pixi environment is configured for linux-64.
+Requirements: Rust (stable) and [pixi](https://pixi.sh), which provides Python 3.12, PyTorch
+(`linux-64` CUDA 12.9 and `osx-arm64` CPU), `maturin`, and `pytest`.
 
 ```sh
 pixi install
-pixi run check        # fmt, clippy -D warnings, all Rust tests, Python tests, RL tests
+pixi run check        # test-lock check, fmt, clippy -D warnings, Rust tests, Python & RL tests
 ```
 
-`pixi run check` (`scripts/check.sh`) is the one gate: work is not done until it passes.
+`pixi run check` (`scripts/check.sh`) is the single quality gate. Inside a git worktree,
+`scripts/py_check.sh` and `scripts/rl_check.sh` automatically build an isolated wheel into
+`target/pyext` instead of touching the main checkout's Python environment.
 
 ## Usage
 
-The simulator CLI:
+### Simulator CLI
+
+Pass `--ruleset v2` to `play`, `play-random`, or `tournament` to use the v2 ruleset (defaults to `v1`):
 
 ```sh
 cargo run --release -p sim-tools --bin polytopia -- play --bots rush,economy --seed 1 --out game.json
+cargo run --release -p sim-tools --bin polytopia -- play --bots rush,economy --seed 1 --ruleset v2 --out game_v2.json
 cargo run --release -p sim-tools --bin polytopia -- verify game.json
 cargo run --release -p sim-tools --bin polytopia -- view game.json --step 10
 cargo run --release -p sim-tools --bin polytopia -- html game.json game.html
-cargo run --release -p sim-tools --bin polytopia -- tournament --bots random,rush,economy --games 100
+cargo run --release -p sim-tools --bin polytopia -- tournament --bots random,rush,economy --games 100 --ruleset v2
 ```
 
-`scripts/demo.sh` builds, verifies and renders a sample replay.
+`scripts/demo.sh` builds, verifies, and renders a sample replay.
 
-Training and evaluation (run inside the pixi environment):
+### Training, Evaluation, and Experiments
+
+Run inside the pixi environment (outputs go to `runs/`):
 
 ```sh
-pixi run scripts/train.sh python/configs/stage1_random.json        # PPO against the bots
-pixi run scripts/selfplay.sh python/configs/selfplay.json          # snapshot-pool self-play
-pixi run scripts/suite.sh runs/<run>/latest.pt                     # fixed evaluation suite
-pixi run scripts/tournament.sh runs/<run>                          # round robin of a run's pool
-pixi run scripts/experiment.sh run python/experiments/smoke.json   # arms x seeds
-pixi run scripts/experiment.sh report python/experiments/smoke.json
+# Curriculum PPO against bots (v1 or v2 with arch="v2")
+pixi run scripts/train.sh python/configs/curriculum.json
+pixi run scripts/train.sh python/configs/v2_curriculum.json
+
+# Self-play (v1 legacy pool, or v2 revised PFSP + live two-sided stream self-play)
+pixi run scripts/selfplay.sh python/configs/selfplay.json
+pixi run scripts/selfplay.sh python/configs/v2_selfplay_revised.json --init-checkpoint runs/<run>/ckpt_final.pt
+
+# Evaluation suite and pool tournament
+pixi run scripts/suite.sh runs/<run>/latest.pt
+pixi run scripts/tournament.sh runs/<run>
+
+# Multi-seed experiments (arms x seeds)
+pixi run scripts/experiment.sh run python/experiments/smoke.json
+pixi run scripts/experiment.sh run python/experiments/transfer22.json
+pixi run scripts/experiment.sh run python/experiments/selfplay23.json
+pixi run scripts/experiment.sh report python/experiments/transfer22.json
 ```
 
-Runs are written to `runs/`.
+Any config field can be overridden on the command line as `key=value` (e.g., `arch=v2`,
+`warm_start_checkpoint=...`, `teacher_checkpoint=... distill_coef=0.1`).
 
 ## Documentation
 
-- `docs/SPEC.md`: the rulebook (game v1, then "Game v2 rules"). The owner writes or approves every rule.
-- `docs/MILESTONE_N.md`: one brief per milestone.
-- `docs/WORKFLOW.md`: the per-milestone agent workflow (tests, implementation, review).
-- `docs/ORCHESTRATOR.md`, `docs/STATUS.md`: how the orchestrating session works, and where it stands.
-- `docs/QUESTIONS.md`, `docs/DECISIONS.md`: open questions from agents, and the owner's answers.
-- `docs/RL_REPORT.md`: training results.
-- `CLAUDE.md`: rules for coding agents (determinism, data-driven rules, locked tests).
+- [`docs/SPEC.md`](docs/SPEC.md): single authoritative rulebook for game v1 and v2.
+- [`docs/STATUS.md`](docs/STATUS.md): current state, hashes, test counts, and next actions.
+- [`docs/RL_REPORT.md`](docs/RL_REPORT.md): empirical training and experiment results.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md), [`docs/QUESTIONS.md`](docs/QUESTIONS.md): answered decisions (Q1–Q59) and open agent questions.
+- [`docs/WORKFLOW.md`](docs/WORKFLOW.md), [`docs/ORCHESTRATOR.md`](docs/ORCHESTRATOR.md), [`CLAUDE.md`](CLAUDE.md): agent workflow and coding rules.
+- `docs/MILESTONE_N.md`: per-milestone briefs (M1–M23).
 
 ## Determinism
 
-The same seed and the same actions give the same game, byte for byte: all randomness comes from an RNG
-stored in the game state, iteration order never depends on hashing, and every replay file carries a
-digest per step that `polytopia verify` checks.
+The same seed and the same actions produce the same game byte for byte: all randomness comes from
+a `pcg32` RNG stored inside the game state, iteration order never depends on hashing, and every
+replay file carries a per-step state digest verified by `polytopia verify`.

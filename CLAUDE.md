@@ -1,15 +1,15 @@
 # Polytopia headless sim: instructions for coding agents
 
-Goal: a deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia, used to
-train a PPO agent. The project owner is learning RL and agentic workflows; correctness and
-clarity beat cleverness. Speed work comes later and only after profiling.
+Goal: a deterministic, headless Rust simulator of a reduced 1v1 Battle of Polytopia (v1 and v2
+rulesets), used to train a PPO agent. The project owner is learning RL and agentic workflows;
+correctness and clarity beat cleverness. Optimize only after profiling.
 
 ## Source of truth
 - `docs/SPEC.md` is the rulebook. The owner writes or approves every rule.
 - `docs/MILESTONE_N.md` is your current assignment. Do that milestone only.
-- Tests in `crates/*/tests/` were written first and encode the spec. **Never edit an expected
-  value, delete a test, or add `#[ignore]` to get green.** If a test looks wrong, stop and
-  record it in `docs/QUESTIONS.md`.
+- Tests in `crates/*/tests/` and `python/tests/rl/` were written first and encode the spec.
+  **Never edit an expected value, delete a test, or add `#[ignore]` to get green.** If a test
+  looks wrong, stop and record it in `docs/QUESTIONS.md`.
 
 ## When the spec is silent or ambiguous
 Do not guess. Append the question to `docs/QUESTIONS.md` (what you needed, which spec section,
@@ -20,25 +20,25 @@ say so in your final report. The owner answers; the answer goes back into the sp
 - Determinism: no `HashMap`/`HashSet` iteration order in anything that affects game state
   (use `Vec`, `BTreeMap`, or sort); no wall-clock time; no thread-dependent behavior; all
   randomness from the game's own RNG whose state lives inside the game state.
-- Rules data lives in `data/*.json`, loaded through `sim_core::data::Tables`. Do not hard-code
-  unit stats, tech costs, etc. in Rust branches.
+- Rules data lives in `data/*.json` and `data/v2/*.json`, loaded through `sim_core::data::Tables`.
+  Do not hard-code unit stats, tech costs, etc. in Rust branches.
 - Combat numerics are `f32`, evaluated in the order the spec writes them, half-up rounding.
-- `apply(state, action)` will be a pure function of state and action. No hidden global state.
-- `unsafe` is forbidden. No new dependencies without asking (record in QUESTIONS.md).
+- `apply(state, action)` is a pure function of state and action. No hidden global state.
+- `unsafe` is forbidden. No new dependencies without asking (record in `docs/QUESTIONS.md`).
 - Keep scope tight: no features, abstractions, or files the milestone does not call for.
 
 ## Definition of done
-`./scripts/check.sh` exits 0 (fmt, clippy `-D warnings`, all tests). Run it as `pixi run check`
-so the Python tests run too: pixi is the owner-approved Python environment manager (DECISIONS.md
-Q17). Then report: what you
-built, anything you deferred or were unsure about (with QUESTIONS.md entry numbers), and the
-exact test output summary. Do not claim done without running it.
+`./scripts/check.sh` exits 0 (test lock, fmt, clippy `-D warnings`, all Rust and Python/RL tests).
+Run it as `pixi run check` so the Python tests run too: pixi is the owner-approved Python
+environment manager (`docs/DECISIONS.md` Q17). Then report: what you built, any open questions
+or uncertainties (with `QUESTIONS.md` entry numbers), and the exact test output summary. Do not
+claim done without running it.
 
 ## Layout
 - `crates/sim-core`: the simulator library (no Python, no I/O beyond embedded data).
 - `crates/sim-tools`: renderer, digest, replay log, HTML viewer, CLI (`polytopia`).
 - `crates/bots`: bot trait, Random/Rush/Economy bots, match runner.
-- `crates/sim-env`: observation encoding, factored action space, masks, `Env`, reward.
+- `crates/sim-env`: observation encoding, factored action space, masks, `Env`, reward, hashes.
 - `crates/sim-py`: PyO3 bindings (`polytopia_sim`).
-- `python/polytopia_rl/`: PPO trainer, self-play, evaluation suite, experiment harness.
-- `data/`: rules tables (JSON). `docs/`: spec, milestone briefs, open questions.
+- `python/polytopia_rl/`: policy nets, PPO, transfer, self-play/PFSP, suite, experiment harness.
+- `data/`, `data/v2/`: rules tables (JSON). `docs/`: spec, status, briefs, decisions, open questions.
