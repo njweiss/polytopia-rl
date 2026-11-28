@@ -1,0 +1,37 @@
+{
+  "name": "selfplay23",
+  "base_config": "python/configs/v2_selfplay.json",
+  "init_checkpoint": "runs/exp/transfer22/distill_v2/seed1/ckpt_final.pt",
+  "seeds": [1, 2, 3],
+  "total_steps": 10000000,
+  "arms": {
+    "legacy": {},
+    "revised": {
+      "rollout": "stream",
+      "opponent_forward": "auto",
+      "p_bot": 0.25,
+      "p_self": 0.35,
+      "p_latest": 0.25,
+      "pfsp_mode": "hard",
+      "pfsp_power": 2.0,
+      "pfsp_ema_alpha": 0.05,
+      "selfplay_bots": [
+        {"name": "rush_e0", "bot": "rush", "epsilon": 0.0},
+        {"name": "rush_e20", "bot": "rush", "epsilon": 0.2},
+        {"name": "economy_e0", "bot": "economy", "epsilon": 0.0}
+      ],
+      "snapshot_every": 500000,
+      "snapshot_win_rate": 0.55,
+      "snapshot_min_games": 20,
+      "snapshot_max_steps": 2000000,
+      "shaping_anneal_steps": 5000000,
+      "shaping_end": 0.0,
+      "paired_seeds": true
+    }
+  },
+  "primary": ["rush_e0", "elo_vs_init"],
+  "suite_seeds": 200,
+  "tournament_seeds": 100,
+  "eval_checkpoints": 3,
+  "h2h_seeds": 100
+}

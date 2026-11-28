@@ -26,14 +26,30 @@ import numpy as np
 import polytopia_sim
 import torch
 
-from polytopia_rl.checkpoint import describe, load_checkpoint, load_net, save_checkpoint
+from polytopia_rl.checkpoint import SpecMismatch, describe, load_checkpoint, load_net, save_checkpoint
 from polytopia_rl.config import PPOConfig, load_config
 from polytopia_rl.curriculum import StageHistory, next_stage
 from polytopia_rl.evaluate import env_kwargs_of, evaluate, net_policy
 from polytopia_rl.model import PolicyNet
-from polytopia_rl.ppo import RolloutBuffer, collect_rollout, collect_rollout_interleaved, train_update
+from polytopia_rl.pfsp import WinRateTracker, parse_bot_specs, shaping_schedule
+from polytopia_rl.ppo import (
+    RolloutBuffer,
+    StreamState,
+    collect_rollout,
+    collect_rollout_interleaved,
+    collect_rollout_stream,
+    train_update,
+)
 from polytopia_rl.rating import fit_ratings
-from polytopia_rl.selfplay import Entry, SnapshotPool, make_selfplay_vec_env, net_batch_policy, regression
+from polytopia_rl.selfplay import (
+    BOT_OPPONENTS,
+    LIVE_SELF,
+    Entry,
+    SnapshotPool,
+    make_selfplay_vec_env,
+    net_batch_policy,
+    regression,
+)
 from polytopia_rl.stacked import StackedSnapshots, stacked_batch_policy
 from polytopia_rl.suite import DEFAULT_SUITE, run_suite
 from polytopia_rl.tournament import BOTS, Player, anchor_of, play_pair, round_robin, write_tournament
@@ -153,24 +169,61 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
         )
         print(f"teacher {describe(cfg.teacher_checkpoint, teacher_ck)}", flush=True)
 
-    # Self-play state: the pool, the dedicated opponent-draw stream, and the generator the snapshot
-    # opponents sample their actions with (on the model's device, so sampling needs no copy).
+    # Self-play state: the pool, win-rate tracker, anchors, opponent-draw RNG and action generator.
     pool = SnapshotPool(cfg.pool_max, cfg.p_latest) if cfg.selfplay else None
+    tracker = WinRateTracker(alpha=getattr(cfg, "pfsp_ema_alpha", 0.05)) if cfg.selfplay else None
+    stream_state = StreamState() if (cfg.selfplay and cfg.rollout == "stream") else None
+    anchors: list[tuple[str, PolicyNet, object]] = []
+    anchor_templates: dict[str, PolicyNet] = {}
+    anchor_cfgs: dict[str, object] = {}
+    if cfg.selfplay and getattr(cfg, "anchor_checkpoints", None):
+        torch_rng = torch.get_rng_state()
+        try:
+            for i, anchor_path in enumerate(cfg.anchor_checkpoints):
+                anchor_net, anchor_ck = load_net(anchor_path, device=device, strict_obs=True)
+                if anchor_ck.spec is None or anchor_ck.spec["obs_hash"] != spec["obs_hash"]:
+                    saved_h = None if anchor_ck.spec is None else anchor_ck.spec["obs_hash"]
+                    raise SpecMismatch(f"{anchor_path}: obs_hash {saved_h} differs from run spec {spec['obs_hash']}")
+                anchor_net.eval().requires_grad_(False)
+                name = f"anchor_{i}"
+                anchors.append((name, anchor_net, anchor_ck.cfg))
+                anchor_templates[name] = anchor_net
+                anchor_cfgs[name] = anchor_ck.cfg
+                print(f"{name} {describe(anchor_path, anchor_ck)}", flush=True)
+        finally:
+            torch.set_rng_state(torch_rng)
+
     opp_rng = np.random.default_rng([cfg.seed, 11])
     opp_gen = torch.Generator(device=device).manual_seed(cfg.seed + 1)
 
+    shaping_anneal_steps = getattr(cfg, "shaping_anneal_steps", None)
+    shaping_anneal_updates = max(1, shaping_anneal_steps // batch) if shaping_anneal_steps is not None else None
+    raw_sp_bots = getattr(cfg, "selfplay_bots", None)
+    sp_bot_names = (
+        [b.name for b in parse_bot_specs(raw_sp_bots, default_epsilon=cfg.opponent_epsilon)]
+        if raw_sp_bots is not None
+        else list(BOT_OPPONENTS)
+    )
+
     def make_policy(entry):
-        snap = copy.deepcopy(net)  # no fresh init, so the global torch RNG is untouched
-        snap.load_state_dict(entry.state)
+        snap = _frozen(net, entry)  # no fresh init, so the global torch RNG is untouched
         return net_batch_policy(snap, opp_gen, greedy=cfg.opponent_greedy, device=device)
 
     def new_vec(seed_base):
         if cfg.selfplay:
             stacked_policy = None
-            if cfg.opponent_forward == "stacked":  # docs/MILESTONE_13b
+            if cfg.opponent_forward in ("stacked", "auto"):
                 stack = StackedSnapshots(copy.deepcopy(net), device)
                 stacked_policy = stacked_batch_policy(stack, opp_gen, cfg.opponent_greedy)
-            return make_selfplay_vec_env(cfg, seed_base, pool=pool, make_policy=make_policy, rng=opp_rng, stacked_policy=stacked_policy)
+            return make_selfplay_vec_env(
+                cfg,
+                seed_base,
+                pool=pool,
+                make_policy=make_policy,
+                rng=opp_rng,
+                stacked_policy=stacked_policy,
+                tracker=tracker,
+            )
         return make_vec_env(stage_config(cfg, stage), seed_base=seed_base)
 
     # Run state: everything a checkpoint has to carry for an exact resume.
@@ -178,6 +231,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     history = StageHistory()
     recent: list[dict] = []  # the last `stage_window` finished episodes of this stage
     best_score = None
+    last_snapshot_step = 0
+    last_regression: bool | None = None
     if resume is None:
         warm_start = getattr(cfg, "warm_start_checkpoint", None)
         if init_checkpoint is not None and warm_start is not None:
@@ -191,6 +246,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             ck = load_warm_start(net, warm_start, spec)
             print(describe(warm_start, ck), flush=True)
         if cfg.selfplay:
+            for name, anchor_net, _ in anchors:
+                pool.add(anchor_net.state_dict(), 0, pinned=True, name=name, net_template=anchor_net)
             pool.add(net.state_dict(), 0)
         vec = new_vec(train_seed_base(cfg.seed))
         vec.reset_all()
@@ -206,7 +263,16 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
         best_score = ck.extra["best_score"]
         if cfg.selfplay:
             for e in ck.extra["pool"]:
-                pool.entries.append(Entry(e["step"], e["state"], f"snap_{e['step']}"))
+                name = e.get("name", f"snap_{e['step']}")
+                pinned = bool(e.get("pinned", False))
+                tpl = anchor_templates.get(name) if pinned else None
+                pool.entries.append(Entry(e["step"], e["state"], name, pinned=pinned, net_template=tpl))
+            if ck.extra.get("win_rate_tracker") is not None:
+                tracker.load_state_dict(ck.extra["win_rate_tracker"])
+            last_snapshot_step = ck.extra.get("last_snapshot_step", 0)
+            last_regression = ck.extra.get("last_regression", None)
+            if stream_state is not None and ck.extra.get("stream_state") is not None:
+                stream_state.load_state_dict(ck.extra["stream_state"])
             opp_rng.bit_generator.state = ck.rng_state["opponent_rng"]
             opp_gen.set_state(ck.rng_state["opponent_gen"])
         vec = new_vec(ck.seed_index["seed_base"])
@@ -221,7 +287,12 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
         extra = {"update": update, "history": dataclasses.asdict(history), "recent": recent, "best_score": best_score}
         if cfg.selfplay:
             rng.update(opponent_rng=opp_rng.bit_generator.state, opponent_gen=opp_gen.get_state())
-            extra["pool"] = [{"step": e.step, "state": e.state} for e in pool.entries]
+            extra["pool"] = [{"step": e.step, "state": e.state, "name": e.name, "pinned": e.pinned} for e in pool.entries]
+            extra["win_rate_tracker"] = tracker.state_dict()
+            extra["last_snapshot_step"] = last_snapshot_step
+            extra["last_regression"] = last_regression
+            if stream_state is not None:
+                extra["stream_state"] = stream_state.state_dict()
         for name in names:
             save_checkpoint(
                 os.path.join(run_dir, name),
@@ -253,10 +324,17 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             for group in optimizer.param_groups:
                 group["lr"] = lr
 
+            cur_shaping = shaping_schedule(update, cfg.shaping_weight, getattr(cfg, "shaping_end", 0.0), shaping_anneal_updates)
+            if cfg.selfplay and shaping_anneal_steps is not None:
+                vec.set_shaping_weight(cur_shaping)
+
             t0 = time.perf_counter()
-            # Self-play uses the interleaved collector unless `rollout` is "lockstep" (docs/MILESTONE_13).
-            collect = collect_rollout_interleaved if cfg.selfplay and cfg.rollout == "interleaved" else collect_rollout
-            stats = collect(net, vec, buffer, gen)
+            if cfg.selfplay and cfg.rollout == "stream":
+                stats = collect_rollout_stream(net, vec, buffer, gen, stream_state)
+            elif cfg.selfplay and cfg.rollout == "interleaved":
+                stats = collect_rollout_interleaved(net, vec, buffer, gen)
+            else:
+                stats = collect_rollout(net, vec, buffer, gen)
             _check_run_seeds(vec, seed_limit)
             t1 = time.perf_counter()
             d_coef = (
@@ -281,11 +359,28 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             for s in stats:
                 history.outcomes.append(s.outcome)
                 recent.append({"outcome": s.outcome, "ret": s.ret, "length": s.length, "opponent": s.opponent})
+                if cfg.selfplay and s.opponent != LIVE_SELF:
+                    tracker.record(s.opponent, s.outcome)
             # Only the last window matters, for the curriculum and for the logged rates.
             history.outcomes = history.outcomes[-cfg.stage_window :]
             recent = recent[-cfg.stage_window :]
-            if cfg.selfplay and crossed(cfg.snapshot_every):
-                pool.add(net.state_dict(), global_step)
+            if cfg.selfplay:
+                snap_wr = getattr(cfg, "snapshot_win_rate", None)
+                if snap_wr is None:
+                    if crossed(cfg.snapshot_every):
+                        pool.add(net.state_dict(), global_step)
+                        last_snapshot_step = global_step
+                else:
+                    elapsed = global_step - last_snapshot_step
+                    if elapsed >= cfg.snapshot_every:
+                        latest = pool.latest_snapshot()
+                        min_games = getattr(cfg, "snapshot_min_games", 20)
+                        max_steps = getattr(cfg, "snapshot_max_steps", None)
+                        gated_ok = latest is not None and tracker.games(latest.name) >= min_games and tracker.win_rate(latest.name) >= snap_wr
+                        forced = max_steps is not None and elapsed >= max_steps
+                        if gated_ok or forced:
+                            pool.add(net.state_dict(), global_step)
+                            last_snapshot_step = global_step
 
             counts = np.bincount(buffer.kinds.flatten().cpu().numpy(), minlength=len(kinds))
             kind_freq = {name: float(c) / batch for name, c in zip(kinds, counts)}
@@ -295,8 +390,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                 "sps": batch / (t2 - t0),
                 "rollout_sps": batch / (t1 - t0),
                 "update_sps": batch / (t2 - t1),
-                "env_sps": batch / buffer.env_time,
-                "forward_sps": batch / buffer.policy_time,
+                "env_sps": batch / buffer.env_time if buffer.env_time > 0 else 0.0,
+                "forward_sps": batch / buffer.policy_time if buffer.policy_time > 0 else 0.0,
                 "rollout_time": t1 - t0,
                 "update_time": t2 - t1,
                 "stage": stage,
@@ -308,6 +403,25 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             }
             if cfg.selfplay:
                 row["pool_size"] = len(pool.entries)
+                row["shaping_weight"] = float(cur_shaping)
+                latest_entry = pool.latest_snapshot()
+                anchor_names = [e.name for e in pool.entries if e.pinned]
+                sp_candidates = list(dict.fromkeys(sp_bot_names + anchor_names + ([latest_entry.name] if latest_entry is not None else [])))
+                row["sp_win_rate"] = {n: tracker.win_rate(n) for n in sp_candidates if tracker.games(n) > 0}
+                bot_games = sum(tracker.games(n) for n in sp_bot_names)
+                row["win_rate_bots"] = (
+                    sum(tracker.win_rate(n) * tracker.games(n) for n in sp_bot_names) / bot_games if bot_games > 0 else None
+                )
+                pool_names = [e.name for e in pool.entries]
+                pool_games = sum(tracker.games(n) for n in pool_names)
+                row["win_rate_pool"] = (
+                    sum(tracker.win_rate(n) * tracker.games(n) for n in pool_names) / pool_games if pool_games > 0 else None
+                )
+                row["win_rate_latest"] = (
+                    tracker.win_rate(latest_entry.name)
+                    if (latest_entry is not None and tracker.games(latest_entry.name) > 0)
+                    else None
+                )
                 mix = Counter(e["opponent"] for e in recent[-200:])
                 logfile.write(f"step {global_step} pool {[e.name for e in pool.entries]} opponents (last {sum(mix.values())} episodes) {dict(sorted(mix.items()))}\n")
                 logfile.flush()
@@ -328,11 +442,13 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                     make_batch_fn=lambda greedy: net_batch_policy(net, torch.Generator().manual_seed(0), greedy=greedy, device=device),
                 )
                 rates = {name: r.win_rate for name, r in res.conditions.items()}
+                reg = regression(rates, cfg.regression_floor)
+                last_regression = reg
                 erow = {
                     "type": "suite",
                     "global_step": global_step,
                     "suite": {name: {k: v for k, v in dataclasses.asdict(r).items() if k != "per_game"} for name, r in res.conditions.items()},
-                    "regression": regression(rates, cfg.regression_floor),
+                    "regression": reg,
                 }
                 efile.write(json.dumps(erow) + "\n")
                 efile.flush()
@@ -361,6 +477,9 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
                 ratings = learner_ratings(net, pool, make_policy=lambda e: net_batch_policy(_frozen(net, e), torch.Generator(), greedy=True, device=device), seeds=cfg.rating_seeds, env_kwargs=env_kwargs_of(cfg), device=device)
                 efile.write(json.dumps({"type": "rating", "global_step": global_step, **ratings}) + "\n")
                 efile.flush()
+                if last_regression is False and (best_score is None or ratings["rating"]["learner"] > best_score):
+                    best_score = ratings["rating"]["learner"]
+                    is_best = True
 
             # Curriculum: on advance, new opponents and fresh seeds; policy, optimizer and LR
             # schedule carry on.
@@ -377,6 +496,8 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             if evaluated:
                 save([f"ckpt_{global_step}.pt", "latest.pt"] + (["best.pt"] if is_best else []))
                 saved_at = global_step
+            elif is_best:
+                save(["best.pt"])
             print(
                 f"update {update}/{num_updates} step {global_step} stage {row['stage']} sps {row['sps']:.0f} "
                 f"win {row['train_win_rate']} ent {m['entropy']:.3f} kl {m['approx_kl']:.4f}",
@@ -386,7 +507,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             save([f"ckpt_{global_step}.pt", "latest.pt"])
         save(["ckpt_final.pt"])  # every run, so the experiment harness can find finished runs
         if cfg.selfplay:
-            finish_selfplay(net, pool, cfg, spec, run_dir, device)
+            finish_selfplay(net, pool, cfg, spec, run_dir, device, anchor_cfgs=anchor_cfgs)
     return net
 
 
@@ -394,8 +515,9 @@ SELFPLAY_SUBSET = ("economy_e0", "rush_e0", "rush_e20")  # the suite conditions 
 
 
 def _frozen(net, entry):
-    """A copy of `net` with `entry`'s weights."""
-    snap = copy.deepcopy(net)
+    """A copy of `entry.net_template` (or `net`) with `entry`'s weights."""
+    base = entry.net_template if entry.net_template is not None else net
+    snap = copy.deepcopy(base)
     snap.load_state_dict(entry.state)
     return snap
 
@@ -407,6 +529,9 @@ def learner_ratings(net, pool, make_policy, seeds, env_kwargs, device) -> dict:
     k = len(pool.entries)
     picks = [0, k - 1] + [int(round(x)) for x in np.linspace(0, k - 1, 5)[1:4]]
     entries = [pool.entries[i] for i in dict.fromkeys(picks)]
+    snap0 = next((e for e in pool.entries if not e.pinned), pool.entries[0])
+    if all(e.name != snap0.name for e in entries):
+        entries.append(snap0)
     players = [Player("learner", batch_fn=net_batch_policy(net, torch.Generator(), greedy=True, device=device))]
     players += [Player(e.name, batch_fn=make_policy(e)) for e in entries]
     players += [Player(b, bot=b) for b in BOTS]
@@ -418,7 +543,7 @@ def learner_ratings(net, pool, make_policy, seeds, env_kwargs, device) -> dict:
         games[0, j] = games[j, 0] = r.games
     names = [p.name for p in players]
     ratings = fit_ratings(wins, games, anchor=anchor_of(names))
-    learner, snapshot_0 = float(ratings[0]), float(ratings[names.index(pool.entries[0].name)])
+    learner, snapshot_0 = float(ratings[0]), float(ratings[names.index(snap0.name)])
     return {
         "rating": {"learner": learner, "snapshot_0": snapshot_0},
         "gap_snapshot_0": learner - snapshot_0,
@@ -427,17 +552,19 @@ def learner_ratings(net, pool, make_policy, seeds, env_kwargs, device) -> dict:
     }
 
 
-def finish_selfplay(net, pool, cfg, spec, run_dir, device) -> None:
-    """Write the pool as `pool/snap_{step}.pt` and the round robin of the pool and the bots."""
+def finish_selfplay(net, pool, cfg, spec, run_dir, device, anchor_cfgs: dict | None = None) -> None:
+    """Write the pool as `pool/{name}.pt` (snapshots and pinned anchors) and the round robin of
+    the pool and the bots."""
     os.makedirs(os.path.join(run_dir, "pool"), exist_ok=True)
     players = [Player(b, bot=b) for b in BOTS]
     for e in pool.entries:
         snap = _frozen(net, e)
+        entry_cfg = anchor_cfgs[e.name] if (anchor_cfgs and e.name in anchor_cfgs) else cfg
         save_checkpoint(
             os.path.join(run_dir, "pool", f"{e.name}.pt"),
             model=snap,
             optimizer=None,
-            cfg=cfg,
+            cfg=entry_cfg,
             global_step=e.step,
             stage=0,
             seed_index=None,

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from polytopia_rl.gae import compute_gae
+from polytopia_rl.gae import compute_gae, compute_gae_segments
 from polytopia_rl.transfer import compute_teacher_logits, distill_kl
 from polytopia_rl.vec_env import env_masks_fn
 
@@ -90,6 +90,7 @@ class RolloutBuffer:
         self.truncated = zeros(dtype=torch.bool)
         self.next_values = zeros()
         self.last_value = torch.zeros(num_envs, device=device)
+        self.segment_end: Tensor | None = None
         # Wall-clock split of the last rollout (seconds): env stepping vs the policy forward pass.
         self.env_time = 0.0
         self.policy_time = 0.0
@@ -101,6 +102,7 @@ def collect_rollout(net, vec_env, buffer: RolloutBuffer, generator: torch.Genera
     device = buffer.device
     fetch = {"actor": vec_env.actor_masks, "kind": vec_env.kind_masks, "arg": vec_env.arg_masks}
     stats = []
+    buffer.segment_end = None
     buffer.env_time = buffer.policy_time = 0.0
 
     def tensors(board, glob):
@@ -146,6 +148,7 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
     T, n = buffer.num_steps, buffer.num_envs
     t = [0] * n  # per slot: transitions written so far
     stats = []
+    buffer.segment_end = None
     buffer.env_time = buffer.policy_time = 0.0
 
     def tensors(board, glob):
@@ -209,14 +212,28 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
 
 
 class StreamState:
+    """Pending in-flight learner steps and overflow completed transitions carried across
+    `collect_rollout_stream` boundaries."""
+
     def __init__(self):
-        raise NotImplementedError
+        self.pending: dict[tuple[int, int], dict] = {}
+        self.carryover: list[tuple[tuple[int, int], dict]] = []
 
     def state_dict(self) -> dict:
-        raise NotImplementedError
+        def copy_rec(rec: dict) -> dict:
+            return {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in rec.items()}
+
+        return {
+            "pending": [[list(k), copy_rec(v)] for k, v in sorted(self.pending.items())],
+            "carryover": [[list(k), copy_rec(v)] for k, v in self.carryover],
+        }
 
     def load_state_dict(self, state: dict) -> None:
-        raise NotImplementedError
+        def copy_rec(rec: dict) -> dict:
+            return {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in rec.items()}
+
+        self.pending = {(int(k[0]), int(k[1])): copy_rec(v) for k, v in state["pending"]}
+        self.carryover = [((int(k[0]), int(k[1])), copy_rec(v)) for k, v in state["carryover"]]
 
 
 def collect_rollout_stream(
@@ -226,7 +243,154 @@ def collect_rollout_stream(
     generator: torch.Generator,
     stream_state: StreamState | None = None,
 ) -> list:
-    raise NotImplementedError
+    """Barrier-free collector: fills `buffer` with exactly `num_steps * num_envs` completed
+    transitions grouped into contiguous `(slot, seat)` GAE lanes without draining mid-turn slots
+    at rollout boundaries (docs/MILESTONE_23)."""
+    device = buffer.device
+    T, E = buffer.num_steps, buffer.num_envs
+    batch = T * E
+    state = StreamState() if stream_state is None else stream_state
+    stats = []
+    buffer.env_time = buffer.policy_time = 0.0
+    lanes: dict[tuple[int, int], list[dict]] = {}
+    collected = 0
+
+    def tensors(board, glob):
+        return torch.from_numpy(board).to(device), torch.from_numpy(glob).to(device)
+
+    if state.carryover:
+        take = min(batch, len(state.carryover))
+        for lane_id, rec in state.carryover[:take]:
+            lanes.setdefault(lane_id, []).append(rec)
+        del state.carryover[:take]
+        collected += take
+
+    while collected < batch:
+        acting = vec_env.learner_slots()
+        actions = {}
+        t0 = time.perf_counter()
+        if acting:
+            envs = [vec_env.envs[i] for i in acting]
+            seats = [vec_env.learner_seat(i) for i in acting]
+            obs = [env.observation() for env in envs]
+            boards_np = [b.copy() for b, _ in obs]
+            globs_np = [g.copy() for _, g in obs]
+            board, glob = tensors(np.stack(boards_np), np.stack(globs_np))
+            with torch.no_grad():
+                out = net.act(net.trunk(board, glob), env_masks_fn(envs, vec_env.num_tiles), generator)
+            actors_list = out.actors.cpu().tolist()
+            kinds_list = out.kinds.cpu().tolist()
+            args_list = out.args.cpu().tolist()
+            am_np = out.actor_mask.cpu().numpy()
+            km_np = out.kind_mask.cpu().numpy()
+            xm_np = out.arg_mask.cpu().numpy()
+            lp_list = out.logp.cpu().tolist()
+            val_list = out.value.cpu().tolist()
+            for idx, (slot, seat) in enumerate(zip(acting, seats)):
+                act = (actors_list[idx], kinds_list[idx], args_list[idx])
+                actions[slot] = act
+                state.pending[(slot, seat)] = {
+                    "board": boards_np[idx],
+                    "globals": globs_np[idx],
+                    "action": act,
+                    "actor_mask": am_np[idx].copy(),
+                    "kind_mask": km_np[idx].copy(),
+                    "arg_mask": xm_np[idx].copy(),
+                    "logp": lp_list[idx],
+                    "value": val_list[idx],
+                }
+        t1 = time.perf_counter()
+        done = vec_env.tick(actions)
+        stats += vec_env.episode_stats()
+        t2 = time.perf_counter()
+        for tr in done:
+            lane_id = (tr.slot, tr.seat)
+            step_rec = state.pending.pop(lane_id)
+            rec = {
+                **step_rec,
+                "reward": float(tr.reward),
+                "terminated": bool(tr.terminated),
+                "truncated": bool(tr.truncated),
+                "final_board": None if tr.final_board is None else tr.final_board.copy(),
+                "final_globals": None if tr.final_globals is None else tr.final_globals.copy(),
+            }
+            if collected < batch:
+                lanes.setdefault(lane_id, []).append(rec)
+                collected += 1
+            else:
+                state.carryover.append((lane_id, rec))
+        buffer.env_time += t2 - t1
+        buffer.policy_time += t1 - t0 + time.perf_counter() - t2
+
+    first_carry_val: dict[tuple[int, int], float] = {}
+    for c_lane, c_rec in state.carryover:
+        if c_lane not in first_carry_val:
+            first_carry_val[c_lane] = c_rec["value"]
+
+    ordered: list[dict] = []
+    seg_end_list: list[bool] = []
+    next_val_list: list[float] = []
+    trunc_indices: list[int] = []
+    trunc_obs: list[tuple[np.ndarray, np.ndarray]] = []
+    live_boot_indices: list[int] = []
+    live_boot_slots: list[int] = []
+
+    for lane_id in sorted(lanes):
+        recs = lanes[lane_id]
+        last_j = len(recs) - 1
+        for j, rec in enumerate(recs):
+            flat_idx = len(ordered)
+            is_end = j == last_j
+            ordered.append(rec)
+            seg_end_list.append(is_end)
+            if rec["truncated"]:
+                next_val_list.append(0.0)
+                trunc_indices.append(flat_idx)
+                trunc_obs.append((rec["final_board"], rec["final_globals"]))
+            elif is_end and not rec["terminated"]:
+                if lane_id in first_carry_val:
+                    next_val_list.append(first_carry_val[lane_id])
+                elif lane_id in state.pending:
+                    next_val_list.append(state.pending[lane_id]["value"])
+                else:
+                    next_val_list.append(0.0)
+                    live_boot_indices.append(flat_idx)
+                    live_boot_slots.append(lane_id[0])
+            else:
+                next_val_list.append(0.0)
+
+    t_boot = time.perf_counter()
+    with torch.no_grad():
+        if trunc_indices:
+            fb, fg = tensors(np.stack([b for b, _ in trunc_obs]), np.stack([g for _, g in trunc_obs]))
+            tvals = net.value(net.trunk(fb, fg)).cpu().tolist()
+            for idx, v in zip(trunc_indices, tvals):
+                next_val_list[idx] = v
+        if live_boot_indices:
+            obs = [vec_env.envs[s].observation() for s in live_boot_slots]
+            lb, lg = tensors(np.stack([b for b, _ in obs]), np.stack([g for _, g in obs]))
+            lvals = net.value(net.trunk(lb, lg)).cpu().tolist()
+            for idx, v in zip(live_boot_indices, lvals):
+                next_val_list[idx] = v
+    buffer.policy_time += time.perf_counter() - t_boot
+
+    buffer.board.copy_(torch.from_numpy(np.stack([r["board"] for r in ordered])).reshape(T, E, *buffer.board.shape[2:]))
+    buffer.globals.copy_(torch.from_numpy(np.stack([r["globals"] for r in ordered])).reshape(T, E, -1))
+    buffer.actors.copy_(torch.tensor([r["action"][0] for r in ordered], dtype=torch.int64).reshape(T, E))
+    buffer.kinds.copy_(torch.tensor([r["action"][1] for r in ordered], dtype=torch.int64).reshape(T, E))
+    buffer.args.copy_(torch.tensor([r["action"][2] for r in ordered], dtype=torch.int64).reshape(T, E))
+    buffer.actor_mask.copy_(torch.from_numpy(np.stack([r["actor_mask"] for r in ordered])).reshape(T, E, -1))
+    buffer.kind_mask.copy_(torch.from_numpy(np.stack([r["kind_mask"] for r in ordered])).reshape(T, E, -1))
+    buffer.arg_mask.copy_(torch.from_numpy(np.stack([r["arg_mask"] for r in ordered])).reshape(T, E, -1))
+    buffer.logp.copy_(torch.tensor([r["logp"] for r in ordered], dtype=torch.float32).reshape(T, E))
+    buffer.values.copy_(torch.tensor([r["value"] for r in ordered], dtype=torch.float32).reshape(T, E))
+    buffer.rewards.copy_(torch.tensor([r["reward"] for r in ordered], dtype=torch.float32).reshape(T, E))
+    buffer.terminated.copy_(torch.tensor([r["terminated"] for r in ordered], dtype=torch.bool).reshape(T, E))
+    buffer.truncated.copy_(torch.tensor([r["truncated"] for r in ordered], dtype=torch.bool).reshape(T, E))
+    buffer.next_values.copy_(torch.tensor(next_val_list, dtype=torch.float32).reshape(T, E))
+    buffer.last_value.zero_()
+    buffer.segment_end = torch.tensor(seg_end_list, dtype=torch.bool, device=device)
+    return stats
 
 
 def train_update(
@@ -246,24 +410,36 @@ def train_update(
     `entropy`, `entropy_actor`, `entropy_kind`, `entropy_arg`, `approx_kl`, `clipfrac`,
     `explained_variance`, `adv_mean`, `adv_std`; plus `distill_kl` and `distill_coef` when
     `teacher` is provided)."""
-    with torch.no_grad():
-        adv, returns = compute_gae(
-            buffer.rewards,
-            buffer.values,
-            buffer.terminated,
-            buffer.truncated,
-            buffer.next_values,
-            buffer.last_value,
-            cfg.gamma,
-            cfg.gae_lambda,
-        )
-    # Flatten (T, E) into one batch of samples.
     n = buffer.num_steps * buffer.num_envs
+    with torch.no_grad():
+        if buffer.segment_end is not None:
+            adv, returns = compute_gae_segments(
+                buffer.rewards.reshape(n),
+                buffer.values.reshape(n),
+                buffer.terminated.reshape(n),
+                buffer.truncated.reshape(n),
+                buffer.next_values.reshape(n),
+                buffer.segment_end,
+                cfg.gamma,
+                cfg.gae_lambda,
+            )
+        else:
+            adv, returns = compute_gae(
+                buffer.rewards,
+                buffer.values,
+                buffer.terminated,
+                buffer.truncated,
+                buffer.next_values,
+                buffer.last_value,
+                cfg.gamma,
+                cfg.gae_lambda,
+            )
+            adv, returns = adv.reshape(n), returns.reshape(n)
+    # Flatten (T, E) into one batch of samples.
     flat = {
         k: getattr(buffer, k).reshape(n, *getattr(buffer, k).shape[2:])
         for k in ("board", "globals", "actors", "kinds", "args", "actor_mask", "kind_mask", "arg_mask", "logp", "values")
     }
-    adv, returns = adv.reshape(n), returns.reshape(n)
 
     use_distill = teacher is not None and distill_coef > 0.0
     if use_distill:

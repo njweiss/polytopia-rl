@@ -202,7 +202,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--seeds", type=int, default=100)
     a = p.parse_args(argv)
     device = resolve_device("auto")
-    paths = sorted(glob.glob(os.path.join(a.run, "pool", "snap_*.pt")), key=lambda q: int(os.path.basename(q)[5:-3]))
+    anchor_paths = sorted(glob.glob(os.path.join(a.run, "pool", "anchor_*.pt")), key=lambda q: int(os.path.basename(q)[7:-3]))
+    snap_paths = sorted(glob.glob(os.path.join(a.run, "pool", "snap_*.pt")), key=lambda q: int(os.path.basename(q)[5:-3]))
+    paths = anchor_paths + snap_paths
     players = [Player(name, bot=name) for name in BOTS]
     cfg, spec = None, None
     for path in paths:

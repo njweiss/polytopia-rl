@@ -48,4 +48,32 @@ def compute_gae_segments(
     gamma: float,
     lam: float,
 ) -> tuple[Tensor, Tensor]:
-    raise NotImplementedError
+    """1D segmented GAE over packed per-(slot, seat) lanes of length `N`. `segment_end[i]` marks
+    the last step of a lane (the final element `N - 1` is always treated as a segment end)."""
+    n = rewards.shape[0]
+    if n == 0:
+        empty = torch.empty(0, dtype=rewards.dtype, device=rewards.device)
+        return empty, empty.clone()
+    term = terminated.bool()
+    trunc = truncated.bool()
+    seg_end = segment_end.bool().clone()
+    seg_end[-1] = True
+    shifted_values = torch.empty_like(values)
+    if n > 1:
+        shifted_values[:-1] = values[1:]
+    shifted_values[-1] = 0.0
+    v_next = torch.where(trunc | seg_end, next_values, shifted_values)
+    not_term = (~term).to(rewards.dtype)
+    deltas = rewards + gamma * v_next * not_term - values
+    cont = (~(term | trunc | seg_end)).to(rewards.dtype)
+
+    deltas_list = deltas.detach().cpu().tolist()
+    cont_list = cont.detach().cpu().tolist()
+    adv_list = [0.0] * n
+    gl = gamma * lam
+    a_next = 0.0
+    for i in range(n - 1, -1, -1):
+        a_next = deltas_list[i] + gl * cont_list[i] * a_next
+        adv_list[i] = a_next
+    advantages = torch.tensor(adv_list, dtype=rewards.dtype, device=rewards.device)
+    return advantages, advantages + values
