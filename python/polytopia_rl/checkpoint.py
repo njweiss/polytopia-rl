@@ -107,7 +107,7 @@ def load_net(path, device="cpu", strict_obs=True):
     if not strict_obs and raw.get("spec") and raw["spec"]["obs_hash"] != spec["obs_hash"]:
         print(f"WARNING: {path} was trained for a different observation (obs_hash {raw['spec']['obs_hash']}); results are not comparable", flush=True)
     ck = checked(raw, path, spec, strict_obs=strict_obs)
-    net = PolicyNet(spec, width=cfg.width, blocks=cfg.blocks).to(device)
+    net = PolicyNet(spec, width=cfg.width, blocks=cfg.blocks, arch=cfg.arch).to(device)
     net.load_state_dict(ck.model)
     return net, ck
 

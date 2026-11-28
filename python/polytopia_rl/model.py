@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import Tensor, nn
 
 from polytopia_rl import categorical
@@ -70,6 +71,10 @@ def _mlp(sizes: list[int], out_gain: float) -> nn.Sequential:
     return nn.Sequential(*layers)
 
 
+def _gn_groups(width: int) -> int:
+    return 8 if width % 8 == 0 else 1
+
+
 class ResBlock(nn.Module):
     """conv, ReLU, conv, add the input, ReLU (no batch norm)."""
 
@@ -80,6 +85,30 @@ class ResBlock(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return torch.relu(x + self.conv2(torch.relu(self.conv1(x))))
+
+
+class ResBlockV2(nn.Module):
+    """Pre-activation GroupNorm + SiLU residual block with pooled-context + globals FiLM."""
+
+    def __init__(self, width: int, num_blocks: int):
+        super().__init__()
+        groups = _gn_groups(width)
+        self.norm1 = nn.GroupNorm(groups, width)
+        self.conv1 = _init(nn.Conv2d(width, width, 3, padding=1), math.sqrt(2))
+        self.norm2 = nn.GroupNorm(groups, width)
+        self.film = nn.Linear(2 * width, 2 * width)
+        nn.init.zeros_(self.film.weight)
+        nn.init.zeros_(self.film.bias)
+        self.conv2 = _init(nn.Conv2d(width, width, 3, padding=1), math.sqrt(2))
+        self.res_scale = 1.0 / math.sqrt(2 * num_blocks)
+
+    def forward(self, x: Tensor, g_emb: Tensor) -> Tensor:
+        cond = torch.cat([g_emb, x.mean(dim=(2, 3))], dim=1)
+        h = self.conv1(F.silu(self.norm1(x)))
+        delta_gamma, beta = self.film(cond).chunk(2, dim=1)
+        h = self.norm2(h) * (1.0 + delta_gamma[:, :, None, None]) + beta[:, :, None, None]
+        h = self.conv2(F.silu(h))
+        return x + self.res_scale * h
 
 
 class ActorContext(nn.Module):
@@ -164,33 +193,115 @@ class ArgHead(nn.Module):
         return out
 
 
+class ArgHeadV2(nn.Module):
+    """Stage 3 (`arch="v2"`): separate 1x1 `tile_keys` per tile kind, QK LayerNorm, and learned
+    2D relative-position bias per tile kind."""
+
+    def __init__(
+        self,
+        width: int,
+        ctx_dim: int,
+        height: int,
+        width_board: int,
+        kinds: list[str],
+        arg_lens: list[int],
+    ):
+        super().__init__()
+        num_tiles = height * width_board
+        self.width = width
+        self.num_tiles = num_tiles
+        self.context = ActorContext(width, num_tiles)
+        self.kind_embed = nn.Embedding(len(kinds), EMBED)
+        self.c = _mlp([width + ctx_dim + 2 * EMBED, 2 * width, width], math.sqrt(2))
+        self.tile_kinds = [k for k, name in enumerate(kinds) if name in TILE_KINDS]
+        self.enum_kinds = [k for k, n in enumerate(arg_lens) if n > 0 and k not in self.tile_kinds]
+        self.tile_keys = nn.ModuleList(_init(nn.Conv2d(width, width, 1), math.sqrt(2)) for _ in self.tile_kinds)
+        self.q_norm = nn.LayerNorm(width)
+        self.k_norms = nn.ModuleList(nn.LayerNorm(width) for _ in self.tile_kinds)
+        self.tile_bias = nn.Parameter(torch.zeros(len(self.tile_kinds)))
+        self.rel_bias = nn.Parameter(torch.zeros(len(self.tile_kinds), (2 * height - 1) * (2 * width_board - 1)))
+        self.enum = nn.ModuleList(_init(nn.Linear(width, arg_lens[k]), 0.01) for k in self.enum_kinds)
+
+        tiles = torch.arange(num_tiles, dtype=torch.int64)
+        rows = tiles // width_board
+        cols = tiles % width_board
+        dr = rows.unsqueeze(0) - rows.unsqueeze(1)  # (N, N): r_t - r_a
+        dc = cols.unsqueeze(0) - cols.unsqueeze(1)  # (N, N): c_t - c_a
+        rel_index = (dr + height - 1) * (2 * width_board - 1) + (dc + width_board - 1)
+        self.register_buffer("rel_index", rel_index, persistent=False)
+
+    def forward(self, feats: Features, actors: Tensor, kinds: Tensor) -> Tensor:
+        z = self.context(feats, actors)
+        c = self.c(torch.cat([z, self.kind_embed(kinds)], dim=1))  # (B, width)
+        q = self.q_norm(c)
+        n = self.num_tiles
+        actor_tile = torch.where(actors < 3 * n, actors % n, torch.zeros_like(actors))
+        idx = self.rel_index[actor_tile]  # (B, N)
+        out = c.new_zeros((c.shape[0], n))
+        scale = math.sqrt(self.width)
+        for ti, (k, key_conv, k_norm) in enumerate(zip(self.tile_kinds, self.tile_keys, self.k_norms)):
+            keys = key_conv(feats.fmap).flatten(2).transpose(1, 2)  # (B, N, width)
+            keys = k_norm(keys)
+            tile_logits = torch.einsum("bnw,bw->bn", keys, q) / scale + self.tile_bias[ti] + self.rel_bias[ti][idx]
+            out = torch.where((kinds == k).unsqueeze(1), tile_logits, out)
+        for k, head in zip(self.enum_kinds, self.enum):
+            logits = head(c)
+            padded = F.pad(logits, (0, n - logits.shape[1]))
+            out = torch.where((kinds == k).unsqueeze(1), padded, out)
+        return out
+
+
 class PolicyNet(nn.Module):
     def __init__(self, spec: dict, width: int = 64, blocks: int = 4, arch: str = "v1"):
         super().__init__()
-        if arch == "v2":
-            raise NotImplementedError("milestone 21")
-        if arch != "v1":
+        if arch not in ("v1", "v2"):
             raise ValueError(f"arch {arch!r} is not 'v1' or 'v2'")
+        self.arch = arch
         channels, num_globals = spec["channels"], spec["globals"]
-        self.num_tiles = spec["height"] * spec["width"]
+        height, width_board = spec["height"], spec["width"]
+        self.num_tiles = height * width_board
         kinds = spec["action_types"]
         arg_lens = spec["arg_lens"]
         # Kinds without an argument (capture, recover, promote, end_turn) have no stage 3.
         self.register_buffer("has_arg", torch.tensor([n > 0 for n in arg_lens]), persistent=False)
         ctx_dim = 3 * width  # [global MLP, mean-pool F, max-pool F]
-        # Trunk.
-        self.stem = _init(nn.Conv2d(channels, width, 3, padding=1), math.sqrt(2))
-        self.blocks = nn.Sequential(*[ResBlock(width) for _ in range(blocks)])
-        self.global_mlp = nn.Sequential(_mlp([num_globals, width, width], math.sqrt(2)), nn.ReLU())
-        # Heads.
-        self.actor_head = ActorHead(width, ctx_dim)
-        self.kind_head = KindHead(width, ctx_dim, self.num_tiles, len(kinds))
-        self.arg_head = ArgHead(width, ctx_dim, self.num_tiles, kinds, arg_lens)
-        self.value_head = _mlp([ctx_dim, width, 1], 1.0)
+        if arch == "v1":
+            # Trunk.
+            self.stem = _init(nn.Conv2d(channels, width, 3, padding=1), math.sqrt(2))
+            self.blocks = nn.Sequential(*[ResBlock(width) for _ in range(blocks)])
+            self.global_mlp = nn.Sequential(_mlp([num_globals, width, width], math.sqrt(2)), nn.ReLU())
+            # Heads.
+            self.actor_head = ActorHead(width, ctx_dim)
+            self.kind_head = KindHead(width, ctx_dim, self.num_tiles, len(kinds))
+            self.arg_head = ArgHead(width, ctx_dim, self.num_tiles, kinds, arg_lens)
+            self.value_head = _mlp([ctx_dim, width, 1], 1.0)
+        else:
+            rows = torch.linspace(-1.0, 1.0, height, dtype=torch.float32).view(1, 1, height, 1).expand(1, 1, height, width_board)
+            cols = torch.linspace(-1.0, 1.0, width_board, dtype=torch.float32).view(1, 1, 1, width_board).expand(1, 1, height, width_board)
+            self.register_buffer("coords", torch.cat([rows, cols], dim=1).contiguous(), persistent=False)
+            # Trunk.
+            self.stem = _init(nn.Conv2d(channels + 2, width, 3, padding=1), math.sqrt(2))
+            self.blocks = nn.ModuleList([ResBlockV2(width, blocks) for _ in range(blocks)])
+            self.trunk_norm = nn.GroupNorm(_gn_groups(width), width)
+            self.global_mlp = nn.Sequential(_mlp([num_globals, width, width], math.sqrt(2)), nn.SiLU())
+            # Heads.
+            self.actor_head = ActorHead(width, ctx_dim)
+            self.kind_head = KindHead(width, ctx_dim, self.num_tiles, len(kinds))
+            self.arg_head = ArgHeadV2(width, ctx_dim, height, width_board, kinds, arg_lens)
+            self.value_head = _mlp([ctx_dim, width, 1], 1.0)
 
     def trunk(self, board: Tensor, globals: Tensor) -> Features:
-        fmap = self.blocks(torch.relu(self.stem(board)))
-        g = torch.cat([self.global_mlp(globals), fmap.mean(dim=(2, 3)), fmap.amax(dim=(2, 3))], dim=1)
+        if self.arch == "v1":
+            fmap = self.blocks(torch.relu(self.stem(board)))
+            g = torch.cat([self.global_mlp(globals), fmap.mean(dim=(2, 3)), fmap.amax(dim=(2, 3))], dim=1)
+            return Features(fmap=fmap, g=g)
+        x = torch.cat([board, self.coords.expand(board.shape[0], -1, -1, -1)], dim=1)
+        x = self.stem(x)
+        g_emb = self.global_mlp(globals)
+        for blk in self.blocks:
+            x = blk(x, g_emb)
+        fmap = F.silu(self.trunk_norm(x))
+        g = torch.cat([g_emb, fmap.mean(dim=(2, 3)), fmap.amax(dim=(2, 3))], dim=1)
         return Features(fmap=fmap, g=g)
 
     def actor_logits(self, feats: Features) -> Tensor:

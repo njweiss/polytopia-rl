@@ -124,7 +124,7 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
 
     spec = env_spec(cfg)
     kinds = spec["action_types"]
-    net = PolicyNet(spec, width=cfg.width, blocks=cfg.blocks).to(device)
+    net = PolicyNet(spec, width=cfg.width, blocks=cfg.blocks, arch=getattr(cfg, "arch", "v1")).to(device)
     optimizer = torch.optim.Adam(net.parameters(), lr=cfg.lr, eps=1e-5)
     batch = cfg.num_envs * cfg.num_steps
     num_updates = cfg.total_steps // batch
