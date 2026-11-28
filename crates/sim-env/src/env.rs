@@ -116,18 +116,12 @@ fn potentials(s: &State, r: &RewardConfig) -> [f32; 2] {
 }
 
 impl Env {
-    /// Panics if the map is below `MapParams::MIN_SIZE`, or if `cfg.config.ruleset` is `V2` (refused
-    /// until milestone 20, docs/MILESTONE_15 "Env").
+    /// Panics if the map is below `MapParams::MIN_SIZE`.
     pub fn new(cfg: EnvConfig) -> Env {
         assert!(
             cfg.map.size >= MapParams::MIN_SIZE,
             "Env::new: map size {} is below MapParams::MIN_SIZE",
             cfg.map.size
-        );
-        assert!(
-            cfg.config.ruleset == Ruleset::V1,
-            "Env::new: ruleset {:?} is not supported until milestone 20 (the observation is v1 only)",
-            cfg.config.ruleset
         );
         let opponent = match cfg.opponent {
             Opponent::TwoSeat => None,
@@ -185,7 +179,7 @@ impl Env {
     }
 
     pub fn ruleset(&self) -> Ruleset {
-        todo!("milestone 20")
+        self.cfg.config.ruleset
     }
 
     fn ep(&self) -> &Episode {

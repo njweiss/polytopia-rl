@@ -90,7 +90,7 @@ def run_suite(policy_fn, conditions, seeds, env_kwargs, *, step=None, make_batch
     batched through `evaluate(..., batch_fn=make_batch_fn(condition.greedy))`."""
     if SUITE_SEED_BASE + seeds > SUITE_SEED_LIMIT:
         raise ValueError(f"{seeds} suite seeds reach {SUITE_SEED_LIMIT}")
-    spec = polytopia_sim.Env(size=env_kwargs.get("size", 11)).spec()
+    spec = polytopia_sim.Env(size=env_kwargs.get("size", 11), ruleset=env_kwargs.get("ruleset", "v1")).spec()
     turn_cap = env_kwargs.get("turn_cap", DEFAULT_TURN_CAP)
     out = {}
     for c in conditions:

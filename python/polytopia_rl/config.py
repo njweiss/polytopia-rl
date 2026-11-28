@@ -17,6 +17,7 @@ class PPOConfig:
     size: int = 11
     turn_cap: int = 30
     full_observability: bool = False
+    ruleset: str = "v1"
     opponents: list[str] = field(default_factory=lambda: ["random"])
     opponent_epsilon: float = 0.0
     shaping_weight: float = 1.0
@@ -78,11 +79,14 @@ class PPOConfig:
     @classmethod
     def from_json(cls, text: str) -> PPOConfig:
         """Fields missing from `text` keep their defaults; an unknown key, `lr_anneal_steps` below
-        `total_steps`, a `rollout` other than "interleaved" / "lockstep", or an `opponent_forward` other
-        than "stacked" / "per_snapshot" raises `ValueError`."""
+        `total_steps`, a `ruleset` other than "v1" / "v2", a `rollout` other than "interleaved" /
+        "lockstep", or an `opponent_forward` other than "stacked" / "per_snapshot" raises
+        `ValueError`."""
         data = json.loads(text)
         _check_keys(data)
         cfg = cls(**data)
+        if cfg.ruleset not in ("v1", "v2"):
+            raise ValueError(f"ruleset {cfg.ruleset!r} is not 'v1' or 'v2'")
         if cfg.lr_anneal_steps is not None and cfg.lr_anneal_steps < cfg.total_steps:
             raise ValueError(
                 f"lr_anneal_steps {cfg.lr_anneal_steps} is below total_steps {cfg.total_steps}: the LR would go negative"

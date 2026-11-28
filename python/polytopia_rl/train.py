@@ -65,7 +65,7 @@ def resolve_device(device: str) -> str:
 
 
 def env_spec(cfg) -> dict:
-    return polytopia_sim.Env(size=cfg.size).spec()
+    return polytopia_sim.Env(size=cfg.size, ruleset=getattr(cfg, "ruleset", "v1")).spec()
 
 
 def stage_config(cfg, stage: int):

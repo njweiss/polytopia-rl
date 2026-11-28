@@ -2,7 +2,8 @@
 
 use sim_core::actions::Action;
 use sim_core::data::{
-    ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
+    site_actions, techs, units, ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS, ALL_SITE_ACTIONS,
+    ALL_TECHS, ALL_UNITS,
 };
 use sim_core::grid::Pos;
 use sim_core::state::{Ruleset, State};
@@ -30,10 +31,28 @@ pub enum ActionType {
 pub const NUM_ACTION_TYPES: usize = 10;
 pub const V2_NUM_ACTION_TYPES: usize = 15;
 
+const V2_ALL: [ActionType; V2_NUM_ACTION_TYPES] = [
+    ActionType::Move,
+    ActionType::Attack,
+    ActionType::Capture,
+    ActionType::Recover,
+    ActionType::Promote,
+    ActionType::Train,
+    ActionType::ChooseReward,
+    ActionType::Site,
+    ActionType::Research,
+    ActionType::EndTurn,
+    ActionType::Disband,
+    ActionType::BuildRoad,
+    ActionType::BuildBuilding,
+    ActionType::BuildMonument,
+    ActionType::Destroy,
+];
+
 pub fn action_types(ruleset: Ruleset) -> &'static [ActionType] {
     match ruleset {
         Ruleset::V1 => &ActionType::ALL,
-        Ruleset::V2 => todo!("milestone 20"),
+        Ruleset::V2 => &V2_ALL,
     }
 }
 
@@ -127,9 +146,21 @@ pub fn arg_len(size: u8, kind: ActionType) -> usize {
 }
 
 pub fn arg_len_for(size: u8, kind: ActionType, ruleset: Ruleset) -> usize {
-    match ruleset {
-        Ruleset::V1 => arg_len(size, kind),
-        Ruleset::V2 => todo!("milestone 20"),
+    match kind {
+        ActionType::Move | ActionType::Attack => tiles(size),
+        ActionType::Train => units(ruleset).len(),
+        ActionType::ChooseReward => ALL_REWARDS.len(),
+        ActionType::Site => site_actions(ruleset).len(),
+        ActionType::Research => techs(ruleset).len(),
+        ActionType::BuildBuilding => ALL_BUILDINGS.len(),
+        ActionType::BuildMonument => ALL_MONUMENTS.len(),
+        ActionType::Capture
+        | ActionType::Recover
+        | ActionType::Promote
+        | ActionType::EndTurn
+        | ActionType::Disband
+        | ActionType::BuildRoad
+        | ActionType::Destroy => 0,
     }
 }
 
@@ -139,6 +170,7 @@ pub fn encode_action(state: &State, action: &Action) -> Factored {
     let n = tiles(size);
     let unit = |id| tile_index(size, state.unit(id).expect("living unit").pos);
     let city = |id| n + tile_index(size, state.city(id).pos);
+    let site = |at| 2 * n + tile_index(size, at);
     let (actor, kind, arg) = match *action {
         Action::Move { unit: u, to } => (unit(u), ActionType::Move, tile_index(size, to)),
         Action::Attack { unit: u, target } => {
@@ -147,25 +179,22 @@ pub fn encode_action(state: &State, action: &Action) -> Factored {
         Action::Capture { unit: u } => (unit(u), ActionType::Capture, 0),
         Action::Recover { unit: u } => (unit(u), ActionType::Recover, 0),
         Action::Promote { unit: u } => (unit(u), ActionType::Promote, 0),
+        Action::Disband { unit: u } => (unit(u), ActionType::Disband, 0),
         Action::Train { city: c, kind } => (city(c), ActionType::Train, kind as usize),
         Action::ChooseReward { city: c, reward } => {
             (city(c), ActionType::ChooseReward, reward as usize)
         }
-        Action::Site { at, action } => (
-            2 * n + tile_index(size, at),
-            ActionType::Site,
-            action as usize,
-        ),
+        Action::Site { at, action } => (site(at), ActionType::Site, action as usize),
+        Action::BuildRoad { at } => (site(at), ActionType::BuildRoad, 0),
+        Action::BuildBuilding { at, building } => {
+            (site(at), ActionType::BuildBuilding, building as usize)
+        }
+        Action::BuildMonument { at, monument } => {
+            (site(at), ActionType::BuildMonument, monument as usize)
+        }
+        Action::Destroy { at } => (site(at), ActionType::Destroy, 0),
         Action::Research { tech } => (3 * n, ActionType::Research, tech as usize),
         Action::EndTurn => (3 * n, ActionType::EndTurn, 0),
-        // v2 only; the env supports v1 until M20 gives it a slot.
-        Action::BuildRoad { .. } => panic!("BuildRoad has no action slot before milestone 20"),
-        Action::BuildBuilding { .. }
-        | Action::Disband { .. }
-        | Action::Destroy { .. }
-        | Action::BuildMonument { .. } => {
-            panic!("v2 action has no action slot before milestone 20")
-        }
     };
     Factored { actor, kind, arg }
 }
@@ -173,14 +202,15 @@ pub fn encode_action(state: &State, action: &Action) -> Factored {
 /// Identification only; legality is checked by `Env::step`.
 pub fn decode_action(state: &State, f: &Factored) -> Result<Action, DecodeError> {
     let size = state.size;
+    let ruleset = state.config.ruleset;
     let n = tiles(size);
     if f.actor >= num_actors(size) {
         return Err(DecodeError::ActorOutOfRange);
     }
-    if f.kind.family() != f.actor / n {
+    if (f.kind as usize) >= action_types(ruleset).len() || f.kind.family() != f.actor / n {
         return Err(DecodeError::WrongKind);
     }
-    if f.arg >= arg_len(size, f.kind).max(1) {
+    if f.arg >= arg_len_for(size, f.kind, ruleset).max(1) {
         return Err(DecodeError::BadArg);
     }
     let at = tile_pos(size, f.actor % n);
@@ -205,7 +235,9 @@ pub fn decode_action(state: &State, f: &Factored) -> Result<Action, DecodeError>
                 },
                 ActionType::Capture => Action::Capture { unit },
                 ActionType::Recover => Action::Recover { unit },
-                _ => Action::Promote { unit },
+                ActionType::Promote => Action::Promote { unit },
+                ActionType::Disband => Action::Disband { unit },
+                _ => unreachable!(),
             })
         }
         1 => {
@@ -219,23 +251,38 @@ pub fn decode_action(state: &State, f: &Factored) -> Result<Action, DecodeError>
             Ok(match f.kind {
                 ActionType::Train => Action::Train {
                     city,
-                    kind: ALL_UNITS[f.arg],
+                    kind: units(ruleset)[f.arg],
                 },
-                _ => Action::ChooseReward {
+                ActionType::ChooseReward => Action::ChooseReward {
                     city,
                     reward: ALL_REWARDS[f.arg],
                 },
+                _ => unreachable!(),
             })
         }
-        2 => Ok(Action::Site {
-            at,
-            action: ALL_SITE_ACTIONS[f.arg],
+        2 => Ok(match f.kind {
+            ActionType::Site => Action::Site {
+                at,
+                action: site_actions(ruleset)[f.arg],
+            },
+            ActionType::BuildRoad => Action::BuildRoad { at },
+            ActionType::BuildBuilding => Action::BuildBuilding {
+                at,
+                building: ALL_BUILDINGS[f.arg],
+            },
+            ActionType::BuildMonument => Action::BuildMonument {
+                at,
+                monument: ALL_MONUMENTS[f.arg],
+            },
+            ActionType::Destroy => Action::Destroy { at },
+            _ => unreachable!(),
         }),
         _ => Ok(match f.kind {
             ActionType::Research => Action::Research {
-                tech: ALL_TECHS[f.arg],
+                tech: techs(ruleset)[f.arg],
             },
-            _ => Action::EndTurn,
+            ActionType::EndTurn => Action::EndTurn,
+            _ => unreachable!(),
         }),
     }
 }
@@ -244,8 +291,11 @@ pub fn decode_action(state: &State, f: &Factored) -> Result<Action, DecodeError>
 #[derive(Debug, Clone)]
 pub struct ActionMasks {
     size: u8,
+    ruleset: Ruleset,
+    num_kinds: usize,
     actor: Vec<bool>,
-    kind: Vec<[bool; NUM_ACTION_TYPES]>,
+    /// Flat `[actor * num_kinds .. (actor + 1) * num_kinds]`.
+    kind: Vec<bool>,
     /// Argument masks of every actor's own kinds, packed by `arg_offset`.
     args: Vec<bool>,
     /// All false; served for kinds outside the actor's family.
@@ -253,32 +303,49 @@ pub struct ActionMasks {
 }
 
 /// Per-actor argument width of each slot family: unit (Move, Attack), city (Train,
-/// ChooseReward), site (Site), global (Research).
-fn family_width(size: u8, family: usize) -> usize {
+/// ChooseReward), site (Site [, BuildBuilding, BuildMonument]), global (Research).
+fn family_width(size: u8, family: usize, ruleset: Ruleset) -> usize {
     use ActionType::*;
     match family {
-        0 => arg_len(size, Move) + arg_len(size, Attack),
-        1 => arg_len(size, Train) + arg_len(size, ChooseReward),
-        2 => arg_len(size, Site),
-        _ => arg_len(size, Research),
+        0 => arg_len_for(size, Move, ruleset) + arg_len_for(size, Attack, ruleset),
+        1 => arg_len_for(size, Train, ruleset) + arg_len_for(size, ChooseReward, ruleset),
+        2 => {
+            let site = arg_len_for(size, Site, ruleset);
+            match ruleset {
+                Ruleset::V1 => site,
+                Ruleset::V2 => {
+                    site + arg_len_for(size, BuildBuilding, ruleset)
+                        + arg_len_for(size, BuildMonument, ruleset)
+                }
+            }
+        }
+        _ => arg_len_for(size, Research, ruleset),
     }
 }
 
 /// Start of the argument mask of `(actor, kind)` in `ActionMasks::args`, if `kind` takes an
 /// argument and belongs to the actor's family.
-fn arg_offset(size: u8, actor: usize, kind: ActionType) -> Option<usize> {
+fn arg_offset(size: u8, actor: usize, kind: ActionType, ruleset: Ruleset) -> Option<usize> {
+    if (kind as usize) >= action_types(ruleset).len() {
+        return None;
+    }
     let n = tiles(size);
     let family = actor / n;
-    if kind.family() != family || arg_len(size, kind) == 0 {
+    if kind.family() != family || arg_len_for(size, kind, ruleset) == 0 {
         return None;
     }
     let base = (0..family)
-        .map(|f| n * family_width(size, f))
+        .map(|f| n * family_width(size, f, ruleset))
         .sum::<usize>()
-        + (actor % n) * family_width(size, family);
+        + (actor % n) * family_width(size, family, ruleset);
     let within = match kind {
-        ActionType::Attack => arg_len(size, ActionType::Move),
-        ActionType::ChooseReward => arg_len(size, ActionType::Train),
+        ActionType::Attack => arg_len_for(size, ActionType::Move, ruleset),
+        ActionType::ChooseReward => arg_len_for(size, ActionType::Train, ruleset),
+        ActionType::BuildBuilding => arg_len_for(size, ActionType::Site, ruleset),
+        ActionType::BuildMonument => {
+            arg_len_for(size, ActionType::Site, ruleset)
+                + arg_len_for(size, ActionType::BuildBuilding, ruleset)
+        }
         _ => 0,
     };
     Some(base + within)
@@ -287,22 +354,32 @@ fn arg_offset(size: u8, actor: usize, kind: ActionType) -> Option<usize> {
 impl ActionMasks {
     pub fn new(state: &State, legal: &[Action]) -> ActionMasks {
         let size = state.size;
+        let ruleset = state.config.ruleset;
+        let num_kinds = action_types(ruleset).len();
         let n = tiles(size);
         let actors = num_actors(size);
-        let total =
-            n * (0..3).map(|f| family_width(size, f)).sum::<usize>() + family_width(size, 3);
+        let total = n
+            * (0..3)
+                .map(|f| family_width(size, f, ruleset))
+                .sum::<usize>()
+            + family_width(size, 3, ruleset);
         let mut m = ActionMasks {
             size,
+            ruleset,
+            num_kinds,
             actor: vec![false; actors],
-            kind: vec![[false; NUM_ACTION_TYPES]; actors],
+            kind: vec![false; actors * num_kinds],
             args: vec![false; total],
-            zeros: vec![false; arg_len(size, ActionType::Move).max(ALL_TECHS.len())],
+            zeros: vec![
+                false;
+                arg_len_for(size, ActionType::Move, ruleset).max(techs(ruleset).len())
+            ],
         };
         for a in legal {
             let f = encode_action(state, a);
             m.actor[f.actor] = true;
-            m.kind[f.actor][f.kind as usize] = true;
-            if let Some(off) = arg_offset(size, f.actor, f.kind) {
+            m.kind[f.actor * num_kinds + f.kind as usize] = true;
+            if let Some(off) = arg_offset(size, f.actor, f.kind, ruleset) {
                 m.args[off + f.arg] = true;
             }
         }
@@ -315,17 +392,21 @@ impl ActionMasks {
     }
 
     pub fn kind(&self, actor: usize) -> [bool; NUM_ACTION_TYPES] {
-        self.kind[actor]
+        let mut out = [false; NUM_ACTION_TYPES];
+        let start = actor * self.num_kinds;
+        out.copy_from_slice(&self.kind[start..start + NUM_ACTION_TYPES]);
+        out
     }
 
     pub fn kind_slice(&self, actor: usize) -> &[bool] {
-        &self.kind[actor]
+        let start = actor * self.num_kinds;
+        &self.kind[start..start + self.num_kinds]
     }
 
-    /// Length `arg_len(kind)`; empty for kinds without an argument.
+    /// Length `arg_len_for(size, kind, ruleset)`; empty for kinds without an argument.
     pub fn arg(&self, actor: usize, kind: ActionType) -> &[bool] {
-        let len = arg_len(self.size, kind);
-        match arg_offset(self.size, actor, kind) {
+        let len = arg_len_for(self.size, kind, self.ruleset);
+        match arg_offset(self.size, actor, kind, self.ruleset) {
             Some(off) => &self.args[off..off + len],
             None => &self.zeros[..len],
         }

@@ -6,14 +6,15 @@ use numpy::{PyArray1, PyArray3, PyArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use sim_core::data::{ALL_REWARDS, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS};
+use sim_core::data::{site_actions, techs, units, ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS};
 use sim_core::map::MapParams;
 use sim_core::state::{Config, Outcome, Ruleset};
-use sim_env::actions::{arg_len, num_actors, ActionType, Factored};
+use sim_env::actions::{action_types, arg_len_for, num_actors, ActionType, Factored};
 use sim_env::env::{AgentSeat, Env, EnvConfig, EnvError, Opponent, RewardConfig, StepOut};
-use sim_env::hash::{obs_hash, rules_hash};
+use sim_env::hash::{obs_hash_for, rules_hash_for};
 use sim_env::obs::{
-    encode_board_with_legal, encode_globals, obs_spec, snake_name, CHANNELS, GLOBALS,
+    encode_board_with_legal, encode_globals, obs_spec_for, snake_name, CHANNELS, GLOBALS,
+    V2_CHANNELS, V2_GLOBALS,
 };
 
 fn py_err(e: EnvError) -> PyErr {
@@ -25,8 +26,8 @@ fn py_err(e: EnvError) -> PyErr {
     }
 }
 
-fn kind_of(kind: usize) -> PyResult<ActionType> {
-    ActionType::ALL
+fn kind_of(kind: usize, ruleset: Ruleset) -> PyResult<ActionType> {
+    action_types(ruleset)
         .get(kind)
         .copied()
         .ok_or_else(|| PyValueError::new_err(format!("no action type {kind}")))
@@ -113,11 +114,6 @@ impl PyEnv {
             "v2" => Ruleset::V2,
             other => return Err(PyValueError::new_err(format!("unknown ruleset {other:?}"))),
         };
-        if ruleset != Ruleset::V1 {
-            return Err(PyValueError::new_err(format!(
-                "ruleset {ruleset:?} is not supported until milestone 20 (the observation is v1 only)"
-            )));
-        }
         let bot = |kind| Opponent::Bot {
             kind,
             epsilon: opponent_epsilon,
@@ -185,12 +181,16 @@ impl PyEnv {
     ) -> PyResult<(Bound<'py, PyArray3<f32>>, Bound<'py, PyArray1<f32>>)> {
         let n = self.size as usize;
         let env = self.env()?;
+        let (channels, num_globals) = match env.ruleset() {
+            Ruleset::V1 => (CHANNELS, GLOBALS),
+            Ruleset::V2 => (V2_CHANNELS, V2_GLOBALS),
+        };
         let view = env.view();
-        let mut board = vec![0.0f32; CHANNELS * n * n];
+        let mut board = vec![0.0f32; channels * n * n];
         encode_board_with_legal(&view, env.legal_actions(), &mut board);
-        let mut globals = vec![0.0f32; GLOBALS];
+        let mut globals = vec![0.0f32; num_globals];
         encode_globals(&view, &mut globals);
-        let board = PyArray1::from_vec(py, board).reshape([CHANNELS, n, n])?;
+        let board = PyArray1::from_vec(py, board).reshape([channels, n, n])?;
         Ok((board, PyArray1::from_vec(py, globals)))
     }
 
@@ -204,7 +204,10 @@ impl PyEnv {
         actor: usize,
     ) -> PyResult<Bound<'py, PyArray1<bool>>> {
         self.check_actor(actor)?;
-        Ok(PyArray1::from_slice(py, &self.env()?.masks().kind(actor)))
+        Ok(PyArray1::from_slice(
+            py,
+            self.env()?.masks().kind_slice(actor),
+        ))
     }
 
     fn arg_mask<'py>(
@@ -214,7 +217,7 @@ impl PyEnv {
         kind: usize,
     ) -> PyResult<Bound<'py, PyArray1<bool>>> {
         self.check_actor(actor)?;
-        let kind = kind_of(kind)?;
+        let kind = kind_of(kind, self.env.ruleset())?;
         Ok(PyArray1::from_slice(
             py,
             self.env()?.masks().arg(actor, kind),
@@ -238,7 +241,7 @@ impl PyEnv {
         kind: usize,
         arg: usize,
     ) -> PyResult<StepResult<'py>> {
-        let kind = kind_of(kind)?;
+        let kind = kind_of(kind, self.env.ruleset())?;
         let out = self
             .env
             .step_factored(&Factored { actor, kind, arg })
@@ -284,7 +287,9 @@ impl PyEnv {
     }
 
     fn spec<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let spec = obs_spec(self.size);
+        let ruleset = self.env.ruleset();
+        let spec = obs_spec_for(self.size, ruleset);
+        let kinds = action_types(ruleset);
         let d = PyDict::new(py);
         d.set_item("height", spec.height)?;
         d.set_item("width", spec.width)?;
@@ -292,19 +297,24 @@ impl PyEnv {
         d.set_item("globals", spec.globals)?;
         d.set_item("channel_names", spec.channel_names)?;
         d.set_item("global_names", spec.global_names)?;
-        d.set_item("action_types", snake_names(&ActionType::ALL))?;
+        d.set_item("action_types", snake_names(kinds))?;
         d.set_item("num_actors", num_actors(self.size))?;
-        let arg_lens: Vec<usize> = ActionType::ALL
+        let arg_lens: Vec<usize> = kinds
             .iter()
-            .map(|&k| arg_len(self.size, k))
+            .map(|&k| arg_len_for(self.size, k, ruleset))
             .collect();
         d.set_item("arg_lens", arg_lens)?;
-        d.set_item("unit_types", snake_names(&ALL_UNITS))?;
+        d.set_item("unit_types", snake_names(units(ruleset)))?;
         d.set_item("rewards", snake_names(&ALL_REWARDS))?;
-        d.set_item("techs", snake_names(&ALL_TECHS))?;
-        d.set_item("site_actions", snake_names(&ALL_SITE_ACTIONS))?;
-        d.set_item("obs_hash", obs_hash(self.size))?;
-        d.set_item("rules_hash", rules_hash())?;
+        d.set_item("techs", snake_names(techs(ruleset)))?;
+        d.set_item("site_actions", snake_names(site_actions(ruleset)))?;
+        d.set_item("obs_hash", obs_hash_for(self.size, ruleset))?;
+        d.set_item("rules_hash", rules_hash_for(ruleset))?;
+        if ruleset == Ruleset::V2 {
+            d.set_item("buildings", snake_names(&ALL_BUILDINGS))?;
+            d.set_item("monuments", snake_names(&ALL_MONUMENTS))?;
+            d.set_item("ruleset", "v2")?;
+        }
         Ok(d)
     }
 }

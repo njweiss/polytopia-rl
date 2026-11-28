@@ -2,11 +2,12 @@
 //! visibility"). Bots read the game only through this.
 
 use crate::actions::{legal_actions, Action};
-use crate::data::{Building, Monument, Tables, Tech, UnitType};
+use crate::combat::{resolve_attack, Combatant};
+use crate::data::{Building, Monument, Skill, Tables, Tech, UnitType};
 use crate::economy::income;
-use crate::grid::{all_tiles, Pos};
+use crate::grid::{all_tiles, chebyshev, Pos};
 use crate::map::{Resource, Terrain};
-use crate::movement::reachable_tiles;
+use crate::movement::{defense_bonus, reachable_tiles};
 use crate::score::score;
 use crate::state::{
     City, CityId, Improvement, MonumentSet, Phase, PlayerId, Ruleset, State, TechSet, Unit, UnitId,
@@ -125,32 +126,77 @@ impl<'a> PlayerView<'a> {
             unit: t
                 .unit
                 .map(|u| self.unit_view(self.state.unit(u).expect("occupant is alive"))),
-            road: false,
-            building: None,
-            building_level: 0,
-            lighthouse: false,
-            monument: None,
+            road: t.road,
+            building: t.building,
+            building_level: t.building_level,
+            lighthouse: t.lighthouse,
+            monument: t.monument,
         })
     }
 
     pub fn kills(&self) -> u32 {
-        todo!("milestone 20")
+        self.state.players[self.player as usize].kills
     }
 
     pub fn lighthouses_discovered(&self) -> u8 {
-        todo!("milestone 20")
+        self.state.players[self.player as usize].lighthouses_discovered
     }
 
     pub fn monuments_unlocked(&self) -> MonumentSet {
-        todo!("milestone 20")
+        self.state.players[self.player as usize].monuments_unlocked
     }
 
     pub fn monuments_placed(&self) -> MonumentSet {
-        todo!("milestone 20")
+        self.state.players[self.player as usize].monuments_placed
     }
 
-    pub fn attack_preview(&self, _unit: UnitId, _target: Pos) -> Option<AttackPreview> {
-        todo!("milestone 20")
+    pub fn attack_preview(&self, unit: UnitId, target: Pos) -> Option<AttackPreview> {
+        if self.state.outcome.is_some() || self.state.current != self.player {
+            return None;
+        }
+        let u = self.state.unit(unit)?;
+        if u.owner != self.player {
+            return None;
+        }
+        if target.row >= self.state.size
+            || target.col >= self.state.size
+            || !self.is_explored(target)
+        {
+            return None;
+        }
+        let dist = chebyshev(u.pos, target);
+        let sa = self.state.tables.unit(u.kind);
+        if dist == 0 || dist > sa.range {
+            return None;
+        }
+        let defender_id = self.state.tile(target).unit?;
+        let d = self.state.unit(defender_id)?;
+        if d.owner == self.player {
+            return None;
+        }
+        let sd = self.state.tables.unit(d.kind);
+        let bonus = defense_bonus(self.state, defender_id);
+        let can_retaliate = dist <= sd.range && !sd.skills.contains(&Skill::Stiff);
+        let ca = Combatant {
+            attack: sa.attack,
+            defense: sa.defense,
+            health: u.health,
+            max_health: u.max_health,
+        };
+        let cd = Combatant {
+            attack: sd.attack,
+            defense: sd.defense,
+            health: d.health,
+            max_health: d.max_health,
+        };
+        let outcome = resolve_attack(&ca, &cd, bonus, can_retaliate);
+        Some(AttackPreview {
+            dealt: d.health - outcome.defender_health,
+            retaliation: u.health - outcome.attacker_health,
+            defender_dies: outcome.defender_health == 0,
+            attacker_dies: outcome.attacker_health == 0,
+            defense_bonus: bonus,
+        })
     }
 
     pub fn stars(&self) -> u32 {

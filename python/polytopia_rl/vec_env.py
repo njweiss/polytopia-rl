@@ -23,7 +23,12 @@ def agent_outcome(outcome: str | None, seat: int) -> str:
 
 def env_kwargs_of(cfg) -> dict:
     """The map and rule settings of a training config, as `Env` keyword arguments."""
-    return dict(size=cfg.size, turn_cap=cfg.turn_cap, full_observability=cfg.full_observability)
+    return dict(
+        size=cfg.size,
+        turn_cap=cfg.turn_cap,
+        full_observability=cfg.full_observability,
+        ruleset=getattr(cfg, "ruleset", "v1"),
+    )
 
 
 def env_masks_fn(envs: list, num_tiles: int) -> Callable:

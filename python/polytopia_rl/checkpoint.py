@@ -103,7 +103,7 @@ def load_net(path, device="cpu", strict_obs=True):
 
     raw = torch.load(path, map_location=device, weights_only=False)
     cfg = PPOConfig.from_json(raw["config"])
-    spec = polytopia_sim.Env(size=cfg.size).spec()
+    spec = polytopia_sim.Env(size=cfg.size, ruleset=getattr(cfg, "ruleset", "v1")).spec()
     if not strict_obs and raw.get("spec") and raw["spec"]["obs_hash"] != spec["obs_hash"]:
         print(f"WARNING: {path} was trained for a different observation (obs_hash {raw['spec']['obs_hash']}); results are not comparable", flush=True)
     ck = checked(raw, path, spec, strict_obs=strict_obs)
