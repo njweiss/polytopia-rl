@@ -434,6 +434,11 @@ pub fn kind_i(k: ActionType) -> usize {
         ActionType::Site => 7,
         ActionType::Research => 8,
         ActionType::EndTurn => 9,
+        ActionType::Disband => 10,
+        ActionType::BuildRoad => 11,
+        ActionType::BuildBuilding => 12,
+        ActionType::BuildMonument => 13,
+        ActionType::Destroy => 14,
     }
 }
 
@@ -460,6 +465,11 @@ pub fn my_arg_len(size: u8, k: ActionType) -> usize {
         ActionType::Site => 6,
         ActionType::Research => 9,
         ActionType::Capture | ActionType::Recover | ActionType::Promote | ActionType::EndTurn => 0,
+        ActionType::Disband
+        | ActionType::BuildRoad
+        | ActionType::BuildBuilding
+        | ActionType::BuildMonument
+        | ActionType::Destroy => unreachable!("v2 action type in v1 helper"),
     }
 }
 
@@ -562,6 +572,11 @@ pub fn my_decode(s: &State, actor: usize, k: ActionType, arg: usize) -> Option<A
         }),
         ActionType::Research => (family == 3).then_some(Action::Research { tech: TECHS[arg] }),
         ActionType::EndTurn => (family == 3).then_some(Action::EndTurn),
+        ActionType::Disband
+        | ActionType::BuildRoad
+        | ActionType::BuildBuilding
+        | ActionType::BuildMonument
+        | ActionType::Destroy => None,
     }
 }
 

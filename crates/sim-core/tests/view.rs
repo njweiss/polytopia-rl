@@ -135,6 +135,11 @@ fn plain(unit: Option<UnitView>, territory: Option<u8>) -> VisibleTile {
         city: None,
         territory,
         unit,
+        road: false,
+        building: None,
+        building_level: 0,
+        lighthouse: false,
+        monument: None,
     }
 }
 

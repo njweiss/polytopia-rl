@@ -2,15 +2,27 @@
 //! visibility"). Bots read the game only through this.
 
 use crate::actions::{legal_actions, Action};
-use crate::data::{Tables, Tech, UnitType};
+use crate::data::{Building, Monument, Tables, Tech, UnitType};
 use crate::economy::income;
 use crate::grid::{all_tiles, Pos};
 use crate::map::{Resource, Terrain};
 use crate::movement::reachable_tiles;
 use crate::score::score;
 use crate::state::{
-    City, CityId, Improvement, Phase, PlayerId, Ruleset, State, TechSet, Unit, UnitId,
+    City, CityId, Improvement, MonumentSet, Phase, PlayerId, Ruleset, State, TechSet, Unit, UnitId,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AttackPreview {
+    /// Actual HP lost by the defender (capped at defender's current health).
+    pub dealt: u32,
+    /// Actual HP lost by the attacker from retaliation (0 if defender dies, out of range, or Stiff).
+    pub retaliation: u32,
+    pub defender_dies: bool,
+    pub attacker_dies: bool,
+    /// Defender's true defense bonus (1.0, 1.5, or 4.0).
+    pub defense_bonus: f32,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CityView {
@@ -45,6 +57,11 @@ pub struct VisibleTile {
     /// The owner of the tile's owning city.
     pub territory: Option<PlayerId>,
     pub unit: Option<UnitView>,
+    pub road: bool,
+    pub building: Option<Building>,
+    pub building_level: u8,
+    pub lighthouse: bool,
+    pub monument: Option<Monument>,
 }
 
 /// Never hands out `&State`, unexplored contents, the opponent's hidden data or the rng.
@@ -108,7 +125,32 @@ impl<'a> PlayerView<'a> {
             unit: t
                 .unit
                 .map(|u| self.unit_view(self.state.unit(u).expect("occupant is alive"))),
+            road: false,
+            building: None,
+            building_level: 0,
+            lighthouse: false,
+            monument: None,
         })
+    }
+
+    pub fn kills(&self) -> u32 {
+        todo!("milestone 20")
+    }
+
+    pub fn lighthouses_discovered(&self) -> u8 {
+        todo!("milestone 20")
+    }
+
+    pub fn monuments_unlocked(&self) -> MonumentSet {
+        todo!("milestone 20")
+    }
+
+    pub fn monuments_placed(&self) -> MonumentSet {
+        todo!("milestone 20")
+    }
+
+    pub fn attack_preview(&self, _unit: UnitId, _target: Pos) -> Option<AttackPreview> {
+        todo!("milestone 20")
     }
 
     pub fn stars(&self) -> u32 {

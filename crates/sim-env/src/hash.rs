@@ -52,6 +52,20 @@ pub fn obs_hash(size: u8) -> String {
     hex64(fnv1a64(obs_canonical(size).as_bytes()))
 }
 
+pub fn obs_canonical_for(size: u8, ruleset: Ruleset) -> String {
+    match ruleset {
+        Ruleset::V1 => obs_canonical(size),
+        Ruleset::V2 => todo!("milestone 20"),
+    }
+}
+
+pub fn obs_hash_for(size: u8, ruleset: Ruleset) -> String {
+    match ruleset {
+        Ruleset::V1 => obs_hash(size),
+        Ruleset::V2 => todo!("milestone 20"),
+    }
+}
+
 /// Every `data/*.json` the simulator embeds, as `(file name, contents)` in file-name order.
 pub fn embedded_data_files() -> Vec<(&'static str, &'static str)> {
     vec![

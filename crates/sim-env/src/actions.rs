@@ -1,9 +1,11 @@
 //! The factored action space (docs/MILESTONE_9 "Factored action space").
 
 use sim_core::actions::Action;
-use sim_core::data::{ALL_REWARDS, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS};
+use sim_core::data::{
+    ALL_BUILDINGS, ALL_MONUMENTS, ALL_REWARDS, ALL_SITE_ACTIONS, ALL_TECHS, ALL_UNITS,
+};
 use sim_core::grid::Pos;
-use sim_core::state::State;
+use sim_core::state::{Ruleset, State};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,9 +20,22 @@ pub enum ActionType {
     Site,
     Research,
     EndTurn,
+    Disband,
+    BuildRoad,
+    BuildBuilding,
+    BuildMonument,
+    Destroy,
 }
 
 pub const NUM_ACTION_TYPES: usize = 10;
+pub const V2_NUM_ACTION_TYPES: usize = 15;
+
+pub fn action_types(ruleset: Ruleset) -> &'static [ActionType] {
+    match ruleset {
+        Ruleset::V1 => &ActionType::ALL,
+        Ruleset::V2 => todo!("milestone 20"),
+    }
+}
 
 impl ActionType {
     pub const ALL: [ActionType; NUM_ACTION_TYPES] = [
@@ -43,9 +58,14 @@ impl ActionType {
             | ActionType::Attack
             | ActionType::Capture
             | ActionType::Recover
-            | ActionType::Promote => 0,
+            | ActionType::Promote
+            | ActionType::Disband => 0,
             ActionType::Train | ActionType::ChooseReward => 1,
-            ActionType::Site => 2,
+            ActionType::Site
+            | ActionType::BuildRoad
+            | ActionType::BuildBuilding
+            | ActionType::BuildMonument
+            | ActionType::Destroy => 2,
             ActionType::Research | ActionType::EndTurn => 3,
         }
     }
@@ -94,7 +114,22 @@ pub fn arg_len(size: u8, kind: ActionType) -> usize {
         ActionType::ChooseReward => ALL_REWARDS.len(),
         ActionType::Site => ALL_SITE_ACTIONS.len(),
         ActionType::Research => ALL_TECHS.len(),
-        ActionType::Capture | ActionType::Recover | ActionType::Promote | ActionType::EndTurn => 0,
+        ActionType::BuildBuilding => ALL_BUILDINGS.len(),
+        ActionType::BuildMonument => ALL_MONUMENTS.len(),
+        ActionType::Capture
+        | ActionType::Recover
+        | ActionType::Promote
+        | ActionType::EndTurn
+        | ActionType::Disband
+        | ActionType::BuildRoad
+        | ActionType::Destroy => 0,
+    }
+}
+
+pub fn arg_len_for(size: u8, kind: ActionType, ruleset: Ruleset) -> usize {
+    match ruleset {
+        Ruleset::V1 => arg_len(size, kind),
+        Ruleset::V2 => todo!("milestone 20"),
     }
 }
 
@@ -281,6 +316,10 @@ impl ActionMasks {
 
     pub fn kind(&self, actor: usize) -> [bool; NUM_ACTION_TYPES] {
         self.kind[actor]
+    }
+
+    pub fn kind_slice(&self, actor: usize) -> &[bool] {
+        &self.kind[actor]
     }
 
     /// Length `arg_len(kind)`; empty for kinds without an argument.

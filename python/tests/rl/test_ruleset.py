@@ -10,11 +10,24 @@ import polytopia_sim as ps
 import pytest
 
 
-def test_v2_is_refused_with_a_value_error_naming_milestone_20():
-    with pytest.raises(ValueError, match="milestone 20"):
-        ps.Env(size=6, ruleset="v2")
-    with pytest.raises(ValueError, match="milestone 20"):
-        ps.Env(size=11, opponent="none", ruleset="v2")
+def test_v2_is_accepted_and_exposes_v2_spec_and_hashes():
+    # Milestone 20 O7: PyEnv lifted its M15 v2 refusal.
+    v1_11 = ps.Env(size=11, ruleset="v1").spec()
+    env6 = ps.Env(size=6, ruleset="v2")
+    spec6 = env6.spec()
+    assert spec6["ruleset"] == "v2"
+    assert spec6["channels"] == 64 and spec6["globals"] == 33
+    assert len(spec6["action_types"]) == 15
+
+    env11 = ps.Env(size=11, opponent="none", ruleset="v2")
+    spec11 = env11.spec()
+    assert spec11["ruleset"] == "v2"
+    assert spec11["channels"] == 64 and spec11["globals"] == 33
+    assert spec11["obs_hash"] != v1_11["obs_hash"]
+    assert spec11["rules_hash"] != v1_11["rules_hash"]
+    env11.reset(0)
+    board, glob = env11.observation()
+    assert board.shape == (64, 11, 11) and glob.shape == (33,)
 
 
 def test_an_unknown_ruleset_is_a_value_error():

@@ -8,10 +8,10 @@
 mod common;
 
 use std::fs;
-use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
 use common::*;
+use sim_core::actions::Action;
 use sim_core::state::{Config, Ruleset};
 use sim_env::env::{AgentSeat, Env, EnvConfig, Opponent};
 use sim_env::hash::{
@@ -152,23 +152,19 @@ fn v2_env_cfg() -> EnvConfig {
     }
 }
 
-fn panic_message(e: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = e.downcast_ref::<String>() {
-        s.clone()
-    } else if let Some(s) = e.downcast_ref::<&str>() {
-        s.to_string()
-    } else {
-        String::new()
-    }
-}
-
 #[test]
-fn env_refuses_v2_naming_milestone_20() {
-    let r = catch_unwind(AssertUnwindSafe(|| Env::new(v2_env_cfg())));
-    let msg = panic_message(r.err().expect("Env::new refuses a v2 config"));
-    assert!(msg.contains("milestone 20"), "{msg:?}");
-    // v1 is fine.
-    let mut env = Env::new(env_cfg(Opponent::TwoSeat, AgentSeat::Fixed(0), 10));
+fn env_accepts_v2_and_steps_cleanly() {
+    // Milestone 20 O7: Env::new lifted its M15 v2 refusal.
+    let mut env = Env::new(v2_env_cfg());
+    assert_eq!(env.ruleset(), Ruleset::V2);
     env.reset(0);
     assert!(!env.is_terminal());
+    assert!(!env.legal_actions().is_empty());
+    let out = env.step(&Action::EndTurn).expect("v2 env steps cleanly");
+    assert!(!out.terminated && !out.truncated);
+    // v1 is still fine.
+    let mut v1 = Env::new(env_cfg(Opponent::TwoSeat, AgentSeat::Fixed(0), 10));
+    assert_eq!(v1.ruleset(), Ruleset::V1);
+    v1.reset(0);
+    assert!(!v1.is_terminal());
 }

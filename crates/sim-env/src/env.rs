@@ -184,6 +184,10 @@ impl Env {
         self.episode.is_some()
     }
 
+    pub fn ruleset(&self) -> Ruleset {
+        todo!("milestone 20")
+    }
+
     fn ep(&self) -> &Episode {
         self.episode.as_ref().expect("Env: call reset first")
     }

@@ -6,7 +6,7 @@ use sim_core::actions::Action;
 use sim_core::data::{SiteAction, ALL_TECHS, ALL_UNITS};
 use sim_core::grid::{all_tiles, Pos};
 use sim_core::map::{ALL_RESOURCES, ALL_TERRAINS};
-use sim_core::state::{ALL_IMPROVEMENTS, ALL_PHASES};
+use sim_core::state::{Ruleset, ALL_IMPROVEMENTS, ALL_PHASES};
 use sim_core::view::PlayerView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +67,7 @@ const CAN_PROMOTE: usize = VETERAN + 1;
 const CAN_HARVEST: usize = CAN_PROMOTE + 1;
 const CAN_BUILD: usize = CAN_HARVEST + 1;
 pub const CHANNELS: usize = CAN_BUILD + 1;
+pub const V2_CHANNELS: usize = 64;
 
 const GLOBAL_SCALARS: [&str; 9] = [
     "stars",
@@ -80,6 +81,7 @@ const GLOBAL_SCALARS: [&str; 9] = [
     "my_units",
 ];
 pub const GLOBALS: usize = GLOBAL_SCALARS.len() + ALL_TECHS.len();
+pub const V2_GLOBALS: usize = 33;
 
 pub fn obs_spec(size: u8) -> ObsSpec {
     let mut channel_names = names(&["explored"]);
@@ -116,6 +118,13 @@ pub fn obs_spec(size: u8) -> ObsSpec {
         globals: GLOBALS,
         channel_names,
         global_names,
+    }
+}
+
+pub fn obs_spec_for(size: u8, ruleset: Ruleset) -> ObsSpec {
+    match ruleset {
+        Ruleset::V1 => obs_spec(size),
+        Ruleset::V2 => todo!("milestone 20"),
     }
 }
 
