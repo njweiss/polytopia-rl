@@ -598,7 +598,7 @@ def test_arg_head_v2_relative_position_bias(size):
             rt, ct = ra + dr2, ca + dc2
             if 0 <= rt < size and 0 <= ct < size:
                 expected_atk_shift[b, rt * size + ct] = delta2
-        assert expected_atk_shift.sum().item() > 0
+        assert expected_atk_shift.abs().sum().item() > 0
         torch.testing.assert_close(atk_after2 - atk_base, expected_atk_shift, atol=1e-5, rtol=0)
 
 
