@@ -37,6 +37,7 @@ from polytopia_rl.selfplay import Entry, SnapshotPool, make_selfplay_vec_env, ne
 from polytopia_rl.stacked import StackedSnapshots, stacked_batch_policy
 from polytopia_rl.suite import DEFAULT_SUITE, run_suite
 from polytopia_rl.tournament import BOTS, Player, anchor_of, play_pair, round_robin, write_tournament
+from polytopia_rl.transfer import distill_schedule, load_warm_start
 from polytopia_rl.vec_env import make_vec_env
 
 
@@ -129,6 +130,28 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     batch = cfg.num_envs * cfg.num_steps
     num_updates = cfg.total_steps // batch
     anneal_updates = (cfg.lr_anneal_steps or cfg.total_steps) // batch  # H (docs/MILESTONE_12c)
+    distill_steps = getattr(cfg, "distill_steps", None)
+    if distill_steps is None:
+        distill_updates = None
+    elif distill_steps == 0:
+        distill_updates = 0
+    else:
+        distill_updates = max(1, distill_steps // batch)
+
+    teacher = None
+    teacher_spec = None
+    if getattr(cfg, "teacher_checkpoint", None) is not None:
+        # Preserve global torch RNG so teacher construction does not perturb fresh/resumed runs.
+        torch_rng = torch.get_rng_state()
+        teacher, teacher_ck = load_net(cfg.teacher_checkpoint, device=device, strict_obs=True)
+        torch.set_rng_state(torch_rng)
+        teacher.eval().requires_grad_(False)
+        teacher_spec = (
+            teacher_ck.spec
+            if teacher_ck.spec is not None
+            else polytopia_sim.Env(size=teacher_ck.cfg.size, ruleset=getattr(teacher_ck.cfg, "ruleset", "v1")).spec()
+        )
+        print(f"teacher {describe(cfg.teacher_checkpoint, teacher_ck)}", flush=True)
 
     # Self-play state: the pool, the dedicated opponent-draw stream, and the generator the snapshot
     # opponents sample their actions with (on the model's device, so sampling needs no copy).
@@ -156,11 +179,17 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
     recent: list[dict] = []  # the last `stage_window` finished episodes of this stage
     best_score = None
     if resume is None:
+        warm_start = getattr(cfg, "warm_start_checkpoint", None)
+        if init_checkpoint is not None and warm_start is not None:
+            raise ValueError("init_checkpoint and warm_start_checkpoint are mutually exclusive")
         if init_checkpoint is not None:
             # Warm start: weights only (obs hash enforced); fresh optimizer and LR schedule.
             ck = load_checkpoint(init_checkpoint, spec=spec)
             print(describe(init_checkpoint, ck), flush=True)
             net.load_state_dict(ck.model)
+        elif warm_start is not None:
+            ck = load_warm_start(net, warm_start, spec)
+            print(describe(warm_start, ck), flush=True)
         if cfg.selfplay:
             pool.add(net.state_dict(), 0)
         vec = new_vec(train_seed_base(cfg.seed))
@@ -230,7 +259,22 @@ def run(cfg, run_dir: str, resume: str | None = None, init_checkpoint: str | Non
             stats = collect(net, vec, buffer, gen)
             _check_run_seeds(vec, seed_limit)
             t1 = time.perf_counter()
-            m = train_update(net, optimizer, buffer, cfg, gen)
+            d_coef = (
+                distill_schedule(update, getattr(cfg, "distill_coef", 0.0), num_updates, distill_updates)
+                if teacher is not None
+                else 0.0
+            )
+            m = train_update(
+                net,
+                optimizer,
+                buffer,
+                cfg,
+                gen,
+                teacher=teacher,
+                teacher_spec=teacher_spec,
+                student_spec=spec,
+                distill_coef=d_coef,
+            )
             t2 = time.perf_counter()
             global_step += batch
             history.steps_in_stage += batch

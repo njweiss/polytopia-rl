@@ -51,6 +51,7 @@ class EvalOut:
     entropy: Tensor  # (B,)
     head_entropy: dict  # {"actor", "kind", "arg"} -> (B,); 0 where the stage did not fire
     value: Tensor  # (B,)
+    logits: tuple[Tensor, Tensor, Tensor] | None = None
 
 
 def _init(layer: nn.Module, gain: float) -> nn.Module:
@@ -392,24 +393,26 @@ class PolicyNet(nn.Module):
         actor_mask: Tensor,
         kind_mask: Tensor,
         arg_mask: Tensor,
+        return_logits: bool = False,
     ) -> EvalOut:
         """Recompute log-probability, entropy and value of stored actions: the sum over the stages
         that fired, each stage's distribution conditioned on the earlier choices."""
         feats = self.trunk(board, globals)
-        logits = self.actor_logits(feats)
-        logp = categorical.log_prob(logits, actor_mask, actors, check=False)
-        h_actor = categorical.entropy(logits, actor_mask, check=False)
-        logits = self.kind_logits(feats, actors)
-        logp = logp + categorical.log_prob(logits, kind_mask, kinds, check=False)
-        h_kind = categorical.entropy(logits, kind_mask, check=False)
+        a_logits = self.actor_logits(feats)
+        logp = categorical.log_prob(a_logits, actor_mask, actors, check=False)
+        h_actor = categorical.entropy(a_logits, actor_mask, check=False)
+        k_logits = self.kind_logits(feats, actors)
+        logp = logp + categorical.log_prob(k_logits, kind_mask, kinds, check=False)
+        h_kind = categorical.entropy(k_logits, kind_mask, check=False)
         fired, safe = self._arg_stage(kinds, arg_mask)
-        logits = self.arg_logits(feats, actors, kinds)
+        arg_logits = self.arg_logits(feats, actors, kinds)
         zero = torch.zeros_like(logp)
-        logp = logp + torch.where(fired, categorical.log_prob(logits, safe, args, check=False), zero)
-        h_arg = torch.where(fired, categorical.entropy(logits, safe, check=False), zero)
+        logp = logp + torch.where(fired, categorical.log_prob(arg_logits, safe, args, check=False), zero)
+        h_arg = torch.where(fired, categorical.entropy(arg_logits, safe, check=False), zero)
         return EvalOut(
             logp=logp,
             entropy=h_actor + h_kind + h_arg,
             head_entropy={"actor": h_actor, "kind": h_kind, "arg": h_arg},
             value=self.value(feats),
+            logits=(a_logits, k_logits, arg_logits) if return_logits else None,
         )

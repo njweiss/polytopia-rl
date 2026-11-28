@@ -10,6 +10,7 @@ import torch
 from torch import Tensor
 
 from polytopia_rl.gae import compute_gae
+from polytopia_rl.transfer import compute_teacher_logits, distill_kl
 from polytopia_rl.vec_env import env_masks_fn
 
 
@@ -207,11 +208,23 @@ def collect_rollout_interleaved(net, vec_env, buffer: RolloutBuffer, generator: 
     return stats
 
 
-def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Generator) -> dict:
+def train_update(
+    net,
+    optimizer,
+    buffer: RolloutBuffer,
+    cfg,
+    generator: torch.Generator,
+    *,
+    teacher=None,
+    teacher_spec: dict | None = None,
+    student_spec: dict | None = None,
+    distill_coef: float = 0.0,
+) -> dict:
     """GAE on `buffer`, then `cfg.update_epochs` epochs of shuffled minibatches. Uses the
     optimizer's current learning rate. Returns the update's metrics (`pg_loss`, `v_loss`,
     `entropy`, `entropy_actor`, `entropy_kind`, `entropy_arg`, `approx_kl`, `clipfrac`,
-    `explained_variance`, `adv_mean`, `adv_std`)."""
+    `explained_variance`, `adv_mean`, `adv_std`; plus `distill_kl` and `distill_coef` when
+    `teacher` is provided)."""
     with torch.no_grad():
         adv, returns = compute_gae(
             buffer.rewards,
@@ -231,6 +244,15 @@ def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Ge
     }
     adv, returns = adv.reshape(n), returns.reshape(n)
 
+    use_distill = teacher is not None and distill_coef > 0.0
+    if use_distill:
+        if teacher_spec is None or student_spec is None:
+            raise ValueError("teacher_spec and student_spec are required when teacher is set")
+        t_actor, t_kind, t_arg = compute_teacher_logits(
+            teacher, teacher_spec, student_spec, flat["board"], flat["globals"], flat["actors"], flat["kinds"]
+        )
+        distill_temp = getattr(cfg, "distill_temp", 1.0)
+
     sums: dict[str, float] = {}
     count = 0
     for _ in range(cfg.update_epochs):
@@ -238,6 +260,7 @@ def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Ge
         epoch_mbs = 0
         for idx in minibatch_indices(n, cfg.num_minibatches, generator):
             idx = idx.to(buffer.device)
+            eval_kwargs = {"return_logits": True} if use_distill else {}
             ev = net.evaluate(
                 flat["board"][idx],
                 flat["globals"][idx],
@@ -247,10 +270,26 @@ def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Ge
                 flat["actor_mask"][idx],
                 flat["kind_mask"][idx],
                 flat["arg_mask"][idx],
+                **eval_kwargs,
             )
             out = ppo_loss(ev.logp, flat["logp"][idx], adv[idx], ev.value, flat["values"][idx], returns[idx], ev.entropy, cfg)
+            total_loss = out.total
+            if use_distill:
+                d_kl, _ = distill_kl(
+                    (t_actor[idx], t_kind[idx], t_arg[idx]),
+                    ev.logits,
+                    flat["kinds"][idx],
+                    flat["actor_mask"][idx],
+                    flat["kind_mask"][idx],
+                    flat["arg_mask"][idx],
+                    teacher_spec,
+                    student_spec,
+                    temp=distill_temp,
+                )
+                d_kl_mean = d_kl.mean()
+                total_loss = total_loss + distill_coef * d_kl_mean
             optimizer.zero_grad()
-            out.total.backward()
+            total_loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), cfg.max_grad_norm)
             optimizer.step()
             step_metrics = {
@@ -263,6 +302,8 @@ def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Ge
                 "approx_kl": out.approx_kl,
                 "clipfrac": out.clipfrac,
             }
+            if use_distill:
+                step_metrics["distill_kl"] = d_kl_mean
             for k, v in step_metrics.items():
                 val = v.item()
                 sums[k] = sums.get(k, 0.0) + val
@@ -275,6 +316,10 @@ def train_update(net, optimizer, buffer: RolloutBuffer, cfg, generator: torch.Ge
             break
 
     metrics = {k: v / count for k, v in sums.items()}
+    if teacher is not None:
+        if not use_distill:
+            metrics["distill_kl"] = 0.0
+        metrics["distill_coef"] = float(distill_coef)
     # Explained variance of the rollout values w.r.t. the returns: 1 is perfect, 0 is no better than
     # a constant; undefined (None) when the returns do not vary.
     var_r = returns.var().item()

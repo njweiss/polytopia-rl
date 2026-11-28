@@ -50,6 +50,12 @@ class PPOConfig:
     width: int = 64
     blocks: int = 4
     arch: str = "v1"
+    # Transfer (docs/MILESTONE_22): prefix warm-start and policy distillation.
+    warm_start_checkpoint: str | None = None
+    teacher_checkpoint: str | None = None
+    distill_coef: float = 0.0
+    distill_steps: int | None = None
+    distill_temp: float = 1.0
     # Run.
     total_steps: int = 20_000_000
     seed: int = 1
@@ -81,8 +87,9 @@ class PPOConfig:
     def from_json(cls, text: str) -> PPOConfig:
         """Fields missing from `text` keep their defaults; an unknown key, `lr_anneal_steps` below
         `total_steps`, a `ruleset` other than "v1" / "v2", an `arch` other than "v1" / "v2", a
-        `rollout` other than "interleaved" / "lockstep", or an `opponent_forward` other than
-        "stacked" / "per_snapshot" raises `ValueError`."""
+        `rollout` other than "interleaved" / "lockstep", an `opponent_forward` other than
+        "stacked" / "per_snapshot", negative `distill_coef` or `distill_steps`, `distill_coef > 0`
+        without `teacher_checkpoint`, or non-positive `distill_temp` raises `ValueError`."""
         data = json.loads(text)
         _check_keys(data)
         cfg = cls(**data)
@@ -98,6 +105,14 @@ class PPOConfig:
             raise ValueError(f"rollout {cfg.rollout!r} is not 'interleaved' or 'lockstep'")
         if cfg.opponent_forward not in ("stacked", "per_snapshot"):
             raise ValueError(f"opponent_forward {cfg.opponent_forward!r} is not 'stacked' or 'per_snapshot'")
+        if cfg.distill_coef < 0.0:
+            raise ValueError(f"distill_coef {cfg.distill_coef} must be >= 0")
+        if cfg.distill_coef > 0.0 and cfg.teacher_checkpoint is None:
+            raise ValueError("distill_coef > 0 requires teacher_checkpoint")
+        if cfg.distill_steps is not None and cfg.distill_steps < 0:
+            raise ValueError(f"distill_steps {cfg.distill_steps} must be >= 0 or None")
+        if cfg.distill_temp <= 0.0:
+            raise ValueError(f"distill_temp {cfg.distill_temp} must be > 0")
         return cfg
 
 

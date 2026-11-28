@@ -1,0 +1,24 @@
+{
+  "name": "transfer22",
+  "base_config": "python/configs/v2_curriculum.json",
+  "init_checkpoint": null,
+  "reference": null,
+  "seeds": [1, 2, 3],
+  "total_steps": 10000000,
+  "arms": {
+    "scratch_v1": {"arch": "v1"},
+    "scratch_v2": {"arch": "v2"},
+    "warmstart_v1": {"arch": "v1", "warm_start_checkpoint": "runs/curriculum_seed1/latest.pt"},
+    "distill_v2": {
+      "arch": "v2",
+      "teacher_checkpoint": "runs/curriculum_seed1/latest.pt",
+      "distill_coef": 0.1,
+      "distill_steps": 3000000
+    }
+  },
+  "primary": ["rush_e0", "economy_e0"],
+  "suite_seeds": 200,
+  "tournament_seeds": 100,
+  "eval_checkpoints": 3,
+  "h2h_seeds": 100
+}
