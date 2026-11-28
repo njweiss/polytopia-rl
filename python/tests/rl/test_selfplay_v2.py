@@ -1493,3 +1493,66 @@ def test_train_run_best_pt_regressed_win_rate_gate_trigger_and_anchor_spec_misma
     bad_cfg = _revised_cfg(str(bad_anchor), total_steps=32)
     with pytest.raises(SpecMismatch):
         train.run(bad_cfg, str(tmp_path / "bad_run"))
+
+
+def test_review23_guards_and_anchor_rng_preservation(tmp_path):
+    # 1. pfsp_weights rejects non-finite win_rates (NaN / Inf).
+    for bad in ([float("nan"), 0.5], [float("inf"), 0.5], [float("-inf"), 0.5]):
+        with pytest.raises(ValueError):
+            pfsp_weights(bad, "hard")
+        with pytest.raises(ValueError):
+            pfsp_weights(bad, "off")
+
+    # 2. Empty SnapshotPool.sample() raises ValueError regardless of p_latest.
+    for p_latest in (0.0, 1.0):
+        with pytest.raises(ValueError):
+            SnapshotPool(pool_max=4, p_latest=p_latest).sample(np.random.default_rng(0))
+
+    # 3. rollout="stream" with num_steps=1 and p_self=1.0 survives full carryover drain without ZeroDivisionError.
+    tiny_cfg = _revised_cfg(
+        "",
+        anchor_checkpoints=[],
+        num_envs=4,
+        num_steps=1,
+        num_minibatches=2,
+        total_steps=16,
+        p_bot=0.0,
+        p_self=1.0,
+        eval_every=16,
+        rating_every=16,
+        snapshot_every=16,
+        snapshot_win_rate=None,
+        shaping_anneal_steps=None,
+        paired_seeds=False,
+    )
+    tiny_dir = tmp_path / "num_steps_1"
+    train.run(tiny_cfg, str(tiny_dir))
+    rows = _jsonl(tiny_dir / "metrics.jsonl")
+    assert len(rows) == 4
+    assert all(math.isfinite(r["env_sps"]) and math.isfinite(r["forward_sps"]) for r in rows)
+
+    # 4. Loading anchor_checkpoints preserves CPU torch RNG (identical model trajectory when anchors are never drawn).
+    anchor_path = tmp_path / "anchor_rng.pt"
+    _save_anchor(anchor_path, size=6, ruleset="v2", arch="v1", seed=123)
+    base_kw = dict(
+        num_envs=4,
+        num_steps=8,
+        num_minibatches=4,
+        total_steps=32,
+        p_bot=0.0,
+        p_self=1.0,  # anchors are loaded at startup but never sampled during rollout
+        eval_every=32,
+        rating_every=64,
+        snapshot_every=64,
+        snapshot_win_rate=None,
+        shaping_anneal_steps=None,
+        paired_seeds=False,
+    )
+    dir_no = tmp_path / "no_anchor"
+    dir_yes = tmp_path / "with_anchor"
+    net_no = train.run(_revised_cfg("", anchor_checkpoints=[], **base_kw), str(dir_no))
+    net_yes = train.run(_revised_cfg(str(anchor_path), **base_kw), str(dir_yes))
+    for k, v in net_no.state_dict().items():
+        assert torch.equal(v, net_yes.state_dict()[k]), f"anchor load perturbed RNG on param {k}"
+    strip = lambda row: {k: v for k, v in _untimed(row).items() if k != "pool_size"}  # noqa: E731
+    assert [strip(r) for r in _jsonl(dir_no / "metrics.jsonl")] == [strip(r) for r in _jsonl(dir_yes / "metrics.jsonl")]
