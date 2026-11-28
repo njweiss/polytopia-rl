@@ -1,7 +1,7 @@
 # Decisions log
 
 Answered agent questions, one line each, newest last. The full entries (options, the agent's reasoning,
-test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 `9af6590` for Q47-Q49 `ba89c28` for Q50-Q51 and `83c4003` for Q52-Q54.
+test names) are in `docs/QUESTIONS.md` as of commit `540a214` for Q1-Q30 (`git show 540a214:docs/QUESTIONS.md`) `7542ffa` for Q31-Q34 `7af81d4` for Q35 `c8a0fcf` for Q36-Q37 `074b0ef` for Q38 `3501282` for Q39-Q41 `70c79e4` for Q42-Q46 `9af6590` for Q47-Q49 `ba89c28` for Q50-Q51 `83c4003` for Q52-Q54 and `4190c8a` for Q55.
 Rule-level answers are also merged into `docs/SPEC.md` (the Claude Doc master spec); "Where" names the
 spec section, or the brief when the answer is an implementation detail.
 
@@ -61,3 +61,4 @@ spec section, or the brief when the answer is an implementation detail.
 | Q52 | 2026-11-26 | M15 `ruleset.rs::new_game_reads_the_tables_of_the_configs_ruleset` whole-state V2 == V1 start check | Option A: verify RNG, seats, cities, units, and non-corner tiles/explored match `V1` while checking the four corners are fogged `Field` lighthouses with no resource under `V2` | M18 brief; `ruleset.rs` |
 | Q53 | 2026-11-26 | M16 `connections.rs` playout vacuity guard (`losses > 2`) drops to 2 under M18 | Option A: initially expand seed range `0..30` -> `0..45` keeping `losses > 2` (later superseded by Q54 B) | M18 brief; `connections.rs` |
 | Q54 | 2026-11-27 | M16 `connections.rs` expanded range `0..45` (Q53 A) still has `losses == 2` under M18 | Option B: relax vacuity guard on line 611 from `losses > 2` to `losses >= 2` and restore seed range to `0..30` | M18 brief; `connections.rs` |
+| Q55 | 2026-11-27 | `v2_m19_playouts` random policy never triggers a Persist chain follow-up (`persist_chains == 0`) | Option A: calibrate `pick_m19` to bias enemy-directed moves and avoid `Disband` spam while keeping the 11x11 map and all invariant/vacuity assertions intact | M19 brief; `v2_m19_playouts.rs` |
