@@ -5,14 +5,20 @@ from this file. Update it at the end of every working session.
 
 ## Current milestone and phase
 
+**Milestone 21 (`arch="v2"` PolicyNet architecture) merged into `main` (`5898c72`, 2026-11-27),
+`pixi run check` green (742 cargo, 33 + 455 pytest).** Brief `1a33867` (A1–A5 confirmed); tests
+`7360559` (30 new RL test cases in `test_arch_v2.py`) + `9b2d0bb` (Q58 A); implementation `d14cfc3`.
+`/review 21`: merge, 0 blocking defects, 0 spec gaps. Pure-Python milestone: zero Rust, `obs_hash`, or
+`rules_hash` changes; `arch="v1"` remains bit-for-bit identical. Next: the M22 brief (v1 -> v2 policy
+transfer: prefix warm-start & distillation into `arch="v2"`).
+
 **Milestone 20 (v2 observation, factored action space, Env/Python support, and damage preview) merged
 into `main` (`c966bea`, 2026-11-27), `pixi run check` green (742 cargo, 33 + 425 pytest).** Brief
 `4bda847` (O1–O7 confirmed); tests `e47af57` (29 new Rust/Python/RL tests) + `13b27cd` (Q56 A, Q57 A);
 implementation `1b4992e` (incl. `/review 20` Nit #1 zero-alloc `PyEnv::observation` dims). `/review 20`:
 merge, 0 blocking defects, 0 spec gaps. Hashes (`size=11`): v1 `obs_hash d5f9b1033cfd55ca` / `rules_hash
 a8b52b91eae34503` (byte-identical, replay fixture OK); v2 `obs_hash c15247decc21ae4f` / `rules_hash
-ed271736a688e86d`. Full v2 RL pipeline (sim, PyO3, PolicyNet, VecEnv, PPO, eval, checkpoints) is now
-live. Next: the M21 brief (v1 -> v2 policy transfer: warm-start & distillation).
+ed271736a688e86d`.
 
 **Milestone 19 (v2 units, skills, bots and renderer) merged into `main` (`4190c8a`, 2026-11-27),
 `pixi run check` green (725 cargo, 26 + 420 pytest).** Brief `c1bee6b` (U1–U6 confirmed); tests
@@ -121,6 +127,7 @@ Milestone 12 (closed 2026-10-26):
 | M18 | v2 lighthouses (4 corners, discovery +1 pop), v2 Explorer (+3.5 lighthouse bonus), monuments (`ParkOfFortune`, `GateOfPower`, `EyeOfGod`, `BuildMonument`, `Destroy`, 400 score, kills tracking), M17 review nits; v1 byte-identical | merged 83c4003; `pixi run check` green (680 cargo, 26 + 420 pytest); `/review 18`: merge, 0 defects, 0 spec gaps |
 | M19 | v2 units (`Swordsman`, `Catapult`, `Knight`), `Stiff`/`Persist` skills, `PlayerView::ruleset()`, v2 `RushBot`/`EconomyBot` extensions, v2 text/HTML renderer & CLI `--ruleset v2`; v1 byte-identical | merged 4190c8a; `pixi run check` green (725 cargo, 26 + 420 pytest); `/review 19`: merge, 0 defects, 0 spec gaps |
 | M20 | `PlayerView` v2 & `attack_preview`, 64-ch/33-global v2 obs (37/18 v1 prefix + 6 damage-preview channels), 15 factored `ActionType`s & `ActionMasks`, `obs_hash_for`, `Env`/`PyEnv`/`PPOConfig` `V2` support; v1 byte-identical | merged c966bea; `pixi run check` green (742 cargo, 33 + 425 pytest); `/review 20`: merge, 0 defects, 0 spec gaps |
+| M21 | `arch="v2"` `PolicyNet` (CoordConv, pre-norm `GroupNorm` + pooled-context/globals FiLM + scaled `ResBlockV2`, separate `move`/`attack` keys + QK `LayerNorm` + 2D `rel_bias` in `ArgHeadV2`), `PPOConfig.arch`; `arch="v1"` & Rust/hashes untouched | merged 5898c72; `pixi run check` green (742 cargo, 33 + 455 pytest); `/review 21`: merge, 0 defects, 0 spec gaps |
 
 **Working rule while an experiment runs from this checkout:** do milestone work in a git worktree; in a
 worktree never run `pixi run`, `maturin develop` or `check.sh` (they create a second pixi env or replace
@@ -134,26 +141,27 @@ into `target/pyext`, then `PYTHONPATH=$PWD/target/pyext:$PWD/python $E/bin/pytho
 ## Waiting on the owner
 
 1. Optional: M16b Gate item 3 (re-run the M13a profile fixture + `torch.profiler` sync counts on the RTX 4060 machine and record in `docs/RL_REPORT.md`).
-2. Next is the M21 brief (v1 -> v2 policy transfer: warm-start vs distillation, possibly both as arms).
+2. Next is the M22 brief (v1 -> v2 policy transfer: warm-start vs distillation into `arch="v2"`, possibly both as arms).
 
 ## Open questions
 
-- `QUESTIONS.md`: none open (next number Q58). Q1-Q57 are in `docs/DECISIONS.md`.
+- `QUESTIONS.md`: none open (next number Q59). Q1-Q58 are in `docs/DECISIONS.md`.
 - Spec open questions: none. `docs/SPEC.md` in git is the single authoritative spec (the external Claude Doc
   was retired in M16b, B5).
-- `.git/tests-lock` points at `13b27cd` (M20's Q56 A / Q57 A test commit).
+- `.git/tests-lock` points at `9b2d0bb` (M21's Q58 A test commit).
 - Self-play default `p_bot` is 0.4 since `4c6740f` (owner, 2026-10-27). 11b and 12b `base` used 0.2.
 
 ## Next three actions
 
 1. Run M16b Gate item 3 on the CUDA machine (profile fixture + sync counts) and log results in `docs/RL_REPORT.md`.
-2. M21 brief (v1 -> v2 policy transfer: prefix warm-start & distillation into the 64-ch / 33-global / 15-kind v2 `PolicyNet`).
+2. M22 brief (v1 -> v2 policy transfer: prefix warm-start for `arch="v1"` & distillation from the v1 teacher into `arch="v2"`, plus A/B experiment config).
 3. Optional viewer polish: render `road`/`building`/`monument`/`lighthouse` badges visually in `html.rs` JS `draw()` (data keys already emitted in M19).
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-11-27 | M21 merged (`5898c72`), `pixi run check` green (742 cargo, 33 + 455 pytest), branch removed; `/review 21` verdict merge (0 blocking defects, 0 spec gaps); Q58 moved to `DECISIONS.md`; tests locked at `9b2d0bb`. |
 | 2026-11-27 | M20 merged (`c966bea`), `pixi run check` green (742 cargo, 33 + 425 pytest), branch removed; `/review 20` verdict merge (0 blocking defects, 0 spec gaps; Nit #1 fixed before merge); Q56–Q57 moved to `DECISIONS.md`; tests locked at `13b27cd`. |
 | 2026-11-27 | M19 merged (`4190c8a`), `pixi run check` green (725 cargo, 26 + 420 pytest), branch removed; `/review 19` verdict merge (0 blocking defects, 0 spec gaps); Q55 moved to `DECISIONS.md`; tests locked at `008e2ad`. |
 | 2026-11-27 | M18 merged (`83c4003`), `pixi run check` green (680 cargo, 26 + 420 pytest), branch removed; `/review 18` verdict merge (0 blocking defects, 0 spec gaps); Q52–Q54 moved to `DECISIONS.md`; tests locked at `8adaca5`. |
