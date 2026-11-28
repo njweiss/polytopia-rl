@@ -575,36 +575,37 @@ fn encode_board_v2_damage_preview_aggregation_and_zero_cases() {
     // Target 1 at (2,2): wounded enemy Defender (9/15) on forest with hidden enemy Archery (1.5x).
     //   - Attacked by own wounded Warrior (9/10) at (2,1) AND own full Swordsman (15/15) at (1,2).
     //   - Neither kills; Swordsman deals more damage (7/9) and takes smaller retal fraction (6/15 vs 8/9).
-    // Target 2 at (4,4): wounded enemy Warrior (3/10) in enemy walled city (4.0x).
-    //   - Attacked by own Archer (10/10) at (4,2) (range 2 -> 0 retal) AND own SuperUnit (40/40) at (4,3) (kills!).
+    // Target 2 at (5,5): wounded enemy Warrior (3/10) in enemy walled city (4.0x).
+    //   - Attacked by own Archer (10/10) at (5,3) (range 2 -> 0 retal; dist 3 from (2,2), Q57 A)
+    //     AND own SuperUnit (40/40) at (5,4) (kills!).
     //   - Target 2 has can_kill=1.0, max_dmg=1.0, min_retal=0.0, def_bonus=4.0/4.0=1.0.
-    // Target 3 at (6,6): enemy Warrior (10/10) on forest, OUT OF RANGE of all own units -> ALL preview 0.0!
-    // Attacker (own Archer at (4,2)) reaches both (4,4) and Target 4 at (2,4) (enemy Warrior 10/10, plain).
+    // Target 3 at (7,7): enemy Warrior (10/10) on forest, OUT OF RANGE of all own units -> ALL preview 0.0!
+    // Attacker (own Archer at (5,3)) reaches both (5,5) and Target 4 at (3,5) (enemy Warrior 10/10, plain).
     let s = StateBuilder::new(N)
         .config(v2_cfg(30))
         .explore_all()
         .techs(1, &[Tech::Archery])
         .terrain(p(2, 2), Terrain::Forest)
-        .terrain(p(6, 6), Terrain::Forest)
-        .city_with(1, p(4, 4), |c| c.wall = true)
+        .terrain(p(7, 7), Terrain::Forest)
+        .city_with(1, p(5, 5), |c| c.wall = true)
         // Own units:
         .unit_with(0, UnitType::Warrior, p(2, 1), |u| u.health = 9) // u0
         .unit(0, UnitType::Swordsman, p(1, 2)) // u1
-        .unit(0, UnitType::Archer, p(4, 2)) // u2 (hits (4,4) and (2,4))
-        .unit(0, UnitType::SuperUnit, p(4, 3)) // u3 (hits (4,4) -> lethal!)
+        .unit(0, UnitType::Archer, p(5, 3)) // u2 (hits (5,5) and (3,5); out of range of (2,2))
+        .unit(0, UnitType::SuperUnit, p(5, 4)) // u3 (hits (5,5) -> lethal!)
         // Enemy units:
         .unit_with(1, UnitType::Defender, p(2, 2), |u| u.health = 9) // u4
-        .unit_with(1, UnitType::Warrior, p(4, 4), |u| u.health = 3) // u5
-        .unit(1, UnitType::Warrior, p(6, 6)) // u6 (untargetable)
-        .unit(1, UnitType::Warrior, p(2, 4)) // u7 (targetable by u2 only, non-lethal)
+        .unit_with(1, UnitType::Warrior, p(5, 5), |u| u.health = 3) // u5
+        .unit(1, UnitType::Warrior, p(7, 7)) // u6 (untargetable)
+        .unit(1, UnitType::Warrior, p(3, 5)) // u7 (targetable by u2 only, non-lethal)
         .build();
 
     let view = PlayerView::new(&s, 0);
     let p_u0_t1 = view.attack_preview(UnitId(0), p(2, 2)).unwrap();
     let p_u1_t1 = view.attack_preview(UnitId(1), p(2, 2)).unwrap();
-    let p_u2_t2 = view.attack_preview(UnitId(2), p(4, 4)).unwrap();
-    let p_u3_t2 = view.attack_preview(UnitId(3), p(4, 4)).unwrap();
-    let p_u2_t4 = view.attack_preview(UnitId(2), p(2, 4)).unwrap();
+    let p_u2_t2 = view.attack_preview(UnitId(2), p(5, 5)).unwrap();
+    let p_u3_t2 = view.attack_preview(UnitId(3), p(5, 5)).unwrap();
+    let p_u2_t4 = view.attack_preview(UnitId(2), p(3, 5)).unwrap();
 
     assert!(!p_u0_t1.defender_dies && !p_u1_t1.defender_dies);
     assert!(p_u0_t1.retaliation > 0 && p_u1_t1.retaliation > 0);
@@ -637,16 +638,16 @@ fn encode_board_v2_damage_preview_aggregation_and_zero_cases() {
         "t1 def_bonus (hidden Archery)",
     );
 
-    // Target 2 (4,4): lethal by SuperUnit, wall 4.0x.
-    assert_eq!(at(ch2::PREV_TARGET_CAN_KILL, p(4, 4)), 1.0);
-    assert_approx(at(ch2::PREV_TARGET_MAX_DMG, p(4, 4)), 1.0, "t2 max_dmg");
-    assert_approx(at(ch2::PREV_TARGET_MIN_RETAL, p(4, 4)), 0.0, "t2 min_retal");
-    assert_approx(at(ch2::PREV_TARGET_DEF_BONUS, p(4, 4)), 1.0, "t2 wall 4/4");
+    // Target 2 (5,5): lethal by SuperUnit, wall 4.0x.
+    assert_eq!(at(ch2::PREV_TARGET_CAN_KILL, p(5, 5)), 1.0);
+    assert_approx(at(ch2::PREV_TARGET_MAX_DMG, p(5, 5)), 1.0, "t2 max_dmg");
+    assert_approx(at(ch2::PREV_TARGET_MIN_RETAL, p(5, 5)), 0.0, "t2 min_retal");
+    assert_approx(at(ch2::PREV_TARGET_DEF_BONUS, p(5, 5)), 1.0, "t2 wall 4/4");
 
-    // Attacker channels on u2 (Archer at (4,2)): max across (4,4) and (2,4).
+    // Attacker channels on u2 (Archer at (5,3)): max across (5,5) and (3,5).
     let u2_max_dmg = (p_u2_t2.dealt as f32 / 3.0).max(p_u2_t4.dealt as f32 / 10.0);
     assert_eq!(
-        at(ch2::PREV_ATTACKER_CAN_KILL, p(4, 2)),
+        at(ch2::PREV_ATTACKER_CAN_KILL, p(5, 3)),
         if p_u2_t2.defender_dies || p_u2_t4.defender_dies {
             1.0
         } else {
@@ -654,13 +655,13 @@ fn encode_board_v2_damage_preview_aggregation_and_zero_cases() {
         }
     );
     assert_approx(
-        at(ch2::PREV_ATTACKER_MAX_DMG, p(4, 2)),
+        at(ch2::PREV_ATTACKER_MAX_DMG, p(5, 3)),
         u2_max_dmg,
         "u2 max_dmg",
     );
-    // Attacker u3 (SuperUnit at (4,3)): lethal on (4,4).
-    assert_eq!(at(ch2::PREV_ATTACKER_CAN_KILL, p(4, 3)), 1.0);
-    assert_approx(at(ch2::PREV_ATTACKER_MAX_DMG, p(4, 3)), 1.0, "u3 max_dmg");
+    // Attacker u3 (SuperUnit at (5,4)): lethal on (5,5).
+    assert_eq!(at(ch2::PREV_ATTACKER_CAN_KILL, p(5, 4)), 1.0);
+    assert_approx(at(ch2::PREV_ATTACKER_MAX_DMG, p(5, 4)), 1.0, "u3 max_dmg");
     // Attacker u1 (Swordsman at (1,2)): non-lethal on (2,2).
     assert_eq!(at(ch2::PREV_ATTACKER_CAN_KILL, p(1, 2)), 0.0);
     assert_approx(
@@ -669,9 +670,9 @@ fn encode_board_v2_damage_preview_aggregation_and_zero_cases() {
         "u1 max_dmg",
     );
 
-    // Untargetable enemy at (6,6) and empty tiles MUST have ALL 6 preview channels == 0.0
+    // Untargetable enemy at (7,7) and empty tiles MUST have ALL 6 preview channels == 0.0
     // (catches target_min_retal defaulting to 1.0/+inf or def_bonus leaking on non-attackable enemies).
-    for q in [p(6, 6), p(0, 0), p(7, 7), p(3, 3)] {
+    for q in [p(7, 7), p(0, 0), p(7, 0), p(3, 3)] {
         for c in ch2::PREV_TARGET_CAN_KILL..=ch2::PREV_ATTACKER_MAX_DMG {
             assert_eq!(at(c, q), 0.0, "non-targeted {q:?} preview ch {c}");
         }
@@ -1945,7 +1946,7 @@ fn hidden_enemy_archery_changes_preview_only_when_attackable() {
             .explore_all()
             .terrain(p(2, 3), Terrain::Forest)
             .techs(1, &[enemy_tech])
-            .unit(0, UnitType::Warrior, unit_pos)
+            .unit(0, UnitType::Swordsman, unit_pos)
             .unit(1, UnitType::Warrior, p(2, 3))
             .build()
     };

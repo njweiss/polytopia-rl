@@ -311,12 +311,13 @@ fn attack_preview_matches_apply_across_plain_hidden_tech_and_city_bonuses() {
         }
     );
 
-    // 2. Hidden enemy Archery on forest (1.0 without, 1.5 with).
+    // 2. Hidden enemy Archery on forest (1.0 without, 1.5 with); Swordsman vs Warrior so rounded
+    // dealt strictly drops (8 -> 7) and retaliation strictly rises (4 -> 5) (Q56 A).
     let forest_no_arch = StateBuilder::new(6)
         .config(v2_cfg())
         .explore_all()
         .terrain(p(2, 3), Terrain::Forest)
-        .unit(0, UnitType::Warrior, p(2, 2))
+        .unit(0, UnitType::Swordsman, p(2, 2))
         .unit(1, UnitType::Warrior, p(2, 3))
         .build();
     let p_no_arch =
@@ -326,7 +327,7 @@ fn attack_preview_matches_apply_across_plain_hidden_tech_and_city_bonuses() {
         .explore_all()
         .terrain(p(2, 3), Terrain::Forest)
         .techs(1, &[Tech::Archery])
-        .unit(0, UnitType::Warrior, p(2, 2))
+        .unit(0, UnitType::Swordsman, p(2, 2))
         .unit(1, UnitType::Warrior, p(2, 3))
         .build();
     let p_arch = assert_preview_matches_apply(&forest_arch, UnitId(0), p(2, 3), 1.5, "forest arch");
